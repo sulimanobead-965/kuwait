@@ -1434,7 +1434,8 @@ function fillParcel(
   return { ok: true, roads: 0, built };
 }
 
-const ZONE_CAP = 800;
+// The whole map: with the city index, filling even a huge zone takes milliseconds.
+const ZONE_CAP = COLS * ROWS;
 
 function capCells(cells: { c: number; r: number }[], midC: number, midR: number) {
   if (cells.length <= ZONE_CAP) return cells;
