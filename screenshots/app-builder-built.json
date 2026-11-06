@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "عمدة الكويت",
+      "hasCanvas": true,
+      "bodyTextLen": 166,
+      "bodyTextHash": "1f798e887f92c0076f73f0734b6701359e3c7578ef3be2b5b689ec1d258df53f",
+      "bodyTextPrefix": "عمدة الكويت خريطة مدينة الكويت عمدة الكويت المربعات أصغر، والطري",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "عمدة الكويت",
+      "hasCanvas": true,
+      "bodyTextLen": 166,
+      "bodyTextHash": "1f798e887f92c0076f73f0734b6701359e3c7578ef3be2b5b689ec1d258df53f",
+      "bodyTextPrefix": "عمدة الكويت خريطة مدينة الكويت عمدة الكويت المربعات أصغر، والطري",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}

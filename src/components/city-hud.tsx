@@ -1,0 +1,849 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Check,
+  ChevronsRight,
+  Cloud,
+  Dices,
+  FastForward,
+  Flame,
+  Grid2x2,
+  Landmark,
+  LayoutGrid,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  Route,
+  Trash2,
+  Volume2,
+  VolumeX,
+  X,
+  Zap,
+  ZapOff,
+  RotateCcw,
+} from "lucide-react";
+import {
+  CATALOG,
+  kindsIn,
+  ROAD_COST,
+  type Category,
+  type Kind,
+} from "@/game/catalog";
+import {
+  bulletin,
+  demand,
+  formatCityDate,
+  incomePerSec,
+  metrics,
+  monthlyIncome,
+  monthlyUpkeep,
+  priceOf,
+  QUESTS,
+  stats,
+  upgradeCost,
+  coastal,
+  blockReason,
+  type DisasterKind,
+  type Ordinances,
+  type Sample,
+  type Sim,
+  type ZonePick,
+} from "@/game/sim";
+
+export type HudTool =
+  | { kind: "road" }
+  | { kind: "bulldoze" }
+  | { kind: "zone" }
+  | { kind: "build"; building: Kind }
+  | null;
+
+type GraphKey = Exclude<keyof Sample, "day">;
+type Panel = "graphs" | "budget" | "laws" | "advisors" | "disasters";
+
+const SERIES: { key: GraphKey; label: string; token: string }[] = [
+  { key: "water", label: "ماء %", token: "--color-sc-sky" },
+  { key: "power", label: "كهرباء %", token: "--color-sc-orange" },
+  { key: "crime", label: "الجريمة", token: "--color-coral" },
+  { key: "pop", label: "السكان", token: "--color-sc-leaf" },
+  { key: "funds", label: "الأموال", token: "--color-sc-gold" },
+  { key: "pollution", label: "التلوث", token: "--color-sc-pink" },
+  { key: "traffic", label: "الزحمة", token: "--color-sand" },
+  { key: "unemployment", label: "البطالة", token: "--color-ink" },
+  { key: "industry", label: "الصناعة", token: "--color-gulf" },
+  { key: "approval", label: "الرضا", token: "--color-sc-lime" },
+  { key: "size", label: "حجم المدينة", token: "--color-sc-green" },
+  { key: "commerce", label: "التجارة", token: "--color-sc-sky" },
+  { key: "land", label: "قيمة الأرض", token: "--color-sand" },
+  { key: "health", label: "الصحة", token: "--color-sc-leaf" },
+  { key: "education", label: "التعليم", token: "--color-gulf" },
+];
+
+const LAWS: { key: keyof Ordinances; title: string; detail: string }[] = [
+  { key: "education", title: "ميزانية التعليم", detail: "ترفع التعليم والرضا. ٨٠ د.ك كل شهر." },
+  { key: "recycling", title: "إعادة التدوير", detail: "تقلل التلوث. ٤٠ د.ك كل شهر." },
+  { key: "carpool", title: "مشاركة السيارات", detail: "تخفف الزحمة. ٢٥ د.ك كل شهر." },
+  { key: "clinicFund", title: "دعم المستوصفات", detail: "ترفع الصحة. ٥٥ د.ك كل شهر." },
+  { key: "smokeBan", title: "منع الدخان", detail: "هواء أنظف، وتجارة المحلات تهدأ شوي. ٣٠ د.ك." },
+];
+
+function fmt(n: number) {
+  return Math.floor(n).toLocaleString("en-US");
+}
+
+export function CityHud({
+  snap,
+  tool,
+  cat,
+  selectedId,
+  stored,
+  confirmReset,
+  toasts,
+  onStart,
+  onSpeed,
+  onCategory,
+  onRoad,
+  onBulldoze,
+  onZone,
+  onBuild,
+  onTax,
+  onOrdinance,
+  onDisaster,
+  onRandom,
+  onLuck,
+  onUpgrade,
+  onCollect,
+  onMute,
+  onAskReset,
+  onReset,
+  onCancelReset,
+  onZoom,
+  zone,
+  onZoneApply,
+  onZoneCancel,
+}: {
+  snap: Sim;
+  tool: HudTool;
+  cat: Category;
+  selectedId: string | null;
+  stored: number;
+  confirmReset: boolean;
+  toasts: { id: number; text: string }[];
+  onStart: () => void;
+  onSpeed: (n: 0 | 1 | 2 | 3) => void;
+  onCategory: (id: Category) => void;
+  onRoad: () => void;
+  onBulldoze: () => void;
+  onZone: () => void;
+  onBuild: (kind: Kind) => void;
+  onTax: (n: number) => void;
+  onOrdinance: (key: keyof Ordinances, value: boolean) => void;
+  onDisaster: (kind: DisasterKind) => void;
+  onRandom: (value: boolean) => void;
+  onLuck: () => void;
+  onUpgrade: () => void;
+  onCollect: () => void;
+  onMute: () => void;
+  onAskReset: () => void;
+  onReset: () => void;
+  onCancelReset: () => void;
+  onZoom: (factor: number) => void;
+  zone: { c0: number; r0: number; c1: number; r1: number } | null;
+  onZoneApply: (pick: ZonePick) => void;
+  onZoneCancel: () => void;
+}) {
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [tray, setTray] = useState(false);
+  const [span, setSpan] = useState<1 | 10 | 100>(10);
+  const [onKeys, setOnKeys] = useState<GraphKey[]>(["pop", "approval", "unemployment"]);
+  const [ticker, setTicker] = useState(0);
+
+  const st = stats(snap);
+  const selected = snap.buildings.find((b) => b.id === selectedId) ?? null;
+  const lines = bulletin(snap, st);
+  const dem = demand(snap, st);
+  const line = lines[ticker % lines.length] ?? "";
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTicker((n) => n + 1), 3400);
+    return () => window.clearInterval(id);
+  }, []);
+
+  function togglePanel(next: Panel) {
+    setPanel((p) => (p === next ? null : next));
+  }
+
+  function openCat(id: Category) {
+    if (tray && (cat === id || (id === "housing" && cat === "commerce"))) {
+      setTray(false);
+      return;
+    }
+    onCategory(id);
+    setTray(true);
+  }
+
+  const cards =
+    cat === "commerce" || cat === "housing" ? kindsIn(cat) : tray ? kindsIn(cat) : [];
+
+  return (
+    <>
+      <div className="pointer-events-none absolute inset-0 z-10">
+        {snap.started && (
+        <div className="safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
+          <Round
+            label="سكن وتجارة"
+            on={tray && (cat === "housing" || cat === "commerce")}
+            onClick={() => openCat("housing")}
+          >
+            <LayoutGrid size={18} />
+          </Round>
+          <Round label="طرق" on={tool?.kind === "road"} onClick={onRoad}>
+            <Route size={18} />
+          </Round>
+          <Round label="تنظيم منطقة" on={tool?.kind === "zone" || zone !== null} onClick={onZone}>
+            <Grid2x2 size={18} />
+          </Round>
+          <Round
+            label="كهرباء وماء وخدمات"
+            on={tray && cat === "services"}
+            onClick={() => openCat("services")}
+          >
+            <Zap size={18} />
+          </Round>
+          <Round label="معالم" on={tray && cat === "landmarks"} onClick={() => openCat("landmarks")}>
+            <Landmark size={18} />
+          </Round>
+          <Round label="هدم" on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
+            <Trash2 size={18} />
+          </Round>
+          <Rci r={dem.r} c={dem.c} i={dem.i} />
+        </div>
+        )}
+        {snap.started && (
+        <div className="pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
+          <Round label="تقريب" onClick={() => onZoom(1.28)}>
+            <Plus size={18} />
+          </Round>
+          <Round label="تبعيد" onClick={() => onZoom(1 / 1.28)}>
+            <Minus size={18} />
+          </Round>
+        </div>
+        )}
+      </div>
+
+      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col">
+        <div className="relative min-h-0 flex-1">
+          <div className="absolute inset-x-0 top-2 flex flex-col items-center gap-1 px-16">
+            {toasts.map((item) => (
+              <p key={item.id} className="sc-lcd text-sm">
+                {item.text}
+              </p>
+            ))}
+          </div>
+          {zone && (
+            <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />
+          )}
+          {panel && snap.started && (
+            <section className="sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md">
+              <div className="sc-title m-2">
+                <button type="button" className="sc-x" aria-label="إغلاق" onClick={() => setPanel(null)}>
+                  <X size={18} />
+                </button>
+                <h2 className="flex-1 text-center text-base">
+                  {panel === "graphs" && "الرسوم"}
+                  {panel === "budget" && "الميزانية"}
+                  {panel === "laws" && "القوانين"}
+                  {panel === "advisors" && "المستشارون"}
+                  {panel === "disasters" && "الكوارث"}
+                </h2>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                {panel === "graphs" && (
+                  <Graphs
+                    snap={snap}
+                    span={span}
+                    onKeys={onKeys}
+                    onSpan={setSpan}
+                    onToggle={(key) =>
+                      setOnKeys((list) =>
+                        list.includes(key) ? list.filter((k) => k !== key) : [...list, key],
+                      )
+                    }
+                  />
+                )}
+                {panel === "budget" && (
+                  <Budget snap={snap} onTax={onTax} />
+                )}
+                {panel === "laws" && (
+                  <ul className="space-y-2">
+                    {LAWS.map((law) => {
+                      const on = snap.ordinances[law.key];
+                      return (
+                        <li key={law.key}>
+                          <button
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => onOrdinance(law.key, !on)}
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-right ${on ? "sc-on sc-choice" : "sc-choice"}`}
+                          >
+                            <span className="grid h-6 w-6 place-items-center">
+                              {on ? <Check size={16} /> : null}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm">{law.title}</span>
+                              <span className="block text-xs font-medium opacity-80">{law.detail}</span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {panel === "advisors" && <Advisors snap={snap} />}
+                {panel === "disasters" && (
+                  <Disasters snap={snap} onDisaster={onDisaster} onRandom={onRandom} />
+                )}
+              </div>
+            </section>
+          )}
+          {!snap.started && (
+            <div className="absolute inset-x-0 bottom-0">
+              <div className="sc-panel pointer-events-auto safe-bottom mx-2 rounded-t-xl px-4 pt-5" dir="rtl">
+                <p className="text-sm font-bold text-sc-leaf">خريطة مدينة الكويت</p>
+                <h2 className="mt-1 text-3xl font-extrabold leading-tight">عمدة الكويت</h2>
+                <p className="mt-2 text-base leading-relaxed">
+                  المستوى السهل فقط. البناء والطرق والترقية كلها مجانية.
+                </p>
+                <button
+                  type="button"
+                  data-testid="start-city"
+                  onClick={onStart}
+                  className="sc-menu mt-4 w-full text-base"
+                >
+                  ابدأ البناء
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {snap.started && (
+          <footer className="sc-status pointer-events-auto safe-bottom" dir="rtl">
+            {confirmReset && (
+              <div className="flex items-center gap-2 px-3 py-2">
+                <p className="flex-1 text-sm text-sc-mint">تمسح المدينة وترجع من الصفر؟</p>
+                <button type="button" onClick={onReset} className="sc-menu sc-on h-11 px-3 text-sm">
+                  امسح
+                </button>
+                <button type="button" onClick={onCancelReset} className="sc-textbtn text-sm">
+                  لا
+                </button>
+              </div>
+            )}
+            {selected && (
+              <div className="mx-2 mt-2 flex items-center gap-2 rounded-md bg-sc-mint px-2 py-1 text-sc-ink">
+                <img src={`/game/${selected.kind}.png`} alt="" className="h-12 w-12 object-contain" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-extrabold">
+                    {CATALOG[selected.kind].name} · مستوى {selected.level}
+                  </p>
+                  <p className="text-xs">
+                    {incomePerSec(selected, snap).toFixed(1)} د.ك/ث
+                    {coastal(selected.c, selected.r) && CATALOG[selected.kind].coastBoost ? " · كورنيش" : ""}
+                  </p>
+                  {blockReason(selected, snap) && (
+                    <p className="text-xs text-coral">{blockReason(selected, snap)}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={selected.level >= 3}
+                  onClick={onUpgrade}
+                  className="sc-menu h-11 shrink-0 px-3 text-xs disabled:opacity-40"
+                >
+                  {selected.level >= 3
+                    ? "مكتمل"
+                    : priceOf(upgradeCost(selected.kind, selected.level), snap) === 0
+                      ? "ترقّي مجاني"
+                      : `ترقّي ${fmt(priceOf(upgradeCost(selected.kind, selected.level), snap))}`}
+                </button>
+              </div>
+            )}
+            {tray && tool?.kind !== "road" && tool?.kind !== "bulldoze" && (
+              <div className="pt-2">
+                {(cat === "housing" || cat === "commerce") && (
+                  <div className="mb-1 flex gap-1 px-2">
+                    <button
+                      type="button"
+                      aria-pressed={cat === "housing"}
+                      onClick={() => onCategory("housing")}
+                      className={`sc-menu px-3 text-sm ${cat === "housing" ? "sc-on" : ""}`}
+                    >
+                      سكن
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={cat === "commerce"}
+                      onClick={() => onCategory("commerce")}
+                      className={`sc-menu px-3 text-sm ${cat === "commerce" ? "sc-on" : ""}`}
+                    >
+                      تجارة
+                    </button>
+                  </div>
+                )}
+                <div className="flex gap-2 overflow-x-auto px-2 pb-1">
+                  {cards.map((def) => {
+                    const price = priceOf(def.cost, snap);
+                    const on = tool?.kind === "build" && tool.building === def.kind;
+                    const poor = price > 0 && snap.coins < price;
+                    return (
+                      <button
+                        key={def.kind}
+                        type="button"
+                        data-testid={`build-${def.kind}`}
+                        aria-pressed={on}
+                        onClick={() => onBuild(def.kind)}
+                        className={`flex w-24 shrink-0 flex-col items-center rounded-md border-2 px-1 py-1 ${
+                          on ? "sc-on border-sc-ink" : "border-sc-ink bg-sc-mint text-sc-ink"
+                        } ${poor ? "opacity-50" : ""}`}
+                      >
+                        <img src={`/game/${def.kind}.png`} alt="" className="h-12 w-full object-contain" />
+                        <span className="mt-1 w-full truncate text-center text-xs font-extrabold">{def.name}</span>
+                        <span className="text-xs">{price === 0 ? "مجاني" : fmt(price)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {tool?.kind === "road" && (
+              <p className="px-3 pt-2 text-xs font-bold text-sc-lime">
+                اسحب والطريق يلف مع اليابسة. التخطيط على الشارع، والأضواء تشتغل بالليل.
+                {priceOf(ROAD_COST, snap) === 0 ? " مجاني." : ` ${priceOf(ROAD_COST, snap)} د.ك.`}
+              </p>
+            )}
+            {tool?.kind === "bulldoze" && (
+              <p className="px-3 pt-2 text-xs font-bold text-sc-gold">اضغط مبنى أو طريق. يرجع لك نصف التكلفة.</p>
+            )}
+            <div className="flex gap-1.5 overflow-x-auto px-2 py-2">
+              <Round label={snap.mute ? "تشغيل الصوت" : "كتم الصوت"} onClick={onMute}>
+                {snap.mute ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </Round>
+              <Round label="مدينة جديدة" onClick={onAskReset}>
+                <RotateCcw size={16} />
+              </Round>
+              <Menu on={panel === "graphs"} testid="open-graphs" onClick={() => togglePanel("graphs")}>
+                الرسوم
+              </Menu>
+              <Menu on={panel === "budget"} onClick={() => togglePanel("budget")}>
+                الميزانية
+              </Menu>
+              <Menu on={panel === "laws"} onClick={() => togglePanel("laws")}>
+                القوانين
+              </Menu>
+              <Menu on={panel === "advisors"} onClick={() => togglePanel("advisors")}>
+                المستشارون
+              </Menu>
+              <Menu on={panel === "disasters"} onClick={() => togglePanel("disasters")}>
+                الكوارث
+              </Menu>
+              <button type="button" data-testid="luck-btn" onClick={onLuck} className="sc-menu sc-on inline-flex shrink-0 items-center gap-1 px-3 text-sm">
+                <Dices size={16} /> حظ
+              </button>
+              {stored > 0 && (
+                <button type="button" onClick={onCollect} className="sc-menu sc-on shrink-0 px-3 text-sm">
+                  اجمع {fmt(stored)}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1 overflow-x-auto px-2 pb-2" dir="ltr">
+              <Round label="إيقاف" on={snap.speed === 0} onClick={() => onSpeed(0)}>
+                <Pause size={16} />
+              </Round>
+              <Round label="تشغيل" on={snap.speed === 1} onClick={() => onSpeed(1)}>
+                <Play size={16} />
+              </Round>
+              <Round label="سريع" on={snap.speed === 2} onClick={() => onSpeed(2)}>
+                <FastForward size={16} />
+              </Round>
+              <Round label="أسرع" on={snap.speed === 3} onClick={() => onSpeed(3)}>
+                <ChevronsRight size={16} />
+              </Round>
+              <span className="sc-lcd shrink-0 text-sm" dir="ltr">
+                {formatCityDate(snap.day)}
+              </span>
+              <span className="sc-lcd shrink-0 text-sm">
+                <span dir="ltr">{fmt(snap.coins)}</span>
+                <span className="text-xs">د.ك</span>
+              </span>
+              <span className="sc-lcd shrink-0 text-sm" dir="ltr">
+                {fmt(st.pop)}
+              </span>
+            </div>
+            <p className="sc-ticker flex items-center px-3 text-sm" dir="rtl">
+              {line}
+            </p>
+          </footer>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ZoneCard({
+  onApply,
+  onCancel,
+}: {
+  onApply: (pick: ZonePick) => void;
+  onCancel: () => void;
+}) {
+  const [pick, setPick] = useState<ZonePick>({
+    streets: true,
+    schools: false,
+    fire: false,
+    landmarks: false,
+    parks: false,
+  });
+  const chips: { key: keyof ZonePick; label: string }[] = [
+    { key: "streets", label: "شوارع" },
+    { key: "schools", label: "مدارس" },
+    { key: "fire", label: "مركز إطفاء" },
+    { key: "landmarks", label: "معالم" },
+    { key: "parks", label: "حدائق" },
+  ];
+  return (
+    <div className="sc-panel pointer-events-auto absolute inset-x-3 bottom-2 rounded-xl px-3 py-3" dir="rtl">
+      <p className="text-sm font-extrabold">تنظيم المنطقة</p>
+      <p className="mt-1 text-xs leading-relaxed">الشوارع شبكة منتظمة، والبيوت تصطف على الرصيف، والحدائق وسط المربعات.</p>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {chips.map((chip) => (
+          <button
+            key={chip.key}
+            type="button"
+            aria-pressed={pick[chip.key]}
+            onClick={() => setPick((p) => ({ ...p, [chip.key]: !p[chip.key] }))}
+            className={`sc-menu px-3 text-xs ${pick[chip.key] ? "sc-on" : ""}`}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button type="button" className="sc-menu sc-on h-11 flex-1 text-sm" onClick={() => onApply(pick)}>
+          نفّذ التخطيط
+        </button>
+        <button type="button" className="sc-menu h-11 px-3 text-sm" onClick={onCancel}>
+          إلغاء
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Graphs({
+  snap,
+  span,
+  onKeys,
+  onSpan,
+  onToggle,
+}: {
+  snap: Sim;
+  span: 1 | 10 | 100;
+  onKeys: GraphKey[];
+  onSpan: (n: 1 | 10 | 100) => void;
+  onToggle: (key: GraphKey) => void;
+}) {
+  const months = span === 1 ? 12 : span === 10 ? 120 : 1200;
+  const rows = useMemo(() => {
+    const history = snap.history.slice(-months);
+    return [...history, metrics(snap)];
+  }, [snap, months]);
+  const active = SERIES.filter((s) => onKeys.includes(s.key));
+  return (
+    <div dir="ltr">
+      <GraphCanvas rows={rows} active={active} />
+      <div className="mt-2 flex gap-1">
+        {([1, 10, 100] as const).map((n) => (
+          <button
+            key={n}
+            type="button"
+            aria-pressed={span === n}
+            onClick={() => onSpan(n)}
+            className={`sc-menu flex-1 text-sm ${span === n ? "sc-on" : ""}`}
+          >
+            {n === 1 ? "سنة" : n === 10 ? "10 سنوات" : "100 سنة"}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1" dir="rtl">
+        {SERIES.map((item) => {
+          const on = onKeys.includes(item.key);
+          return (
+            <button
+              key={item.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onToggle(item.key)}
+              className={`flex h-11 items-center gap-1 rounded-md px-2 text-xs font-extrabold ${on ? "sc-on" : "sc-menu"}`}
+            >
+              <span className="grid h-5 w-5 shrink-0 place-items-center">{on ? <Check size={14} /> : null}</span>
+              <span className="truncate">{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GraphCanvas({
+  rows,
+  active,
+}: {
+  rows: Sample[];
+  active: { key: GraphKey; token: string }[];
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const sig = `${rows.length}:${active.map((a) => a.key).join(",")}:${Math.round(rows.at(-1)?.approval ?? 0)}:${Math.round(rows.at(-1)?.pop ?? 0)}`;
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const draw = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, canvas.clientWidth);
+      const h = Math.max(1, canvas.clientHeight);
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const css = getComputedStyle(document.documentElement);
+      ctx.strokeStyle = css.getPropertyValue("--color-sc-ink").trim() || "black";
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.moveTo(8, h - 14);
+      ctx.lineTo(w - 8, h - 14);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (rows.length < 2) return;
+      for (const series of active) {
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = css.getPropertyValue(series.token).trim() || "black";
+        rows.forEach((row, i) => {
+          const x = 8 + (i / (rows.length - 1)) * (w - 16);
+          const value = Math.max(0, Math.min(100, row[series.key]));
+          const y = 8 + (1 - value / 100) * (h - 26);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+    };
+    draw();
+    const ro = new ResizeObserver(draw);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, [sig, rows, active]);
+  return <canvas ref={ref} className="h-40 w-full rounded-md bg-sc-mint" aria-label="رسم المدينة" />;
+}
+
+function Budget({
+  snap,
+  onTax,
+}: {
+  snap: Sim;
+  onTax: (n: number) => void;
+}) {
+  const income = monthlyIncome(snap);
+  const cost = monthlyUpkeep(snap);
+  return (
+    <div className="space-y-3" dir="rtl">
+      <p className="text-sm leading-relaxed">
+        الضريبة الحالية <b>{snap.tax}%</b>. حدها ٣٠٠٪، ودخل السكان مضاعف.
+      </p>
+      <label className="block text-sm font-extrabold">
+        نسبة الضريبة
+        <input
+          type="range"
+          min={0}
+          max={300}
+          step={5}
+          value={snap.tax}
+          aria-label="نسبة الضريبة"
+          onChange={(e) => onTax(Number(e.target.value))}
+          className="mt-1 h-11 w-full accent-sc-leaf"
+        />
+      </label>
+      <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
+        <div className="sc-lcd h-auto flex-col py-2">
+          <span>دخل الشهر</span>
+          <span dir="ltr">{fmt(income)}</span>
+        </div>
+        <div className="sc-lcd h-auto flex-col py-2">
+          <span>المصروف</span>
+          <span dir="ltr">{fmt(cost)}</span>
+        </div>
+        <div className="sc-lcd h-auto flex-col py-2">
+          <span>الفرق</span>
+          <span dir="ltr">{fmt(income - cost)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Advisors({ snap }: { snap: Sim }) {
+  const st = stats(snap);
+  const m = metrics(snap, st);
+  const q = QUESTS[snap.quest];
+  const rows = [
+    ["السكان", fmt(st.pop)],
+    ["الرضا", `${st.happy}%`],
+    ["الكهرباء", `${Math.round(m.power)}%`],
+    ["الماء", `${Math.round(m.water)}%`],
+    ["الجريمة", String(Math.round(m.crime))],
+    ["البطالة", String(Math.round(m.unemployment))],
+    ["التلوث", String(Math.round(m.pollution))],
+    ["الزحمة", String(Math.round(m.traffic))],
+    ["الصحة", String(Math.round(m.health))],
+    ["التعليم", String(Math.round(m.education))],
+    ["قيمة الأرض", String(Math.round(m.land))],
+  ];
+  return (
+    <div className="space-y-2" dir="rtl">
+      <ul className="space-y-1">
+        {bulletin(snap, st).map((text) => (
+          <li key={text} className="rounded-md bg-sc-mint px-2 py-2 text-sm font-bold text-sc-ink">
+            {text}
+          </li>
+        ))}
+      </ul>
+      {q && (
+        <p className="text-sm font-extrabold">
+          المهمة: {q.text} · {Math.min(q.total, Math.round(q.progress(snap)))}/{q.total}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-1">
+        {rows.map(([label, value]) => (
+          <p key={label} className="sc-lcd h-auto justify-between py-2 text-xs">
+            <span>{label}</span>
+            <span dir="ltr">{value}</span>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Disasters({
+  snap,
+  onDisaster,
+  onRandom,
+}: {
+  snap: Sim;
+  onDisaster: (kind: DisasterKind) => void;
+  onRandom: (value: boolean) => void;
+}) {
+  const active = snap.disaster && snap.day < snap.disaster.until ? snap.disaster : null;
+  return (
+    <div className="space-y-2" dir="rtl">
+      <p className="text-sm leading-relaxed">
+        الكوارث من عندك، مثل لوحة سيم سيتي. الحريق يضرب مبنى، العاصفة تنزل الرضا، وانقطاع الكهرباء
+        يطفّي الإنتاج لين ما تعدّي.
+      </p>
+      {active && (
+        <p className="sc-lcd text-sm">
+          جارية لين {formatCityDate(active.until)}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-2">
+        <button type="button" className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm" onClick={() => onDisaster("fire")}>
+          <Flame size={16} /> حريق
+        </button>
+        <button type="button" className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm" onClick={() => onDisaster("storm")}>
+          <Cloud size={16} /> عاصفة رملية
+        </button>
+        <button type="button" className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm" onClick={() => onDisaster("blackout")}>
+          <ZapOff size={16} /> انقطاع كهرباء
+        </button>
+      </div>
+      <button
+        type="button"
+        aria-pressed={snap.randomDisasters}
+        onClick={() => onRandom(!snap.randomDisasters)}
+        className={`sc-menu w-full text-sm ${snap.randomDisasters ? "sc-on" : ""}`}
+      >
+        {snap.randomDisasters ? "الكوارث العشوائية شغّالة" : "تفعيل كوارث عشوائية نادرة"}
+      </button>
+    </div>
+  );
+}
+
+function Rci({ r, c, i }: { r: number; c: number; i: number }) {
+  return (
+    <div className="mt-1 flex gap-1 rounded-md bg-sc-ink px-1 py-1" aria-label="طلب السكن والتجارة والصناعة" dir="ltr">
+      <Meter label="R" value={r} tone="bg-sc-green" />
+      <Meter label="C" value={c} tone="bg-sc-sky" />
+      <Meter label="I" value={i} tone="bg-sc-gold" />
+    </div>
+  );
+}
+
+function Meter({ label, value, tone }: { label: string; value: number; tone: string }) {
+  const up = value >= 0;
+  const h = Math.round((Math.abs(value) / 100) * 50);
+  return (
+    <div className="flex flex-col items-center">
+      <span className="text-xs font-extrabold text-sc-lime">{label}</span>
+      <div className="relative h-16 w-3 overflow-hidden rounded-full bg-sc-bar">
+        <div
+          className={`absolute inset-x-0 ${tone}`}
+          style={{ height: `${h}%`, top: up ? `${50 - h}%` : "50%" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Round({
+  label,
+  on,
+  onClick,
+  children,
+}: {
+  label: string;
+  on?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" aria-label={label} aria-pressed={on} onClick={onClick} className={`sc-round ${on ? "sc-on" : ""}`}>
+      {children}
+    </button>
+  );
+}
+
+function Menu({
+  on,
+  onClick,
+  children,
+  testid,
+}: {
+  on?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  testid?: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testid}
+      aria-pressed={on}
+      onClick={onClick}
+      className={`sc-menu shrink-0 text-sm ${on ? "sc-on" : ""}`}
+    >
+      {children}
+    </button>
+  );
+}
