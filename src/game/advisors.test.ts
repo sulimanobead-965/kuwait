@@ -5,6 +5,9 @@ import { CATALOG, maxLevelOf } from "./catalog.ts";
 import { LAND } from "./land.ts";
 import {
   developmentMonth,
+  lawPayment,
+  lawStrength,
+  monthlyUpkeep,
   giveAid,
   housingAidCost,
   upgradeDeveloper,
@@ -329,4 +332,29 @@ test("insurance: premiums rise with the rate and every loss is repaid in full", 
   advanceDays(l, 31);
   assert.ok(l.loan < debt, "the installment was paid");
   assert.ok(l.finance.claims > 0);
+});
+
+test("laws: funded by amount or share of income, monthly or yearly, with stronger effects", () => {
+  const a = town();
+  const b = town();
+  a.ordinances.education = true;
+  b.ordinances.education = true;
+  b.lawBudget.education = { mode: "amount", value: 2000, period: "month" };
+  assert.ok(lawStrength(b, "education") > lawStrength(a, "education"), "more money, more effect");
+  assert.ok(lawStrength(b, "education") <= 3, "capped at 3×");
+  assert.ok(stats(b).happy >= stats(a).happy);
+  assert.ok(monthlyUpkeep(b) > monthlyUpkeep(a), "monthly funding is charged monthly");
+  // Percent of income.
+  const p = town();
+  p.ordinances.recycling = true;
+  p.lawBudget.recycling = { mode: "percent", value: 10, period: "month" };
+  assert.ok(lawPayment(p, "recycling") > 0);
+  // Yearly: nothing monthly, one payment at year end.
+  const y = town();
+  y.ordinances.clinicFund = true;
+  y.lawBudget.clinicFund = { mode: "amount", value: 12_000, period: "year" };
+  const upkeepMonthly = monthlyUpkeep(y);
+  const base = town();
+  assert.equal(upkeepMonthly, monthlyUpkeep(base), "yearly laws add nothing to the monthly bill");
+  assert.ok(lawStrength(y, "clinicFund") > 0);
 });

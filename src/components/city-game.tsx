@@ -68,6 +68,7 @@ import {
   upgrade,
   type DisasterKind,
   type Ordinances,
+  type LawBudget,
   type Sim,
   type ZonePick,
 } from "@/game/sim";
@@ -787,6 +788,15 @@ export function CityGame() {
     pushToast(t("تم البناء: {n} مبنى", { n: act.built }));
   }
 
+  function onLawBudget(key: keyof Ordinances, patch: Partial<LawBudget>) {
+    const cur = simRef.current.lawBudget[key];
+    simRef.current.lawBudget = {
+      ...simRef.current.lawBudget,
+      [key]: { ...cur, ...patch, value: Math.max(0, patch.value ?? cur.value) },
+    };
+    sync();
+  }
+
   function onOrdinance(key: keyof Ordinances, value: boolean) {
     simRef.current.ordinances = { ...simRef.current.ordinances, [key]: value };
     sync();
@@ -992,6 +1002,7 @@ export function CityGame() {
         onEvent={onEvent}
         onModel={onModel}
         onOrdinance={onOrdinance}
+        onLawBudget={onLawBudget}
         onDisaster={onDisaster}
         onRandom={onRandom}
         onLuck={onLuck}

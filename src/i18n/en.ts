@@ -911,4 +911,19 @@ export const EN: Record<string, string> = {
   "+{n}/شهر لك": "+{n}/mo to you",
   "دخل الشهر = رسوم المعيشة {fees} + دخل المباني {buildings} د.ك":
     "Income = living fees {fees} + building income {buildings} KD",
+  "ترفع التعليم والرضا.": "Raises education and approval.",
+  "تقلل التلوث وترفع الرضا.": "Cuts pollution and raises approval.",
+  "تخفف الزحمة.": "Eases traffic.",
+  "ترفع الصحة.": "Raises health.",
+  "هواء أنظف، وتجارة المحلات تهدأ شوي.": "Cleaner air; shops trade a little less.",
+  "لكل قانون تحدد طريقة التمويل: مبلغ ثابت أو نسبة من دخل الشهر، ويُدفع شهرياً أو مرة في السنة. كلما زاد التمويل قوي أثر القانون، حتى ٣ أضعاف.":
+    "Set how each law is funded: a fixed amount or a share of monthly income, paid monthly or once a year. More funding makes the law stronger, up to 3×.",
+  مبلغ: "Amount",
+  نسبة: "Percent",
+  شهري: "Monthly",
+  سنوي: "Yearly",
+  "النسبة من دخل الشهر": "Share of monthly income",
+  "يكلف {amount} د.ك {per} · قوة الأثر {pct}٪": "Costs {amount} KD {per} · effect strength {pct}%",
+  شهرياً: "a month",
+  سنوياً: "a year",
 };

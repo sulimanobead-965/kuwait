@@ -54,6 +54,8 @@ export type Sim = {
   speed: 0 | 1 | 2 | 3;
   tax: number;
   ordinances: Ordinances;
+  /** How much each law is funded: a fixed amount or a share of income, monthly or yearly. */
+  lawBudget: LawBudgets;
   disaster: Disaster | null;
   randomDisasters: boolean;
   log: string[];
@@ -141,6 +143,20 @@ export type Ordinances = {
   clinicFund: boolean;
   smokeBan: boolean;
 };
+
+export type LawBudget = { mode: "amount" | "percent"; value: number; period: "month" | "year" };
+export type LawBudgets = Record<keyof Ordinances, LawBudget>;
+
+export function defaultLawBudgets(): LawBudgets {
+  const one = (value: number): LawBudget => ({ mode: "amount", value, period: "month" });
+  return {
+    education: one(20),
+    recycling: one(10),
+    carpool: one(6),
+    clinicFund: one(14),
+    smokeBan: one(8),
+  };
+}
 
 export type DisasterKind = "fire" | "storm" | "blackout" | "flood";
 
@@ -840,6 +856,7 @@ export function createInitial(): Sim {
     speed: 1,
     tax: 7,
     ordinances: emptyOrdinances(),
+    lawBudget: defaultLawBudgets(),
     disaster: null,
     randomDisasters: true,
     log: [],
@@ -883,6 +900,9 @@ export function cloneSim(s: Sim): Sim {
     roads: [...s.roads],
     buildings: s.buildings.map((b) => ({ ...b })),
     ordinances: { ...s.ordinances },
+    lawBudget: Object.fromEntries(
+      Object.entries(s.lawBudget).map(([k, v]) => [k, { ...v }]),
+    ) as LawBudgets,
     disaster: s.disaster ? { ...s.disaster } : null,
     event: s.event ? { ...s.event } : null,
     crisis: s.crisis ? { ...s.crisis } : null,
@@ -1086,8 +1106,8 @@ export function stats(s: Sim): CityStats {
   if (s.tax > 40) happy -= Math.min(24, Math.round((s.tax - 40) / 18));
   else if (s.tax > 8) happy -= Math.round((s.tax - 8) * 0.6);
   if (s.tax < 5) happy += 5;
-  if (s.ordinances.education) happy += 3;
-  if (s.ordinances.recycling) happy += 2;
+  happy += 3 * lawStrength(s, "education");
+  happy += 2 * lawStrength(s, "recycling");
   const hit = s.disaster && s.day < s.disaster.until ? s.disaster.kind : null;
   if (hit === "storm") happy -= 14;
   if (hit === "flood") happy -= 10;
@@ -1250,7 +1270,8 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
     v *= 1.1;
   if (d.needsPop > 0 && st.pop < d.needsPop) v *= 0.35;
   if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1);
-  if (s.ordinances.smokeBan && (b.kind === "shop" || b.kind === "tower")) v *= 0.9;
+  if (s.ordinances.smokeBan && (b.kind === "shop" || b.kind === "tower"))
+    v *= Math.max(0.6, 1 - 0.1 * lawStrength(s, "smokeBan"));
   const tax = 0.55 + (clamp(s.tax, 0, 300) / 100) * 1.2;
   return v * st.mult * tax;
 }
@@ -2030,18 +2051,18 @@ export function metrics(s: Sim, st = stats(s)): Sample {
   const unemployment =
     st.pop <= 0 ? 0 : clamp(((st.pop - jobs) / Math.max(st.pop, 1)) * 100, 0, 100);
   let pollution = industryN * 18 + towers * 7 - parks * 8;
-  if (s.ordinances.recycling) pollution -= 14;
-  if (s.ordinances.smokeBan) pollution -= 12;
+  pollution -= 14 * lawStrength(s, "recycling");
+  pollution -= 12 * lawStrength(s, "smokeBan");
   pollution = clamp(pollution, 0, 100);
   let traffic = clamp((s.buildings.length * 70) / Math.max(3, s.roads.length) - 20, 0, 100);
-  if (s.ordinances.carpool) traffic = clamp(traffic - 18, 0, 100);
+  traffic = clamp(traffic - 18 * lawStrength(s, "carpool"), 0, 100);
   const crime = clamp(62 - police * 16 - parks * 4 + Math.max(0, st.pop - 60) / 10, 0, 100);
   const health = clamp(
-    36 + clinics * 16 + water * 0.28 - pollution * 0.22 + (s.ordinances.clinicFund ? 12 : 0),
+    36 + clinics * 16 + water * 0.28 - pollution * 0.22 + 12 * lawStrength(s, "clinicFund"),
     0,
     100,
   );
-  const education = clamp(24 + (s.ordinances.education ? 42 : 0) + clinics * 5, 0, 100);
+  const education = clamp(24 + 42 * lawStrength(s, "education") + clinics * 5, 0, 100);
   const land = clamp(30 + parks * 8 + coast * 4 + st.happy * 0.2, 0, 100);
   return {
     day: s.day,
@@ -2097,6 +2118,50 @@ const UPKEEP: Partial<Record<Kind, number>> = {
   park: 2,
 };
 
+/** Pre-tax monthly income the "percent" mode is measured against. */
+let measuringLawBase = false;
+
+function lawIncomeBase(s: Sim) {
+  // Income itself depends on the laws' effects; measure it with the laws neutral.
+  measuringLawBase = true;
+  try {
+    return Math.max(0, monthlyIncome(s) + feeRevenue(s));
+  } finally {
+    measuringLawBase = false;
+  }
+}
+
+/** One payment of a law at its current setting (per month, or per year if yearly). */
+export function lawPayment(s: Sim, key: keyof Ordinances) {
+  const b = s.lawBudget[key];
+  return b.mode === "amount" ? b.value : (lawIncomeBase(s) * b.value) / 100;
+}
+
+/** Monthly equivalent of a law's spending. */
+export function lawMonthly(s: Sim, key: keyof Ordinances) {
+  if (!s.ordinances[key]) return 0;
+  const pay = lawPayment(s, key);
+  return s.lawBudget[key].period === "year" ? pay / 12 : pay;
+}
+
+/**
+ * How strong a law is: 1 = the normal effect when funded at its reference level
+ * (the old fixed price, scaled up with the city), more money gives more effect with
+ * diminishing returns, capped at 3×.
+ */
+export function lawStrength(s: Sim, key: keyof Ordinances) {
+  if (!s.ordinances[key] || measuringLawBase) return 0;
+  const reference = ORDINANCE_COST[key] * Math.max(1, stats0(s).residents / 10_000);
+  return Math.min(3, Math.sqrt(lawMonthly(s, key) / reference));
+}
+
+/** Residents without recursion into happiness (laws feed into stats). */
+function stats0(s: Sim) {
+  let pop = 0;
+  for (const b of s.buildings) pop += CATALOG[b.kind].pop * homesPerLevel(b.level) * 2;
+  return { residents: Math.round(pop * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1)) * RESIDENTS_PER_UNIT };
+}
+
 export const ORDINANCE_COST: Record<keyof Ordinances, number> = {
   education: 20,
   recycling: 10,
@@ -2111,7 +2176,7 @@ export function monthlyUpkeep(s: Sim) {
   // The municipality maintains a neighborhood's planned streets; yours cost a little.
   for (const k of s.roads) if (!roadIsSchematic(s.district, k)) n += 0.3;
   for (const key of Object.keys(ORDINANCE_COST) as (keyof Ordinances)[])
-    if (s.ordinances[key]) n += ORDINANCE_COST[key];
+    if (s.ordinances[key] && s.lawBudget[key].period === "month") n += lawPayment(s, key);
   if (consulting(s)) n *= 0.85;
   // Civil defense during a regional war.
   if (crisisOf(s) === "war") n += 40 + s.buildings.length * 2;
@@ -2229,6 +2294,13 @@ export function advanceDays(s: Sim, days: number) {
 }
 
 function closeYear(s: Sim) {
+  // Yearly-funded laws are paid in one go at the end of the year.
+  for (const key of Object.keys(ORDINANCE_COST) as (keyof Ordinances)[])
+    if (s.ordinances[key] && s.lawBudget[key].period === "year") {
+      const pay = lawPayment(s, key);
+      s.coins -= pay;
+      s.ytd.spend += pay;
+    }
   const st = stats(s);
   const year = new Date(EPOCH + Math.floor(s.day) * 86400000).getUTCFullYear() - 1;
   s.years.push({
@@ -2513,6 +2585,17 @@ export function loadSim(district?: DistrictId | null): Sim {
         smokeBan: Boolean(o.smokeBan),
       };
     }
+    const lb = p.lawBudget;
+    if (lb && typeof lb === "object")
+      for (const key of Object.keys(s.lawBudget) as (keyof Ordinances)[]) {
+        const v = (lb as Partial<LawBudgets>)[key];
+        if (!v || typeof v !== "object") continue;
+        s.lawBudget[key] = {
+          mode: v.mode === "percent" ? "percent" : "amount",
+          value: Math.max(0, Number(v.value) || 0),
+          period: v.period === "year" ? "year" : "month",
+        };
+      }
     const d = p.disaster;
     if (
       d &&
@@ -2606,6 +2689,7 @@ export function saveSim(s: Sim) {
     speed: s.speed,
     tax: s.tax,
     ordinances: s.ordinances,
+    lawBudget: s.lawBudget,
     disaster: s.disaster,
     randomDisasters: s.randomDisasters,
     log: s.log.slice(0, 8),

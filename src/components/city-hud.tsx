@@ -89,6 +89,9 @@ import {
   type ModelKind,
   type DisasterKind,
   type Ordinances,
+  type LawBudget,
+  lawPayment,
+  lawStrength,
   type Sample,
   type Sim,
   type ZonePick,
@@ -137,12 +140,105 @@ const SERIES: { key: GraphKey; label: string; token: string }[] = [
 ];
 
 const LAWS: { key: keyof Ordinances; title: string; detail: string }[] = [
-  { key: "education", title: "ميزانية التعليم", detail: "ترفع التعليم والرضا. ٢٠ د.ك كل شهر." },
-  { key: "recycling", title: "إعادة التدوير", detail: "تقلل التلوث. ١٠ د.ك كل شهر." },
-  { key: "carpool", title: "مشاركة السيارات", detail: "تخفف الزحمة. ٦ د.ك كل شهر." },
-  { key: "clinicFund", title: "دعم المستوصفات", detail: "ترفع الصحة. ١٤ د.ك كل شهر." },
-  { key: "smokeBan", title: "منع الدخان", detail: "هواء أنظف، وتجارة المحلات تهدأ شوي. ٨ د.ك." },
+  { key: "education", title: "ميزانية التعليم", detail: "ترفع التعليم والرضا." },
+  { key: "recycling", title: "إعادة التدوير", detail: "تقلل التلوث وترفع الرضا." },
+  { key: "carpool", title: "مشاركة السيارات", detail: "تخفف الزحمة." },
+  { key: "clinicFund", title: "دعم المستوصفات", detail: "ترفع الصحة." },
+  { key: "smokeBan", title: "منع الدخان", detail: "هواء أنظف، وتجارة المحلات تهدأ شوي." },
 ];
+
+function Laws({
+  snap,
+  onOrdinance,
+  onLawBudget,
+}: {
+  snap: Sim;
+  onOrdinance: (key: keyof Ordinances, value: boolean) => void;
+  onLawBudget: (key: keyof Ordinances, patch: Partial<LawBudget>) => void;
+}) {
+  return (
+    <div className="space-y-2" dir={dirOf()}>
+      <p className="text-xs leading-relaxed">
+        {t(
+          "لكل قانون تحدد طريقة التمويل: مبلغ ثابت أو نسبة من دخل الشهر، ويُدفع شهرياً أو مرة في السنة. كلما زاد التمويل قوي أثر القانون، حتى ٣ أضعاف.",
+        )}
+      </p>
+      <ul className="space-y-2">
+        {LAWS.map((law) => {
+          const on = snap.ordinances[law.key];
+          const b = snap.lawBudget[law.key];
+          const strength = lawStrength(snap, law.key);
+          return (
+            <li
+              key={law.key}
+              data-testid={`law-${law.key}`}
+              className={`rounded-md border-2 p-2 ${on ? "border-sc-ink bg-sc-gold/40" : "border-sc-ink/30 bg-sc-mint"} text-sc-ink`}
+            >
+              <button
+                type="button"
+                aria-pressed={on}
+                onClick={() => onOrdinance(law.key, !on)}
+                className="flex w-full items-center gap-2 text-start"
+              >
+                <span className="grid h-6 w-6 place-items-center rounded border-2 border-sc-ink bg-white">
+                  {on ? <Check size={16} /> : null}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-extrabold">{t(law.title)}</span>
+                  <span className="block text-xs opacity-80">{t(law.detail)}</span>
+                </span>
+              </button>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <div className="flex gap-1">
+                  {(["amount", "percent"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={b.mode === mode}
+                      onClick={() => onLawBudget(law.key, { mode })}
+                      className={`sc-menu h-8 flex-1 px-1 text-[11px] ${b.mode === mode ? "sc-on" : ""}`}
+                    >
+                      {mode === "amount" ? t("مبلغ") : t("نسبة")}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  {(["month", "year"] as const).map((period) => (
+                    <button
+                      key={period}
+                      type="button"
+                      aria-pressed={b.period === period}
+                      onClick={() => onLawBudget(law.key, { period })}
+                      className={`sc-menu h-8 flex-1 px-1 text-[11px] ${b.period === period ? "sc-on" : ""}`}
+                    >
+                      {period === "month" ? t("شهري") : t("سنوي")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-1">
+                <NumberField
+                  label={b.mode === "amount" ? t("المبلغ") : t("النسبة من دخل الشهر")}
+                  value={b.value}
+                  onChange={(v) => onLawBudget(law.key, { value: v })}
+                  suffix={b.mode === "amount" ? currency() : percentSign()}
+                  testid={`law-${law.key}-value`}
+                />
+              </div>
+              <p className="mt-1 text-[11px] font-extrabold">
+                {t("يكلف {amount} د.ك {per} · قوة الأثر {pct}٪", {
+                  amount: fmt(lawPayment(snap, law.key)),
+                  per: b.period === "month" ? t("شهرياً") : t("سنوياً"),
+                  pct: Math.round(strength * 100),
+                })}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 function fmt(n: number) {
   return Math.floor(n).toLocaleString("en-US");
@@ -206,6 +302,7 @@ export function CityHud({
   onEvent,
   onModel,
   onOrdinance,
+  onLawBudget,
   onDisaster,
   onRandom,
   onLuck,
@@ -279,6 +376,7 @@ export function CityHud({
   onEvent: (kind: EventKind) => void;
   onModel: (kind: ModelKind) => void;
   onOrdinance: (key: keyof Ordinances, value: boolean) => void;
+  onLawBudget: (key: keyof Ordinances, patch: Partial<LawBudget>) => void;
   onDisaster: (kind: DisasterKind) => void;
   onRandom: (value: boolean) => void;
   onLuck: () => void;
@@ -579,31 +677,7 @@ export function CityHud({
                   />
                 )}
                 {panel === "laws" && (
-                  <ul className="space-y-2">
-                    {LAWS.map((law) => {
-                      const on = snap.ordinances[law.key];
-                      return (
-                        <li key={law.key}>
-                          <button
-                            type="button"
-                            aria-pressed={on}
-                            onClick={() => onOrdinance(law.key, !on)}
-                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-start ${on ? "sc-on sc-choice" : "sc-choice"}`}
-                          >
-                            <span className="grid h-6 w-6 place-items-center">
-                              {on ? <Check size={16} /> : null}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm">{t(law.title)}</span>
-                              <span className="block text-xs font-medium opacity-80">
-                                {t(law.detail)}
-                              </span>
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <Laws snap={snap} onOrdinance={onOrdinance} onLawBudget={onLawBudget} />
                 )}
                 {panel === "advisors" && <Advisors snap={snap} />}
                 {panel === "disasters" && (
