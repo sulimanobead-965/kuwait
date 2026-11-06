@@ -158,6 +158,23 @@ namespace KuwaitCity.Tests
         private static int parcelC(string id)=>CityDistricts.Get(id).Parcels[0].C;
         private static int parcelR(string id)=>CityDistricts.Get(id).Parcels[0].R;
         private static int MainC(string id)=>CityDistricts.Main(id,20)[0];
+        [Test] public void PaintOnlyMarksRoadInteriorsAndGivesApproachStops()
+        {
+            var roads=new HashSet<string>{"22,21","23,21","24,21","25,21","26,21","27,21","25,18","25,20","25,22","25,23"};
+            Assert.AreEqual(0,RoadPaintLayout.At(roads,25,21).Count);
+            var dash=RoadPaintLayout.At(roads,23,21).Single();Assert.AreEqual(RoadPaintKind.Dash,dash.Kind);
+            var approaching=RoadPaintLayout.At(roads,26,21);Assert.IsTrue(approaching.Any(mark=>mark.Kind==RoadPaintKind.Stop&&mark.DC==-1&&mark.DR==0));
+            Assert.IsFalse(RoadPaintLayout.At(roads,25,21).Any(mark=>mark.Kind==RoadPaintKind.Dash));
+            foreach(string id in CityDistricts.Ids)
+            {
+                var district=CityDistricts.Get(id);Assert.IsTrue(district.Roads.Any(key=>{CityLand.TryCell(key,out var c,out var r);return RoadPaintLayout.At(district.Roads,c,r).Count>0;}));
+                foreach(string key in district.Roads)
+                {
+                    CityLand.TryCell(key,out var c,out var r);Assert.IsFalse(district.Land.Contains(key));
+                    foreach(var mark in RoadPaintLayout.At(district.Roads,c,r))Assert.AreEqual(c,mark.C);
+                }
+            }
+        }
         [Test] public void AutomaticPlanningStaysWithinTheSelectedParcel()
         {
             var city=new CitySimulation(CityDistricts.NewCity("yarmouk"));var parcel=CityDistricts.Get("yarmouk").Parcels[0];

@@ -7,6 +7,7 @@ import {
   type District,
   type DistrictId,
 } from "@/game/districts";
+import { roadMarkingsAt } from "@/game/three/road-markings";
 
 const arabicNumber = (n: number) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!);
 const point = (c: number, r: number) => `${(c - 27) * 6},${(r - 17) * 6}`;
@@ -41,6 +42,16 @@ export function DistrictDiagram({
       {[...roads].map((key) => {
         const [c, r] = key.split(",").map(Number);
         return <path key={key} d={`M ${point(c!, r!)} h 6 v 6 h -6 Z`} fill="#3c494b" />;
+      })}
+      {[...roads].flatMap((key) => {
+        const [c, r] = key.split(",").map(Number);
+        return roadMarkingsAt(roads, c!, r!).map((mark, index) => {
+          const x = (c! - 27) * 6 + 3, y = (r! - 17) * 6 + 3;
+          if (!labeled) return null; // Small HUD maps remain clean; game asphalt keeps paint.
+          const length = mark.type === "dash" ? 1.62 : 1.86;
+          const dx = mark.axis === "x" ? length / 2 : 0.2, dy = mark.axis === "z" ? length / 2 : 0.2;
+          return <line key={`mark:${key}:${index}`} x1={x + (mark.type === "stop" ? mark.dc * 2.1 : 0) - dx} y1={y + (mark.type === "stop" ? mark.dr * 2.1 : 0) - dy} x2={x + (mark.type === "stop" ? mark.dc * 2.1 : 0) + dx} y2={y + (mark.type === "stop" ? mark.dr * 2.1 : 0) + dy} stroke="#e3d8ba" strokeWidth="0.4" strokeLinecap="butt" />;
+        });
       })}
       {district.sectors.map((sector) => (
         <text

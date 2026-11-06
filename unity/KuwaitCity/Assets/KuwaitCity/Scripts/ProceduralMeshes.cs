@@ -4,6 +4,34 @@ using UnityEngine;
 namespace KuwaitCity
 {
     /** Real solid geometry with flat face normals, never a sprite plane. */
+
+    /** Flat, fully batched lane paint. No tile-outline or perimeter-curb geometry. */
+    public enum RoadPaintKind { Dash, Stop }
+    public readonly struct RoadPaint
+    {
+        public readonly RoadPaintKind Kind;public readonly int C,R,DC,DR;
+        public RoadPaint(RoadPaintKind kind,int c,int r,int dc=0,int dr=0){Kind=kind;C=c;R=r;DC=dc;DR=dr;}
+    }
+    public static class RoadPaintLayout
+    {
+        private static readonly int[] D={1,0,0,1,-1,0,0,-1};
+        private static bool HasCell(IReadOnlyCollection<string> roads,int c,int r)=>CityLand.IsLand(c,r)&&roads.Contains(CityLand.Key(c,r));
+        public static List<RoadPaint> At(IReadOnlyCollection<string> roads,int c,int r)
+        {
+            var paint=new List<RoadPaint>();if(!HasCell(roads,c,r))return paint;
+            bool left=HasCell(roads,c-1,r),right=HasCell(roads,c+1,r),up=HasCell(roads,c,r-1),down=HasCell(roads,c,r+1);
+            int neighbors=(left?1:0)+(right?1:0)+(up?1:0)+(down?1:0);if(neighbors>=3)return paint;
+            if((left&&right)!=(up&&down)&&(c+r)%2==0)paint.Add(new RoadPaint(RoadPaintKind.Dash,c,r));
+            for(int i=0;i<D.Length;i+=2)
+            {
+                int dc=D[i],dr=D[i+1];if(!HasCell(roads,c+dc,r+dr))continue;
+                int nextDegree=(HasCell(roads,c+dc-1,r+dr)?1:0)+(HasCell(roads,c+dc+1,r+dr)?1:0)+(HasCell(roads,c+dc,r+dr-1)?1:0)+(HasCell(roads,c+dc,r+dr+1)?1:0);
+                if(nextDegree>=3)paint.Add(new RoadPaint(RoadPaintKind.Stop,c,r,dc,dr));
+            }
+            return paint;
+        }
+    }
+
     public static class Primitive
     {
         private static readonly Vector3[][] CubeFaces = {

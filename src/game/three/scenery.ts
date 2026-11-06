@@ -5,6 +5,7 @@ import { CELL_SIZE, LAND_HEIGHT, cellWorld } from "./camera.ts";
 import { PALETTE as P } from "./palette.ts";
 import { isDistrictLand } from "../districts.ts";
 import { roadIsSchematic, type Sim } from "../sim.ts";
+import { roadMarkingsAt } from "./road-markings.ts";
 
 function tint(geo: THREE.BufferGeometry, color: string) {
   const c = new THREE.Color(color);
@@ -164,13 +165,22 @@ export function createGrid(
 }
 export function createRoads(roadKeys: string[]) {
   const asphalt: THREE.BufferGeometry[] = [];
+  const markings: THREE.BufferGeometry[] = [];
   const lights: THREE.BufferGeometry[] = [];
   const roads = new Set(roadKeys);
-  for (const key of roadKeys) {
+  for (const key of [...roadKeys].sort()) {
     const [c, r] = key.split(",").map(Number);
     const { x, z } = cellWorld(c!, r!);
-    // Continuous plain asphalt: no pale paving surround, no border markings.
+    // Continuous charcoal asphalt: interior paint only, never perimeter curbs/borders.
     box(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
+    for (const mark of roadMarkingsAt(roads, c!, r!)) {
+      const along = mark.axis === "x";
+      const xShift = mark.type === "stop" ? mark.dc * CELL_SIZE * 0.35 : 0;
+      const zShift = mark.type === "stop" ? mark.dr * CELL_SIZE * 0.35 : 0;
+      const length = mark.type === "dash" ? CELL_SIZE * 0.27 : CELL_SIZE * 0.31;
+      box(markings, x + xShift, LAND_HEIGHT + 0.016, z + zShift,
+        along ? length : 0.052, 0.005, along ? 0.052 : length, "#e3d8ba");
+    }
     const horizontal = roads.has(`${c + 1},${r}`) || roads.has(`${c - 1},${r}`);
     const vertical = roads.has(`${c},${r - 1}`) || roads.has(`${c},${r + 1}`);
     if ((c! + r!) % 4 === 0 && (horizontal || vertical)) {
@@ -202,7 +212,7 @@ export function createRoads(roadKeys: string[]) {
     }
   }
   const details = new THREE.BoxGeometry(0, 0, 0);
-  return { asphalt: merge(asphalt), details, lights: merge(lights) };
+  return { asphalt: merge(asphalt), markings: merge(markings), details, lights: merge(lights) };
 }
 
 export function palmGeometry() {

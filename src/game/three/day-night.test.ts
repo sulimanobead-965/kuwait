@@ -54,7 +54,7 @@ import { LAND_HEIGHT } from "./camera.ts";
 
 test("empty roads and lanes merge into valid 3D geometry", () => {
   const roads = createRoads([]);
-  for (const geometry of [roads.asphalt, roads.details, roads.lights]) {
+  for (const geometry of [roads.asphalt, roads.markings, roads.details, roads.lights]) {
     assert.ok(geometry.index);
     assert.ok(geometry.attributes.position);
     geometry.dispose();
@@ -131,7 +131,7 @@ test("the villa's center is a real open courtyard", () => {
   }
 });
 
-test("roads are continuous plain asphalt without pale lot borders or markings", () => {
+test("roads keep interior paint separate from charcoal asphalt, with no pale borders", () => {
   const r = 28,
     c = 20;
   const roads = createRoads([`${c},${r}`, `${c + 1},${r}`, `${c},${r + 1}`]);
@@ -150,9 +150,10 @@ test("roads are continuous plain asphalt without pale lot borders or markings", 
     const y = positions.getY(i);
     assert.ok(y >= LAND_HEIGHT - 0.006, "road foundation intersects land by at most 3mm");
   }
+  assert.ok(roads.markings.getAttribute("position").count > 0, "real interior road paint is batched");
   assert.equal(positions.count, 120, "three complete asphalt cubes and one two-part streetlamp");
   assert.equal(roads.lights.getAttribute("position").count, 24);
-  for (const geometry of [roads.asphalt, roads.details, roads.lights]) geometry.dispose();
+  for (const geometry of [roads.asphalt, roads.markings, roads.details, roads.lights]) geometry.dispose();
   const open = createGrid(new Set(["20,28"]));
   assert.equal(
     open.geometry.getAttribute("position").count,

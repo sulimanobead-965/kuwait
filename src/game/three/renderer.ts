@@ -541,7 +541,7 @@ export class CityWorld {
       const roads = createRoads(sim.roads);
       this.roadMesh = new THREE.Mesh(roads.asphalt, this.materials.opaque);
       this.roadMesh.receiveShadow = true;
-      this.roadDetail = new THREE.Mesh(roads.details, this.materials.opaque);
+      this.roadDetail = new THREE.Mesh(roads.markings, this.materials.opaque);
       this.roadDetail.receiveShadow = true;
       this.roadLights = new THREE.Mesh(roads.lights, this.materials.lamps);
       this.scene.add(this.roadMesh, this.roadDetail, this.roadLights);

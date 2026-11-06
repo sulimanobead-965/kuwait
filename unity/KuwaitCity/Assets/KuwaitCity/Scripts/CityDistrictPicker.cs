@@ -29,7 +29,7 @@ namespace KuwaitCity
                 string id=CityDistricts.Ids[i];var button=Button(choice,CityDistricts.ArabicName(id),()=>Select(id),-143+i*143,0,137,40);options.Add(button.GetComponent<Image>());
             }
             var card=Panel(overlay,new Color(.07f,.20f,.24f));card.anchoredPosition=new Vector2(0,-19);card.sizeDelta=new Vector2(350,244);
-            diagram=Panel(card,Color.clear);diagram.anchoredPosition=Vector2.zero;diagram.sizeDelta=new Vector2(210,176);
+            diagram=Panel(card,Color.clear);diagram.anchoredPosition=new Vector2(-97,-78);diagram.sizeDelta=new Vector2(210,176);
             explanation=Label(overlay,"",20,0,-157,900,38);
             Button(overlay,"دخول الحي",Confirm,153,-217,230,45);
             legacy=Button(overlay,"",Legacy,-153,-217,230,45);legacyCaption=legacy.GetComponentInChildren<Text>();legacyCaption.fontSize=18;
@@ -52,15 +52,23 @@ namespace KuwaitCity
             for(int r=18;r<=30;r++)for(int c=29;c<=43;c++)
             {
                 if(!CityLand.IsLand(c,r))continue;
+                foreach(var mark in RoadPaintLayout.At(d.Roads,c,r))AddPreviewPaint(mark);
                 int sector=d.Sector(c,r);bool road=d.Roads.Contains(CityLand.Key(c,r));
                 Color color=road?new Color(.18f,.22f,.23f):sector==0?new Color(.31f,.39f,.34f):new Color(.72f,.66f,.49f);
-                var image=Panel(diagram,color);image.GetComponent<Image>().raycastTarget=false;image.pivot=image.anchorMin=image.anchorMax=Vector2.zero;image.anchoredPosition=new Vector2((c-29)*13+7,(r-18)*13+7);image.sizeDelta=new Vector2(12,12);
+                var image=Panel(diagram,color);image.GetComponent<Image>().raycastTarget=false;image.pivot=image.anchorMin=image.anchorMax=Vector2.zero;image.anchoredPosition=new Vector2((c-29)*13+7,(18-r)*13+7);image.sizeDelta=new Vector2(12,12);
                 var parcel=d.ParcelAt(c,r);
                 if(parcel!=null&&parcel.C==c&&parcel.R==r)
                 {
                     var number=Label(image,CityDistricts.Number(sector),16,0,0,12,12);number.rectTransform.anchorMin=number.rectTransform.anchorMax=new Vector2(.5f,.5f);number.rectTransform.offsetMin=number.rectTransform.offsetMax=Vector2.zero;
                 }
             }
+        }
+        private void AddPreviewPaint(RoadPaint mark)
+        {
+            var markPanel=Panel(diagram,new Color(.89f,.84f,.73f));markPanel.GetComponent<Image>().raycastTarget=false;
+            markPanel.pivot=markPanel.anchorMin=markPanel.anchorMax=Vector2.zero;
+            markPanel.anchoredPosition=new Vector2((mark.C-29)*13+7.5f+mark.DC*4.55f,(18-mark.R)*13+7.5f+mark.DR*4.55f);
+            markPanel.sizeDelta=new Vector3(.55f,1.05f,0)+new Vector3(mark.Kind==RoadPaintKind.Dash?3.5f:0,mark.Kind==RoadPaintKind.Dash?0:2.8f,0);
         }
         public void Show()
         {

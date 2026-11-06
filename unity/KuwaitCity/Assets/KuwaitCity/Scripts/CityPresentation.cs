@@ -70,14 +70,16 @@ namespace KuwaitCity
             }
             roadRoot=new GameObject("Merged road network").transform;roadRoot.SetParent(transform,false);
 
-            var asphalt=new List<CombineInstance>();
+            var asphalt=new List<CombineInstance>();var markings=new List<CombineInstance>();
             foreach(var cell in roads)
             {
                 if(!CityLand.TryCell(cell,out var c,out var r))continue;
                 var at=CityLand.World(c,r);
                 // Uninterrupted charcoal asphalt, with neither a pale paving
-                // underlay nor a bright border around each individual tile.
+                // underlay nor a bright perimeter border. All paint is interior only.
                 Box(asphalt,at+new Vector3(0,.306f,0),new Vector3(CityLand.CellSize,.016f,CityLand.CellSize));
+                foreach(var mark in RoadPaintLayout.At(roads,c,r))
+                    Box(markings,at+new Vector3(mark.DC*CityLand.CellSize*.35f,.324f,mark.DR*CityLand.CellSize*.35f),new Vector3(mark.Kind==RoadPaintKind.Dash?CityLand.CellSize*.27f:.052f,.005f,mark.Kind==RoadPaintKind.Dash?.052f:CityLand.CellSize*.27f));
                 bool horizontal=roads.Contains(CityLand.Key(c+1,r))||roads.Contains(CityLand.Key(c-1,r));
                 bool vertical=roads.Contains(CityLand.Key(c,r-1))||roads.Contains(CityLand.Key(c,r+1));
                 if((c+r)%4==0&&(horizontal||vertical))
@@ -90,6 +92,8 @@ namespace KuwaitCity
                 if((c*7+r*13)%6==0)if(palmBatch!=null)palmBatch.Add(at+new Vector3(.79f,.02f,.77f),Quaternion.identity,Vector3.one);
             }
             Merge("Roads / asphalt",palette.asphalt,asphalt,roadRoot);
+            var paintMesh=Merge("Roads / batched interior paint",palette.roadMark,markings,roadRoot);
+            if(paintMesh!=null)roadMeshes.Add(paintMesh);
             if(vehicleBatch!=null)
             {
                 vehicleBatch.Clear();int i=0;
@@ -104,14 +108,14 @@ namespace KuwaitCity
         }
         private static void Box(List<CombineInstance> parts,Vector3 at,Vector3 scale)
         {parts.Add(new CombineInstance{mesh=Primitive.Cube(),transform=Matrix4x4.TRS(at,Quaternion.identity,scale)});}
-        private void Merge(string label,Material material,List<CombineInstance> parts,Transform root)
+        private Mesh Merge(string label,Material material,List<CombineInstance> parts,Transform root)
         {
-            if(parts.Count==0)return;
+            if(parts.Count==0)return null;
             var mesh=new Mesh{name=label,indexFormat=IndexFormat.UInt32};mesh.CombineMeshes(parts.ToArray(),true,true);mesh.RecalculateNormals();mesh.RecalculateBounds();
             foreach(var part in parts)UnityEngine.Object.Destroy(part.mesh);
             var node=new GameObject(label);node.transform.SetParent(root==null?transform:root,false);node.isStatic=true;
             node.AddComponent<MeshFilter>().sharedMesh=mesh;var renderer=node.AddComponent<MeshRenderer>();renderer.sharedMaterial=material;renderer.receiveShadows=true;
-            generated.Add(mesh);childNodes.Add(node);if(root!=null)roadMeshes.Add(mesh);
+            generated.Add(mesh);childNodes.Add(node);return mesh;
         }
         public void DisposeChildren()
         {
