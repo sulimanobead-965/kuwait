@@ -224,15 +224,15 @@ export function CostSliders({
   return (
     <div className="space-y-2">
       <p className="flex items-center justify-between text-sm font-extrabold">
-        <span>{t("مصاريف المعيشة")}</span>
+        <span>{t("رسوم المعيشة · دخل لك")}</span>
         <span className={index > 115 ? "text-coral" : ""}>
           {t("مؤشر الغلاء {n}", { n: index })}
         </span>
       </p>
       <p className="text-xs leading-relaxed opacity-80">
         {t(
-          "ما يدفعه الساكن شهرياً، بأي نسبة تريدها (حتى {max}٪). الرفع المعقول يزيد دخل الصندوق، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.",
-          { max: fmt(COST_MAX) },
+          "رسوم يدفعها السكان لصندوقك كل شهر، وهي محسوبة في «دخل الشهر» أعلى اللوحة (مجموعها الآن {total} د.ك). تحدد نسبتها بحرية حتى {max}٪: الرفع المعقول يزيد دخلك، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.",
+          { max: fmt(COST_MAX), total: fmt(rev.total) },
         )}
       </p>
       {COST_KEYS.map((key) => {
@@ -242,7 +242,7 @@ export function CostSliders({
           <div key={key} className="text-xs font-extrabold">
             <span className="flex justify-between">
               <span>{t(COST_ITEMS[key].name)}</span>
-              <span dir="ltr">{t("+{n}/شهر", { n: fmt(rev.rows[key]) })}</span>
+              <span dir="ltr">{t("+{n}/شهر لك", { n: fmt(rev.rows[key]) })}</span>
             </span>
             <span className="mt-0.5 flex items-center gap-1" dir="ltr">
               <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v / 2)}>

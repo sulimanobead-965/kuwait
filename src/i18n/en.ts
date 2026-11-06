@@ -663,8 +663,8 @@ export const EN: Record<string, string> = {
   "خذ تمويل {amount} د.ك بربح {rate}٪": "Take {amount} KD financing at {rate}% markup",
   "مصاريف المعيشة": "Cost of living",
   "مؤشر الغلاء {n}": "Price index {n}",
-  "ما يدفعه الساكن شهرياً، بأي نسبة تريدها (حتى {max}٪). الرفع المعقول يزيد دخل الصندوق، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.":
-    "What each resident pays monthly, at any level you like (up to {max}%). A sensible rise brings in more money, but approval falls and people leave; above about 400% people stop paying and income drops.",
+  "رسوم يدفعها السكان لصندوقك كل شهر، وهي محسوبة في «دخل الشهر» أعلى اللوحة (مجموعها الآن {total} د.ك). تحدد نسبتها بحرية حتى {max}٪: الرفع المعقول يزيد دخلك، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.":
+    "Fees residents pay into your treasury every month; they are already counted in \"Income\" at the top (now {total} KD in total). Set any rate up to {max}%: sensible raises increase your income, but approval drops and people leave, and above roughly 400% people stop paying so income falls.",
   "+{n}/شهر": "+{n}/mo",
   "زيادة سنوية تلقائية": "Automatic yearly raise",
   ثابتة: "Frozen",
@@ -907,4 +907,8 @@ export const EN: Record<string, string> = {
   "اختر أي مبلغ وأي فائدة، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.":
     "Choose any amount and any rate, from 0% upward; the bank always agrees, with no ceiling. Installments are taken monthly.",
   "الدين الحالي {debt} د.ك.": "Current debt: {debt} KD.",
+  "رسوم المعيشة · دخل لك": "Living fees · your income",
+  "+{n}/شهر لك": "+{n}/mo to you",
+  "دخل الشهر = رسوم المعيشة {fees} + دخل المباني {buildings} د.ك":
+    "Income = living fees {fees} + building income {buildings} KD",
 };

@@ -1130,6 +1130,12 @@ function Budget({
           </span>
         </div>
       </div>
+      <p className="text-xs" data-testid="income-breakdown">
+        {t("دخل الشهر = رسوم المعيشة {fees} + دخل المباني {buildings} د.ك", {
+          fees: fmt(feeRevenue(snap, st)),
+          buildings: fmt(monthlyIncome(snap)),
+        })}
+      </p>
       <label className="block text-sm font-extrabold">
         {t("الضريبة {n}%", { n: snap.tax })}
         <span className="block text-xs font-medium opacity-80">
