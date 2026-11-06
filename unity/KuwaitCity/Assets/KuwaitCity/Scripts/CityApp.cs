@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -8,7 +9,6 @@ namespace KuwaitCity
     [DefaultExecutionOrder(20)]
     public sealed class CityApp : MonoBehaviour
     {
-        private const string SaveKey="omdat-kuwait-unity-v1";
         [SerializeField] private TextAsset maskFromScene;
         private CityPalette palette;
         public CitySimulation Model {get;private set;}
@@ -24,13 +24,20 @@ namespace KuwaitCity
         private IReadOnlyList<BuildingRecord> drawnBuildings;
         private string roadFingerprint,buildingFingerprint;
         private float lastSave,lastUi,lastLod;
-        private string savedAtExit;
         private bool initialized,presentingDemo;
         public BuildTool SelectedTool {get;private set;}=BuildTool.Select;
         public int ChosenBuilding {get;private set;}
         public string SelectedId {get;private set;}
         private CityResetDialog createCityConfirm;
-        private bool loadedSave;
+        private CitySessionStore sessions;
+        private CityDistrictPicker districtPicker;
+        private CitySectorLabels sectorLabels;
+        private Font labelFont;
+        private CityHud hud;
+        private bool restoredSave,legacySaveBlocked;
+        private int speedBeforeDistrictSelection=1;
+        public bool DistrictSelectionVisible=>districtPicker!=null&&districtPicker.Visible;
+        public bool HasLegacySave=>sessions!=null&&sessions.HasLegacy;
 
         public void InitializeGame(CityPalette cityPalette,TextAsset mask)
         {
@@ -38,7 +45,7 @@ namespace KuwaitCity
             initialized=true;
             palette=cityPalette;
             CityLand.Initialize(mask==null?maskFromScene:mask);
-            Model=new CitySimulation();
+            Model=new CitySimulation();sessions=new CitySessionStore();
             var cameraObject=new GameObject("Main Camera",typeof(Camera),typeof(AudioListener));cameraObject.transform.SetParent(transform,false);cameraObject.tag="MainCamera";
             cameraControls=new GameObject("Smooth Orthographic City Camera",typeof(CityCamera)).GetComponent<CityCamera>();cameraControls.transform.SetParent(transform,false);
             cameraControls.Configure(cameraObject.GetComponent<Camera>(),null,null);
@@ -50,18 +57,22 @@ namespace KuwaitCity
             palmBatch=new GameObject("Palm GPU instancing",typeof(InstanceBatch)).GetComponent<InstanceBatch>();palmBatch.transform.SetParent(transform,false);palmBatch.Configure(CityMeshes.Palm(),palette.PalmMaterial);
             vehicleBatch=new GameObject("Traffic GPU instancing",typeof(InstanceBatch)).GetComponent<InstanceBatch>();vehicleBatch.transform.SetParent(transform,false);vehicleBatch.Configure(Primitive.Cube(),palette.VehicleMaterial);
             var ui=new GameObject("Arabic game interface",typeof(CityHud));ui.transform.SetParent(transform,false);
-            ui.GetComponent<CityHud>().Configure(this,cameraControls,time);
+            hud=ui.GetComponent<CityHud>();hud.Configure(this,cameraControls,time);
             createCityConfirm=new GameObject("Reset confirmation",typeof(CityResetDialog)).GetComponent<CityResetDialog>();createCityConfirm.transform.SetParent(ui.transform,false);
-            createCityConfirm.Configure(NewGame);
+            createCityConfirm.Configure(ResetCity);
+            labelFont=hud.Font;
+            sectorLabels=new GameObject("Numbered neighborhood sectors",typeof(CitySectorLabels)).GetComponent<CitySectorLabels>();sectorLabels.transform.SetParent(transform,false);
+            districtPicker=new GameObject("Neighborhood selection",typeof(CityDistrictPicker)).GetComponent<CityDistrictPicker>();districtPicker.transform.SetParent(transform,false);districtPicker.Configure(this,hud);
             cameraControls.Interacted+=OnCell;
             cameraControls.MainCamera.orthographic = true;
-            if(PlayerPrefs.HasKey(SaveKey))
-            {
-                if(Model.DecodeAndRestore(PlayerPrefs.GetString(SaveKey),out var restore)){Message=restore;loadedSave=true;}
-                else Message="الحفظ غير مقروء؛ مدينتك لم تُحذف. ابدأ أرضًا جديدة أو استرد نسخة يدويًا.";
-            }
+            try { restoredSave=sessions.RestoreInitial(Model,out var restore);Message=restore; }
+            catch(Exception error)when(error is ArgumentException||error is InvalidOperationException)
+            { legacySaveBlocked=true;Message="تعذّرت قراءة الحفظ؛ لم أحذف الملف القديم أو أستبدله.";Debug.LogWarning(error.Message); }
+            if(Model.State.Started&&Model.Buildings.Count==0)Model.SetSpeed(0);
+            RefreshSectorLabels();
             Sync();
-            if(Model.State.Started && Model.Buildings.Count>0)cameraControls.Focus(CityLand.World(Model.Buildings[0].C,Model.Buildings[0].R));
+            if(Model.State.Started && Model.Buildings.Count>0&&!CityDistricts.Valid(Model.State.District))cameraControls.Focus(CityLand.World(Model.Buildings[0].C,Model.Buildings[0].R));
+            FocusDistrict();
         }
         private void Awake()
         {
@@ -70,7 +81,7 @@ namespace KuwaitCity
         }
         private void OnCell(Vector2Int cell)
         {
-            if(!Model.State.Started||presentingDemo)return;
+            if(!Model.State.Started||presentingDemo||DistrictSelectionVisible)return;
             switch(SelectedTool)
             {
                 case BuildTool.Road: Model.PlaceRoad(cell.x,cell.y,out var road); Message=road;break;
@@ -82,53 +93,84 @@ namespace KuwaitCity
             }
             Sync();
         }
-        public void SetTool(BuildTool tool){if(!Model.State.Started)return;SelectedTool=tool;Message=tool==BuildTool.Select?"انقر مبنى لعرض الدخل والترقية":"اختر أرضًا مناسبة في الكويت";}
+        public void SetTool(BuildTool tool){if(!Model.State.Started||DistrictSelectionVisible)return;SelectedTool=tool;Message=tool==BuildTool.Select?"انقر مبنى لعرض الدخل والترقية":"اختر أرضًا مناسبة في الكويت";}
         public void SetBuilding(int index)
         {
-            if (!Model.State.Started) return;
+            if (!Model.State.Started||DistrictSelectionVisible) return;
             ChosenBuilding = index;
             SelectedTool = BuildTool.Build;
             Message = CityCatalog.All[index].ArabicName + " — اختر أرضًا فارغة";
         }
         public void StartGame()
         {
+            if(legacySaveBlocked){Message="الحفظ القديم غير مقروء؛ لا أبدأ مدينة جديدة فوقه. اختر أحد الأحياء.";ShowDistricts();return;}
             if (!Model.State.Started) Model.Start();
             presentingDemo = false;
             demo = null;
             SelectedTool = BuildTool.Select;
-            Message = loadedSave ? "استعدنا مدينتك المحفوظة" : "ابدأ بطريق قريب ثم ابنِ بجانبه";
+            Model.SetSpeed(1);
+            Message = restoredSave ? "استعدنا مدينتك المحفوظة" : "ابدأ بطريق قريب ثم ابنِ بجانبه";
             RefreshScene();
         }
-        public void RequestNewCity() { createCityConfirm.Show(); }
-        public void NewGame()
+        public void RequestNewCity() {if(!DistrictSelectionVisible&&!hud.ResetVisible)createCityConfirm.Show(); }
+        public void NewGame() { RequestNewCity(); }
+        internal void ResetCity()
         {
-            Model.LoadSession(new CitySave { Started = true, Speed = 1, Coins = 3200 });
-            PlayerPrefs.SetString(SaveKey, Model.Encode());
-            PlayerPrefs.Save();
-            SelectedId = null;
-            SelectedTool = BuildTool.Select;
-            presentingDemo = false;
-            demo = null;
-            Message = "مدينة جديدة على خريطة الكويت";
-            RefreshScene();
+            if(!sessions.ResetCurrent(Model,out var reset)){Message=reset;return;}
+            ClearZoneSelection();presentingDemo=false;demo=null;restoredSave=false;
+            Message=reset;RefreshSectorLabels();RefreshScene();FocusDistrict();
         }
+        public void ShowDistricts(){if(createCityConfirm!=null&&hud!=null&&hud.ResetVisible)return;if(districtPicker!=null)districtPicker.Show();}
+        public void CloseDistricts(){if(districtPicker==null)return;DismissDistricts();districtPicker.Close();}
+        internal void DismissDistricts(){RestoreSelectionSpeed();if(legacySaveBlocked){Message="الحفظ القديم غير مقروء؛ لم أستبدله. اختر حيًا بدل بدء مدينة أصلية فوقه.";return;}Message=Model.State.Started?CityDistricts.ArabicName(Model.State.District)+" — التقدم محفوظ مستقلًا":"اختر الحي أو ابدأ مدينة الكويت الأصلية";if(Model.State.Started&&Model.State.Speed==0)Message+=" (المحاكاة متوقفة)";}
+        public string DistrictName=>CityDistricts.ArabicName(Model.State.District);
+        internal bool EnterDistrict(string id)
+        {
+            bool accepted=sessions.Choose(id,Model,out var message);Message=message;
+            if(!accepted)return false;
+            speedBeforeDistrictSelection=0;legacySaveBlocked=false;ClearZoneSelection();presentingDemo=false;demo=null;restoredSave=Model.Buildings.Count>0;
+            RefreshSectorLabels();RefreshScene();districtPicker.Close();FocusDistrict();Message=message;return true;
+        }
+        internal bool EnterLegacy()
+        {
+            bool accepted=sessions.ResumeLegacy(Model,out var message);Message=message;
+            if(!accepted)return false;
+            speedBeforeDistrictSelection=0;legacySaveBlocked=false;ClearZoneSelection();presentingDemo=false;demo=null;restoredSave=true;
+            RefreshSectorLabels();RefreshScene();districtPicker.Close();Message=message;return true;
+        }
+        public void CancelWorldTool()
+        {
+            cameraControls.Interacted-=OnZone;cameraControls.Interacted-=OnCell;cameraControls.Interacted+=OnCell;
+            SelectedTool=BuildTool.Select;
+        }
+        internal void PauseForSelection(){if(DistrictSelectionVisible)return;speedBeforeDistrictSelection=Model.State.Speed;if(Model.State.Started)Model.SetSpeed(0);}
+        private void RestoreSelectionSpeed(){if(Model.State.Started&&Model.State.Speed==0&&speedBeforeDistrictSelection>0)Model.SetSpeed(speedBeforeDistrictSelection);speedBeforeDistrictSelection=0;}
+        private void ClearZoneSelection()
+        {
+            cameraControls.Interacted-=OnZone;cameraControls.Interacted-=OnCell;cameraControls.Interacted+=OnCell;
+            SelectedId=null;SelectedTool=BuildTool.Select;
+        }
+        private void FocusDistrict()
+        {
+            if(!CityDistricts.Valid(Model.State.District))return;cameraControls.Focus(CityDistricts.Get(Model.State.District).Center());
+        }
+        private void RefreshSectorLabels()
+        {if(sectorLabels!=null)sectorLabels.Rebuild(Model.State.District,labelFont);roadFingerprint=null;}
         public void SaveCity()
         {
-            if (!Model.State.Started) return;
-            savedAtExit = Model.Encode();
-            PlayerPrefs.SetString(SaveKey, savedAtExit);
-            PlayerPrefs.Save();
-            Message = "حُفظت المدينة على جهازك";
+            if (!Model.State.Started||DistrictSelectionVisible) return;
+            if(TrySaveCurrent())Message="حُفظت هذه المدينة مستقلة على جهازك";
         }
         public void Collect()
         {
-            if (!Model.State.Started) return;
+            if (!Model.State.Started||DistrictSelectionVisible) return;
             var coins = Model.CollectAll();
             Message = "تم تحصيل " + coins + " د.ك";
             RefreshScene();
         }
         public void UpgradeSelected()
         {
+            if(DistrictSelectionVisible)return;
             if (string.IsNullOrEmpty(SelectedId)) { Message = "اختر المبنى من الخريطة"; return; }
             Model.Upgrade(SelectedId, out var message);
             Message = message;
@@ -143,7 +185,7 @@ namespace KuwaitCity
         }
         public void ActivateZone()
         {
-            if (!Model.State.Started) return;
+            if (!Model.State.Started||DistrictSelectionVisible) return;
             cameraControls.Interacted -= OnCell;
             cameraControls.Interacted -= OnZone;
             cameraControls.Interacted += OnZone;
@@ -151,8 +193,11 @@ namespace KuwaitCity
         }
         private void OnZone(Vector2Int center)
         {
+            if(DistrictSelectionVisible)return;
+            int x=center.x,y=center.y;
+            if(CityDistricts.Valid(Model.State.District)){var p=CityDistricts.Get(Model.State.District).ParcelAt(x,y);if(p==null){Message="ابدأ التخطيط داخل قطعة مرقّمة";cameraControls.Interacted-=OnZone;cameraControls.Interacted-=OnCell;cameraControls.Interacted+=OnCell;return;}x=p.C;y=p.R;}
             var before = Model.CurrentBuildingsCount;
-            Model.PlanZone(center.x - 4, center.y - 4, center.x + 4, center.y + 4, true);
+            Model.PlanZone(x - 4,y - 4,x + 4,y + 4,true);
             cameraControls.Interacted -= OnZone;
             cameraControls.Interacted += OnCell;
             Message = "أحياء وشوارع جديدة — " + (Model.CurrentBuildingsCount - before) + " مبنى";
@@ -179,20 +224,22 @@ namespace KuwaitCity
             palmBatch?.Animate(Time.deltaTime);
             vehicleBatch?.Animate(Time.deltaTime);
         }
-        private void SaveCityPeriodic()
+        private bool TrySaveCurrent()
         {
-            if (Model == null || !Model.State.Started) return;
-            var serialized = Model.Encode();
-            if (serialized == savedAtExit) return;
-            savedAtExit = serialized;
-            PlayerPrefs.SetString(SaveKey, serialized);
-            PlayerPrefs.Save();
+            if (Model == null || !Model.State.Started||sessions==null) return false;
+            try
+            {
+                sessions.SaveCurrent(Model);return true;
+            }
+            catch(Exception error)when(error is ArgumentException||error is InvalidOperationException)
+            { Message="لم أستبدل حفظًا غير مقروء؛ بقيت المدينة الحالية في الذاكرة.";Debug.LogWarning(error.Message);return false; }
         }
+        private void SaveCityPeriodic(){if(!DistrictSelectionVisible)TrySaveCurrent();}
         private void Sync()
         {
             if (!initialized) return;
             if (presentingDemo && Model.State.Started) { presentingDemo = false; demo = null; }
-            if (!Model.State.Started && Model.Buildings.Count == 0 && Model.Roads.Count == 0)
+            if (!Model.State.Started && StateIsLegacyBlankModel())
             {
                 if (demo == null) demo = new PresentationCity();
                 drawnRoads = demo.Roads;
@@ -215,6 +262,7 @@ namespace KuwaitCity
                 RefreshModels();
             }
         }
+        private bool StateIsLegacyBlankModel(){return !CityDistricts.Valid(Model.State.District)&&Model.Buildings.Count==0&&Model.Roads.Count==0;}
         private void RefreshModels()
         {
             if (drawnBuildings == null) return;

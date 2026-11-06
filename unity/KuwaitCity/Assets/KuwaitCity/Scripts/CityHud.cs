@@ -18,6 +18,9 @@ namespace KuwaitCity
         private Button[] choices;
         private GameObject welcome,start,selectedPanel;
         private Font font;
+        public Font Font=>font;
+        private Text district,startCaption;
+        public bool ResetVisible=>resetDialog!=null;
         private readonly Color dark=new(.025f,.105f,.145f,.975f),panel=new(.07f,.22f,.26f,.94f),active=new(.045f,.42f,.45f),sand=new(.98f,.87f,.65f),ink=new(.97f,.96f,.87f);
         public RectTransform Root{get;private set;}
         public void Configure(CityApp app,CityCamera camera,DayNightController night)
@@ -37,13 +40,14 @@ namespace KuwaitCity
             metrics=Text(top,"",19,sand,Vector2.zero,Vector2.zero);Stretch(metrics.rectTransform,8,2,-390,-2);
             lightLabel=Button(top,"تلقائي",Mode,-211,-7,92,33).GetComponentInChildren<Text>();AnchorTopRight(lightLabel.rectTransform.parent.GetComponent<RectTransform>(),1,1,8,-8);
             speed=Button(top,"×1",Speed,-113,-7,80,33).GetComponentInChildren<Text>();AnchorTopRight(speed.rectTransform.parent.GetComponent<RectTransform>(),1,1,105,-8);
-            var sidebar=Panel(Root,panel);sidebar.anchorMin=new Vector2(0,1);sidebar.anchorMax=new Vector2(0,1);sidebar.anchoredPosition=new Vector2(68,-166);sidebar.sizeDelta=new Vector2(126,246);
+            district=Text(top,city.DistrictName,18,sand,new Vector2(-420,1),new Vector2(-290,-1));district.rectTransform.anchorMin=new Vector2(1,0);district.rectTransform.anchorMax=new Vector2(1,1);
+            var sidebar=Panel(Root,panel);sidebar.anchorMin=new Vector2(0,1);sidebar.anchorMax=new Vector2(0,1);sidebar.anchoredPosition=new Vector2(68,-166);sidebar.sizeDelta=new Vector2(126,226);
             road=Button(sidebar,"طريق",()=>city.SetTool(BuildTool.Road),3,-7,111,31);
             demolish=Button(sidebar,"هدم",()=>city.SetTool(BuildTool.Bulldoze),3,-45,111,31);
             Button(sidebar,"اختيار",()=>city.SetTool(BuildTool.Select),3,-83,111,31);
             tax=Button(sidebar,"الضريبة ٧٪",Tax,3,-121,111,46).GetComponentInChildren<Text>();
-            Button(sidebar,"حفظ المدينة",city.SaveCity,3,-173,111,29);
-            Button(sidebar,"مدينة جديدة",city.RequestNewCity,3,-207,111,32);
+            Button(sidebar,"إعادة هذه المدينة",city.RequestNewCity,3,-173,111,25);
+            Button(sidebar,"حفظ المدينة",city.SaveCity,3,-201,111,22);
             var selection=Panel(Root,panel);selection.anchorMin=selection.anchorMax=new Vector2(1,1);selection.pivot=new Vector2(1,1);selection.anchoredPosition=new Vector2(-5,-100);selection.sizeDelta=new Vector2(156,209);selectedPanel=selection.gameObject;
             details=Text(selectedPanel.GetComponent<RectTransform>(),"",17,sand,new Vector2(6,5),new Vector2(-6,-102));
             zoomIn=Button(selectedPanel.GetComponent<RectTransform>(),"+",()=>controls.Zoom(1.18f),5,-111,68,40);
@@ -64,23 +68,26 @@ namespace KuwaitCity
             Button(lower,"جمع الدخل",city.Collect,14,-139,128,31);
             upgrade=Button(lower,"ترقية المحدد",city.UpgradeSelected,149,-139,129,31);
             Button(lower,"حي تلقائي",city.ActivateZone,285,-139,133,31);
-            var hint=Text(Root,"Original volumetric city",13,sand,new Vector2(140,2),new Vector2(-140,28));hint.raycastTarget=false;
-            var welcomeText=Text(Root,"عمدة الكويت\nمدينة خليجية ثلاثية الأبعاد",38,sand,new Vector2(210,140),new Vector2(-210,60));welcomeText.rectTransform.anchorMin=new Vector2(.5f,.64f);welcomeText.rectTransform.anchorMax=new Vector2(.5f,.64f);welcomeText.raycastTarget=false;welcome=welcomeText.gameObject;
-            var play=Button(Root,"ابدأ مدينتك",city.StartGame,0,0,186,65);start=play.gameObject;var playRect=(RectTransform)play.transform;playRect.anchorMin=playRect.anchorMax=new Vector2(.5f,.53f);playRect.anchoredPosition=Vector2.zero;play.GetComponentInChildren<Text>().fontSize=25;
+            var hint=Text(Root,"مباني مجسمة · مخطط حي مستقل",13,sand,new Vector2(140,2),new Vector2(-140,28));hint.raycastTarget=false;
+            var districtsButton=Button(Root,"الأحياء",city.ShowDistricts,0,0,128,38);var chooserRect=districtsButton.GetComponent<RectTransform>();chooserRect.anchorMin=chooserRect.anchorMax=new Vector2(.5f,1);chooserRect.anchoredPosition=new Vector2(0,-58);
+            var chooserHint=Text(Root,"اختر الحي وابدأ؛ حفظ مستقل والمدينة القديمة محفوظة",18,sand,new Vector2(260,0),new Vector2(-260,34));chooserHint.rectTransform.anchorMin=chooserHint.rectTransform.anchorMax=new Vector2(.5f,.42f);
+            var welcomeText=Text(Root,"عمدة الكويت\nاختر الحي وابدأ",38,sand,new Vector2(210,140),new Vector2(-210,60));welcomeText.rectTransform.anchorMin=new Vector2(.5f,.64f);welcomeText.rectTransform.anchorMax=new Vector2(.5f,.64f);welcomeText.raycastTarget=false;welcome=welcomeText.gameObject;
+            var play=Button(Root,"ابدأ مدينتك",()=>{if(model.State.District==null)city.StartGame();else city.CloseDistricts();},0,0,186,65);startCaption=play.GetComponentInChildren<Text>();start=play.gameObject;var playRect=(RectTransform)play.transform;playRect.anchorMin=playRect.anchorMax=new Vector2(.5f,.53f);playRect.anchoredPosition=Vector2.zero;play.GetComponentInChildren<Text>().fontSize=25;
         }
         private void Update()
         {
             if(city==null||model==null)return;
             var st=model.Stats();
             metrics.text=$"د.ك {model.State.Coins}   سكان {st.Population}   رضا {st.Happiness}%   كهرباء {st.PowerUse}/{st.PowerGive}   ماء {st.WaterUse}/{st.WaterGive}";
+            district.text=city.DistrictName;startCaption.text=model.State.District==null?"ابدأ مدينة الكويت الأصلية":"استئناف الحي";
             notice.text=city.Message;speed.text=model.State.Speed==0?"وقف":$"×{model.State.Speed}";tax.text=$"الضريبة {model.State.Tax}٪";
             welcome.SetActive(!model.State.Started);start.SetActive(!model.State.Started);
             details.text=city.SelectedDescription();upgrade.interactable=!string.IsNullOrEmpty(city.SelectedId);
             road.GetComponent<Image>().color=city.SelectedTool==BuildTool.Road?active:dark;demolish.GetComponent<Image>().color=city.SelectedTool==BuildTool.Bulldoze?active:dark;
             for(int i=0;i<choices.Length;i++)choices[i].GetComponent<Image>().color=i==city.ChosenBuilding&&city.SelectedTool==BuildTool.Build?active:dark;
         }
-        private void Speed(){model.SetSpeed((model.State.Speed+1)%4);city.RefreshScene();}
-        private void Tax(){model.SetTax(model.Tax>=40?7:model.Tax>=12?40:12);city.RefreshScene();}
+        private void Speed(){if(city.DistrictSelectionVisible)return;model.SetSpeed((model.State.Speed+1)%4);city.RefreshScene();}
+        private void Tax(){if(city.DistrictSelectionVisible)return;model.SetTax(model.Tax>=40?7:model.Tax>=12?40:12);city.RefreshScene();}
         private void Mode(){daylight.CycleMode();lightLabel.text=daylight.Mode==TimeMode.Auto?"تلقائي":daylight.Mode==TimeMode.Day?"نهار":"ليل";}
         private static void AnchorTopRight(RectTransform t,float x,float y,float ox,float oy){t.anchorMin=new Vector2(x,y);t.anchorMax=new Vector2(x,y);t.anchoredPosition=new Vector2(ox,oy);}
         private void ViewportMask(GameObject o){o.AddComponent<Mask>().showMaskGraphic=false;}
@@ -105,10 +112,14 @@ namespace KuwaitCity
         }
         public void ShowResetConfirmation(Action yes)
         {
+            if(city.DistrictSelectionVisible||resetDialog!=null)return;
             var dialog=Panel(Root,new Color(.01f,.08f,.10f,.98f));dialog.anchorMin=Vector2.zero;dialog.anchorMax=Vector2.one;dialog.offsetMin=dialog.offsetMax=Vector2.zero;
-            var prompt=Text(dialog,"بدء مدينة جديدة؟\nسيُستبدل حفظ الهاتف على هذا الجهاز.\nحفظ لعبة الويب لا يتأثر.",29,sand,new Vector2(170,175),new Vector2(-170,-170));prompt.rectTransform.anchorMin=new Vector2(.5f,.58f);prompt.rectTransform.anchorMax=new Vector2(.5f,.58f);
-            var confirm=Button(dialog,"نعم، مدينة جديدة",()=>{yes();Destroy(dialog.gameObject);},0,0,240,61);var transform=(RectTransform)confirm.transform;transform.anchorMin=transform.anchorMax=new Vector2(.37f,.40f);transform.pivot=Vector2.zero;transform.anchoredPosition=Vector2.zero;
-            var cancel=Button(dialog,"إلغاء",()=>Destroy(dialog.gameObject),0,0,128,61);transform=(RectTransform)cancel.transform;transform.anchorMin=transform.anchorMax=new Vector2(.68f,.40f);transform.pivot=Vector2.zero;transform.anchoredPosition=Vector2.zero;
+            resetDialog=dialog.gameObject;
+            var prompt=Text(dialog,"إعادة هذه المدينة من البداية؟\nسيُستبدل الحفظ القديم القابل للقراءة لهذه المدينة فقط.\nالأحياء الأخرى وحفظ الويب لا تتأثر.",27,sand,new Vector2(170,175),new Vector2(-170,-170));prompt.rectTransform.anchorMin=new Vector2(.5f,.58f);prompt.rectTransform.anchorMax=new Vector2(.5f,.58f);
+            var confirm=Button(dialog,"نعم، إعادة هذه المدينة",()=>{CloseReset();yes();},0,0,240,61);var transform=(RectTransform)confirm.transform;transform.anchorMin=transform.anchorMax=new Vector2(.37f,.40f);transform.pivot=Vector2.zero;transform.anchoredPosition=Vector2.zero;
+            var cancel=Button(dialog,"إلغاء",CloseReset,0,0,128,61);transform=(RectTransform)cancel.transform;transform.anchorMin=transform.anchorMax=new Vector2(.68f,.40f);transform.pivot=Vector2.zero;transform.anchoredPosition=Vector2.zero;
         }
+        private GameObject resetDialog;
+        private void CloseReset(){if(resetDialog!=null){var dialog=resetDialog;resetDialog=null;Destroy(dialog);}}
     }
 }

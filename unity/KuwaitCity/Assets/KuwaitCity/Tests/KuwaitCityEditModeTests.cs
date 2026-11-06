@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -56,7 +57,7 @@ namespace KuwaitCity.Tests
             var encoded=city.Encode();var restored=new CitySimulation();Assert.IsTrue(restored.DecodeAndRestore(encoded,out _));
             Assert.AreEqual(1,restored.Buildings.Count);Assert.AreEqual(3.5,restored.Buildings[0].Stored);
             city.Buildings[0].Stored=9;Assert.AreEqual(3.5,restored.Buildings[0].Stored);
-            Assert.IsFalse(restored.DecodeAndRestore("{\"Version\":2}",out _));Assert.IsFalse(restored.DecodeAndRestore("",out _));
+            Assert.IsFalse(restored.DecodeAndRestore("{\"Version\":999}",out _));Assert.IsFalse(restored.DecodeAndRestore("",out _));
         }
         [Test] public void DayNightCycleTransitionsToNight()
         {
@@ -95,6 +96,132 @@ namespace KuwaitCity.Tests
                 MeshCosts.Release(high);MeshCosts.Release(mid);MeshCosts.Release(low);
             }
             UnityEngine.Object.DestroyImmediate(palette);
+        }
+    }
+}
+
+namespace KuwaitCity.Tests
+{
+    /** Source-level tests for the supplied sign layouts, not GIS or survey fixtures. */
+    public sealed class KuwaitDistrictTests
+    {
+        [SetUp] public void LoadActualMask(){CityLand.Initialize(Resources.Load<TextAsset>("kuwait-land"));CityDistricts.ClearCache();}
+        [OneTimeTearDown] public void RestoreTestLand(){new KuwaitCityEditModeTests().Land();CityDistricts.ClearCache();}
+        [Test] public void OnlyThreeVerifiedLayoutsAndTheExactSignNumberingExist()
+        {
+            Assert.AreEqual(3,CityDistricts.Ids.Length);
+            foreach(var definition in new[]{CityDistricts.Get("yarmouk"),CityDistricts.Get("adailiya"),CityDistricts.Get("surra")})
+            {
+                int[] expected=definition.Id=="surra"?new[]{1,2,6,3,5,4}:new[]{definition.Id=="yarmouk"?2:3,definition.Id=="yarmouk"?3:2,definition.Id=="yarmouk"?1:4,definition.Id=="yarmouk"?4:1};
+                CollectionAssert.AreEqual(expected,definition.Parcels.Select(p=>p.Number).ToArray());
+                foreach(var parcel in definition.Parcels)
+                {
+                    Assert.Greater(parcel.Cells.Count,0);
+                    Assert.AreEqual(parcel.Number,definition.Sector(parcel.C,parcel.R));
+                    Assert.IsTrue(parcel.Cells.All(at=>CityLand.IsLand(at.x,at.y)));
+                    Assert.AreEqual(CityDistricts.Number(parcel.Number),CityDistricts.Number(definition.Sector(parcel.C,parcel.R)));
+                }
+                Assert.AreEqual(definition.Land.Count,definition.Parcels.Sum(p=>p.Cells.Count));
+            }
+            Assert.IsFalse(CityDistricts.Valid("jahra"));
+        }
+        [Test] public void EveryDistrictHasConnectedAsphaltOutsideEachBuildableParcel()
+        {
+            foreach(string id in CityDistricts.Ids)
+            {
+                var district=CityDistricts.Get(id);var seen=new HashSet<string>{"29,18"};var queue=new Queue<string>(new[]{"29,18"});
+                Assert.IsTrue(district.Roads.Contains("29,18"),id);
+                while(queue.Count>0)
+                {
+                    CityLand.TryCell(queue.Dequeue(),out var c,out var r);
+                    foreach(Vector2Int d in CityLand.Directions){string key=CityLand.Key(c+d.x,r+d.y);if(district.Roads.Contains(key)&&seen.Add(key))queue.Enqueue(key);}
+                }
+                Assert.AreEqual(district.Roads.Count,seen.Count,id);
+                foreach(string road in district.Roads){Assert.IsFalse(district.Land.Contains(road));CityLand.TryCell(road,out var c,out var r);Assert.IsTrue(CityLand.IsLand(c,r));}
+            }
+        }
+        [Test] public void EverySectorCanBeBuiltAndSchematicRoadsAreProtected()
+        {
+            foreach(string id in CityDistricts.Ids)
+            {
+                var city=new CitySimulation(CityDistricts.NewCity(id));Assert.AreEqual(2,city.State.Version);var district=CityDistricts.Get(id);
+                foreach(var parcel in district.Parcels)Assert.IsTrue(city.Place(BuildingKind.Villa,parcel.C,parcel.R,out _),id+"/"+parcel.Number);
+                Assert.IsFalse(city.PlaceRoad(parcelC(id),parcelR(id),out _), "A road cannot enter a numbered lot.");
+                var editable="24,19";
+                Assert.IsTrue(CityLand.TryCell(editable,out var c,out var r));Assert.IsTrue(CityLand.IsLand(c,r));
+                Assert.IsFalse(city.RoadAt(c,r));Assert.IsTrue(city.PlaceRoad(c,r,out _),id+"/ add side road");Assert.IsTrue(city.Bulldoze(c,r,out _),id+"/ remove side road");
+                var central=new[]{MainC(id),MainC(id)+1}.First(c=>district.SchematicRoads.Contains(CityLand.Key(c,20)));
+                Assert.IsFalse(city.Bulldoze(central,20,out _),id+"/ protected schematic road");
+                Assert.IsFalse(city.Place(BuildingKind.Villa,24,19,out _),id+"/ outside numbered lots");
+            }
+        }
+        private static int parcelC(string id)=>CityDistricts.Get(id).Parcels[0].C;
+        private static int parcelR(string id)=>CityDistricts.Get(id).Parcels[0].R;
+        private static int MainC(string id)=>CityDistricts.Main(id,20)[0];
+        [Test] public void AutomaticPlanningStaysWithinTheSelectedParcel()
+        {
+            var city=new CitySimulation(CityDistricts.NewCity("yarmouk"));var parcel=CityDistricts.Get("yarmouk").Parcels[0];
+            city.PlanZone(parcel.C,parcel.R,parcel.C+10,parcel.R+5,true);
+            Assert.Greater(city.Buildings.Count,0);
+            Assert.IsTrue(city.Buildings.All(b=>CityDistricts.Get("yarmouk").Sector(b.C,b.R)==parcel.Number));
+        }
+        [Test] public void LegacySaveFieldRemainsAbsentAndVersionOneIsReadable()
+        {
+            Assert.IsTrue(CityLand.IsLand(24,19));Assert.IsFalse(CityDistricts.Get("yarmouk").Land.Contains("24,19"));
+            var old=new CitySave{Version=1,Started=true,District=null,Roads=new[]{"24,19"},Buildings=new[]{new BuildingRecord(BuildingKind.Villa,25,19){Id="old-house"}}};
+            var clone=old.Clone();Assert.IsNull(clone.District);Assert.AreEqual(1,old.Version);Assert.AreEqual(2,clone.Version);
+            Assert.AreEqual("old-house",clone.Buildings[0].Id);
+            // This literal is the native v1 format: numeric enum and no District field.
+            var data="{\"Version\":1,\"Coins\":3200,\"Day\":0,\"Speed\":1,\"Tax\":7,\"Started\":true,\"Roads\":[\"24,19\"],\"Buildings\":[{\"Id\":\"old-house\",\"Kind\":0,\"C\":25,\"R\":19,\"Level\":1,\"Stored\":0,\"Rotation\":0}]}";Assert.IsFalse(data.Contains("District"));
+            var city=new CitySimulation();Assert.IsTrue(city.DecodeAndRestore(data,out var decoded),decoded);Assert.IsNull(city.State.District);
+            Assert.AreEqual("old-house",city.Buildings.Single().Id);Assert.AreEqual(2,city.State.Version);
+        }
+        [Test] public void SwitchingOwnsItsKeyResumesBuildingsAndDoesNotCreateAnythingWhileBrowsing()
+        {
+            var values=new Dictionary<string,string>();int writes=0;
+            var store=MemoryStore(values,()=>writes++);
+            var current=new CitySimulation();Assert.IsTrue(store.RestoreInitial(current,out _));Assert.AreEqual(0,writes);
+            for(var i=0;i<3;i++)Assert.IsTrue(store.TryRead(CityDistricts.Ids[i],out var preview)&&preview==null);
+            Assert.IsTrue(store.Choose("surra",current,out _));int afterChoose=writes;
+            Assert.AreEqual("surra",current.State.District);Assert.AreEqual(0,current.State.Speed);Assert.IsTrue(current.State.Started);
+            var parcel=CityDistricts.Get("surra").Parcels[0];Assert.IsTrue(current.Place(BuildingKind.Villa,parcel.C,parcel.R,out _));string originalBuildingId=current.Buildings[0].Id;
+            store.SaveCurrent(current);Assert.IsFalse(values.ContainsKey(CityDistricts.LegacySaveKey));
+            Assert.IsTrue(store.Choose("yarmouk",current,out _));Assert.AreEqual(0,current.Buildings.Count);Assert.AreEqual(0,current.State.Speed);
+            Assert.IsTrue(store.Choose("surra",current,out _));Assert.AreEqual(originalBuildingId,current.Buildings.Single().Id);Assert.Greater(writes,afterChoose);
+            var repeated=new CitySimulation();Assert.IsTrue(store.RestoreInitial(repeated,out _));Assert.AreEqual("surra",repeated.State.District);Assert.AreEqual(originalBuildingId,repeated.Buildings.Single().Id);
+            var resumePointer=values[CityDistricts.ActiveSessionKey];foreach(var region in CityDistricts.Ids)Assert.IsTrue(store.TryRead(region,out _));Assert.AreEqual(resumePointer,values[CityDistricts.ActiveSessionKey]);
+            values[CityDistricts.LegacySaveKey]=JsonUtility.ToJson(new CitySave{Version=1,Started=true,District=null,Roads=new[]{"24,19"},Buildings=new[]{new BuildingRecord(BuildingKind.Villa,25,19){Id="legacy-house"}}});
+            Assert.IsTrue(store.HasLegacy);Assert.IsTrue(store.ResumeLegacy(current,out var legacyResume),legacyResume);Assert.AreEqual("legacy-house",current.Buildings.Single().Id);
+            Assert.IsTrue(store.ResumeLegacy(current,out _));Assert.AreEqual("legacy-house",current.Buildings.Single().Id);
+        }
+        [Test] public void ResetIsScopedToOneDistrictAndWillNotOverwriteCorruptData()
+        {
+            var values=new Dictionary<string,string>();var store=MemoryStore(values,()=>{});
+            var current=new CitySimulation();Assert.IsTrue(store.Choose("surra",current,out _));var surraKey=CityDistricts.SaveKey("surra");string existing=values[surraKey];
+            Assert.IsTrue(store.Choose("yarmouk",current,out _));string other=values[CityDistricts.SaveKey("yarmouk")];
+            Assert.IsTrue(values.ContainsKey(CityDistricts.SaveKey("yarmouk")));
+            Assert.IsTrue(store.ResetCurrent(current,out _));Assert.AreEqual("yarmouk",current.State.District);Assert.AreEqual(0,current.Buildings.Count);Assert.AreEqual(existing,values[surraKey]);
+            current.Place(BuildingKind.Villa,CityDistricts.Get("yarmouk").Parcels[0].C,CityDistricts.Get("yarmouk").Parcels[0].R,out _);store.SaveCurrent(current);string good=values[CityDistricts.SaveKey("yarmouk")];
+            values[CityDistricts.SaveKey("yarmouk")]="corrupt";Assert.IsFalse(store.ResetCurrent(current,out _));Assert.AreEqual(1,current.Buildings.Count);Assert.AreEqual("corrupt",values[CityDistricts.SaveKey("yarmouk")]);Assert.IsFalse(good.Equals(values[CityDistricts.SaveKey("yarmouk")]));
+        }
+        private static CitySessionStore MemoryStore(Dictionary<string,string> values,Action wrote)
+        {return new CitySessionStore((key,value)=>value!=null,key=>values.TryGetValue(key,out var value)?value:null,(key,value)=>{values[key]=value;wrote();});}
+        [Test] public void ACorruptActiveSaveCannotDestroyItsGoodInMemoryCity()
+        {
+            var values=new Dictionary<string,string>();int writes=0;var store=MemoryStore(values,()=>writes++);
+            var city=new CitySimulation();Assert.IsTrue(store.Choose("yarmouk",city,out _));var parcel=CityDistricts.Get("yarmouk").Parcels[0];Assert.IsTrue(city.Place(BuildingKind.Villa,parcel.C,parcel.R,out _));store.SaveCurrent(city);
+            values[CityDistricts.SaveKey("yarmouk")]="CORRUPT";int before=writes;bool threw=false;
+            try{store.SaveCurrent(city);}catch(InvalidOperationException){threw=true;}
+            Assert.IsTrue(threw);Assert.AreEqual("CORRUPT",values[CityDistricts.SaveKey("yarmouk")]);Assert.AreEqual(before,writes);Assert.AreEqual(1,city.Buildings.Count);Assert.AreEqual("yarmouk",city.State.District);
+        }
+        [Test] public void CorruptSelectedSaveDoesNotClearLiveCityOrOverwriteTarget()
+        {
+            var values=new Dictionary<string,string>();int writes=0;
+            var store=new CitySessionStore((key,value)=>value!=null,(key)=>values.TryGetValue(key,out var value)?value:null,(key,value)=>{values[key]=value;writes++;});
+            var city=new CitySimulation();Assert.IsTrue(store.Choose("surra",city,out _));
+            values[CityDistricts.SaveKey("adailiya")]="not-a-city";int previous=writes;var before=city.State.District;
+            Assert.IsFalse(store.Choose("adailiya",city,out _));Assert.AreEqual(before,city.State.District);Assert.AreEqual(previous,writes);
+            Assert.AreEqual("not-a-city",values[CityDistricts.SaveKey("adailiya")]);
         }
     }
 }

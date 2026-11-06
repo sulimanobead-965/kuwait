@@ -13,7 +13,7 @@ const point = (c: number, r: number) => `${(c - 27) * 6},${(r - 17) * 6}`;
 
 export function DistrictDiagram({
   district,
-  labeled = false,
+  labeled = true,
 }: {
   district: District;
   labeled?: boolean;
@@ -46,11 +46,14 @@ export function DistrictDiagram({
         <text
           key={sector.number}
           x={(sector.x - 27) * 6 + 3}
-          y={(sector.y - 17) * 6 + 5}
+          y={(sector.y - 17) * 6 + 4}
           textAnchor="middle"
-          fontSize={labeled ? 9 : 12}
+          fontSize={labeled ? 12 : 16}
           fontWeight="800"
           fill="#173f41"
+          stroke="#e1d2b1"
+          strokeWidth="1.1"
+          paintOrder="stroke"
         >
           {arabicNumber(sector.number)}
         </text>

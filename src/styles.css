@@ -300,7 +300,7 @@
   font-size: 12px;
   line-height: 1.7;
   margin: 10px 0;
-  color: var(--color-sc-mint);
+  color: #153f41;
 }
 .district-options {
   display: grid;
@@ -355,6 +355,10 @@
 .district-choice p {
   font-size: 12px;
   line-height: 1.6;
+}
+.district-choice p,
+.district-choice .district-save-note {
+  color: #153f41;
 }
 .district-choice .district-save-note {
   margin-top: 5px;

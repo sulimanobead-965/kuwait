@@ -62,7 +62,8 @@ namespace KuwaitCity
 
     [Serializable] public sealed class CitySave
     {
-        public int Version=1;
+        public int Version=2;
+        public string District;
         public int Coins=3200;
         public double Day;
         public int Speed=1,Tax=7;
@@ -71,7 +72,7 @@ namespace KuwaitCity
         public BuildingRecord[] Buildings=Array.Empty<BuildingRecord>();
         public CitySave Clone()
         {
-            return new CitySave{Version=Version,Coins=Coins,Day=Day,Speed=Speed,Tax=Tax,Started=Started,Roads=(Roads??Array.Empty<string>()).ToArray(),Buildings=(Buildings??Array.Empty<BuildingRecord>()).Select(b=>b.Clone()).ToArray()};
+            return new CitySave{Version=2,District=District,Coins=Coins,Day=Day,Speed=Speed,Tax=Tax,Started=Started,Roads=(Roads??Array.Empty<string>()).ToArray(),Buildings=(Buildings??Array.Empty<BuildingRecord>()).Select(b=>b.Clone()).ToArray()};
         }
     }
 
@@ -135,32 +136,57 @@ namespace KuwaitCity
         public void Restore(CitySave saved)
         {
             State=(saved??new CitySave()).Clone();
+            if(!CityDistricts.Valid(State.District))State.District=null;
+            State.Version=2;
             roads.Clear();buildings.Clear();
+            var district=CityDistricts.Valid(State.District)?CityDistricts.Get(State.District):null;
+            if(district!=null)foreach(var key in district.Roads)roads.Add(key);
             foreach(var key in State.Roads??Array.Empty<string>())
             if(CityLand.TryCell(key,out var c,out var r)&&CityLand.IsLand(c,r))roads.Add(CityLand.Key(c,r));
             foreach(var record in State.Buildings??Array.Empty<BuildingRecord>())
             {
-                if(record==null||!CityLand.IsLand(record.C,record.R)||roads.Contains(CityLand.Key(record.C,record.R)))continue;
+                if(record==null||district!=null&&!district.Buildable(record.C,record.R)||district==null&&!CityLand.IsLand(record.C,record.R)||roads.Contains(CityLand.Key(record.C,record.R)))continue;
                 if(buildings.Any(b=>b.C==record.C&&b.R==record.R))continue;
                 record.Level=Mathf.Clamp(record.Level,1,3);record.Stored=Math.Max(0,record.Stored);
                 if(!Enum.IsDefined(typeof(BuildingKind),record.Kind))continue;
                 buildings.Add(record);
             }
-            State.Coins=Mathf.Max(-8000,State.Coins);State.Speed=Mathf.Clamp(State.Speed,0,3);State.Tax=Mathf.Clamp(State.Tax,0,300);State.Day=Math.Max(0,State.Day);
+            State.Coins=Mathf.Max(-8000,State.Coins);
+            if(State.District!=null)State.Roads=roads.ToArray();
+            State.Speed=Mathf.Clamp(State.Speed,0,3);State.Tax=Mathf.Clamp(State.Tax,0,300);State.Day=Math.Max(0,State.Day);
         }
         public void LoadSession(CitySave saved){Restore(saved);NotifyChanged();}
         public CitySave Snapshot(){var state=State.Clone();state.Buildings=buildings.Select(b=>b.Clone()).ToArray();state.Roads=roads.OrderBy(k=>k).ToArray();return state;}
         public string Encode(){return JsonUtility.ToJson(Snapshot());}
-        public bool DecodeAndRestore(string json,out string message)
+        public static bool TryDecode(string json,string expectedDistrict,out CitySave save,out string message)
         {
+            save=null;message="تعذّر قراءة الحفظ";
             try
             {
-                if(string.IsNullOrWhiteSpace(json)){message="لا يوجد حفظ";return false;}
-                var save=JsonUtility.FromJson<CitySave>(json);
-                if(save==null||save.Version!=1){message="صيغة الحفظ غير متوافقة";return false;}
-                LoadSession(save);message="تم استعادة المدينة";return true;
+                if(string.IsNullOrWhiteSpace(json))return false;
+                var loaded=JsonUtility.FromJson<CitySave>(json);
+                if(loaded==null||(loaded.Version!=1&&loaded.Version!=2))return false;
+                if((loaded.District??"")!=(expectedDistrict??""))return false;
+                if(loaded.Coins<-1000000||loaded.Coins>1000000000||double.IsNaN(loaded.Day)||double.IsInfinity(loaded.Day)||loaded.Day<0)return false;
+                foreach(var key in loaded.Roads??Array.Empty<string>())if(!CityLand.TryCell(key,out var c,out var r)||!CityLand.IsLand(c,r))return false;
+                foreach(var record in loaded.Buildings??Array.Empty<BuildingRecord>())
+                    if(record==null||!Enum.IsDefined(typeof(BuildingKind),record.Kind)||record.Level<1||record.Level>3||!CityLand.IsLand(record.C,record.R)||double.IsNaN(record.Stored)||double.IsInfinity(record.Stored)||record.Stored<0)return false;
+                save=loaded;message="تمت قراءة المدينة";return true;
             }
-            catch(ArgumentException){message="تعذّر قراءة الحفظ";return false;}
+            catch(Exception error)when(error is ArgumentException||error is InvalidOperationException||error is FormatException||error is OverflowException||error is IndexOutOfRangeException||error is NotSupportedException){message="تعذّر قراءة الحفظ";return false;}
+        }
+        public bool DecodeAndRestore(string json,out string message)
+        {
+            return TryDecode(json,null,out var save,out message)&&InstallDecoded(save,out message);
+        }
+        public bool DecodeAndRestore(string json,string expectedDistrict,out string message)
+        {
+            return TryDecode(json,expectedDistrict,out var save,out message)&&InstallDecoded(save,out message);
+        }
+        private bool InstallDecoded(CitySave save,out string message)
+        {
+            if(save==null){message="تعذّر قراءة الحفظ";return false;}
+            LoadSession(save);message="تم استعادة المدينة";return true;
         }
         public void SetSpeed(int speed){State.Speed=Mathf.Clamp(speed,0,3);NotifyChanged();}
         public void SetTax(int value){State.Tax=Mathf.Clamp(value,0,300);NotifyChanged();}
@@ -169,6 +195,7 @@ namespace KuwaitCity
         public bool PlaceRoad(int c,int r,out string message)
         {
             if(!CityLand.IsLand(c,r)){message="ما ينفع الطريق في البحر";return false;}
+            if(ValidDistrict()&&CityDistricts.Get(State.District).Buildable(c,r)){message="القطع مرقّمة للبناء؛ الشارع الجانبي يبقى بينها";return false;}
             if(roads.Contains(CityLand.Key(c,r))){message="الطريق موجود";return false;}
             if(buildings.Any(b=>b.C==c&&b.R==r)){message="في مبنى هنا";return false;}
             roads.Add(CityLand.Key(c,r));message="تم رصف الطريق";NotifyChanged();return true;
@@ -177,6 +204,7 @@ namespace KuwaitCity
         {
             if(!Enum.IsDefined(typeof(BuildingKind),kind)){message="نوع غير معروف";return false;}
             if(!CityLand.IsLand(c,r)){message="ما ينفع البناء في البحر";return false;}
+            if(ValidDistrict()&&!CityDistricts.Get(State.District).Buildable(c,r)){message="ابنِ داخل إحدى قطع هذا الحي المرقّمة";return false;}
             if(roads.Contains(CityLand.Key(c,r))||buildings.Any(b=>b.C==c&&b.R==r)){message="الأرض مشغولة";return false;}
             buildings.Add(new BuildingRecord(kind,c,r));message="تم بناء "+CityCatalog.Get(kind).ArabicName;NotifyChanged();return true;
         }
@@ -184,6 +212,7 @@ namespace KuwaitCity
         {
             var b=buildings.FirstOrDefault(x=>x.C==c&&x.R==r);
             if(b!=null){buildings.Remove(b);message="تم الهدم";NotifyChanged();return true;}
+            if(ValidDistrict()&&CityDistricts.Get(State.District).SchematicRoads.Contains(CityLand.Key(c,r))){message="الشارع الرئيسي ثابت ليوصل القطع";return false;}
             bool removed=roads.Remove(CityLand.Key(c,r));message=removed?"تمت إزالة الطريق":"لا يوجد مبنى أو طريق هنا";if(removed)NotifyChanged();return removed;
         }
         public bool Upgrade(string id,out string message)
@@ -233,14 +262,20 @@ namespace KuwaitCity
         {
             if(!State.Started)return 0;
             int x0=Math.Min(c0,c1),x1=Math.Max(c0,c1),y0=Math.Min(r0,r1),y1=Math.Max(r0,r1);
+            if(ValidDistrict())
+            {
+                var definition=CityDistricts.Get(State.District);var parcel=definition.ParcelAt(c0,r0);
+                if(parcel==null)return 0;
+                x0=parcel.Cells.Min(at=>at.x);x1=parcel.Cells.Max(at=>at.x);y0=parcel.Cells.Min(at=>at.y);y1=parcel.Cells.Max(at=>at.y);
+            }
             if(x1-x0<3||y1-y0<3)return 0;
             var changed=false;var queue=new List<int>();
             for(int c=x0;c<=x1;c++)for(int r=y0;r<=y1;r++)
-            if((c%4==0||r%4==0)&&CityLand.IsLand(c,r)&&!buildings.Any(b=>b.C==c&&b.R==r))
+            if((c%4==0||r%4==0)&&CityLand.IsLand(c,r)&&AllowedParcel(c,r)&&!CityDistricts.Valid(State.District)&&!buildings.Any(b=>b.C==c&&b.R==r))
             {if(roads.Add(CityLand.Key(c,r))){changed=true;continue;} }
             for(int c=x0;c<=x1&&buildings.Count<360;c++)for(int r=y0;r<=y1&&buildings.Count<360;r++)
             {
-                if(c%4==0||r%4==0||!CityLand.IsLand(c,r)||roads.Contains(CityLand.Key(c,r))||buildings.Any(b=>b.C==c&&b.R==r))continue;
+                if(c%4==0||r%4==0||!CityLand.IsLand(c,r)||!AllowedParcel(c,r)||roads.Contains(CityLand.Key(c,r))||buildings.Any(b=>b.C==c&&b.R==r))continue;
                 var kind= park&&(c+r)%7==0?BuildingKind.Park:((c+r)%5==0?BuildingKind.Apartments:BuildingKind.Villa);
                 buildings.Add(new BuildingRecord(kind,c,r));changed=true;
             }
@@ -248,10 +283,12 @@ namespace KuwaitCity
             AddUtility(BuildingKind.Power,x0,y0,x1,y1);AddUtility(BuildingKind.Water,x0+1,y0,x1,y1);
             if(changed)NotifyChanged();return buildings.Count;
         }
+        private bool ValidDistrict(){return CityDistricts.Valid(State.District);}
+        private bool AllowedParcel(int c,int r){return !ValidDistrict()||CityDistricts.Get(State.District).Buildable(c,r);}
         private void AddUtility(BuildingKind kind,int x0,int y0,int x1,int y1)
         {
             if(buildings.Any(b=>b.Kind==kind))return;
-            for(int c=x0;c<=x1;c++)for(int r=y0;r<=y1;r++)if(CityLand.IsLand(c,r)&&!roads.Contains(CityLand.Key(c,r))&&!buildings.Any(b=>b.C==c&&b.R==r)){buildings.Add(new BuildingRecord(kind,c,r));return;}
+            for(int c=x0;c<=x1;c++)for(int r=y0;r<=y1;r++)if(CityLand.IsLand(c,r)&&AllowedParcel(c,r)&&!roads.Contains(CityLand.Key(c,r))&&!buildings.Any(b=>b.C==c&&b.R==r)){buildings.Add(new BuildingRecord(kind,c,r));return;}
         }
     }
 }
