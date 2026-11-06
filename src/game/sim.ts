@@ -166,9 +166,16 @@ export type Ordinances = Record<LawKey, boolean>;
 export type LawBudget = { mode: "amount" | "percent"; value: number; period: "month" | "year" };
 export type LawBudgets = Record<keyof Ordinances, LawBudget>;
 
+/**
+ * Every law is funded as a yearly percentage of the city's income (paid in monthly
+ * instalments of the same percentage of each month's income).
+ */
+export const LAW_DEFAULT_PCT = 3;
+export const LAW_MAX_PCT = 50;
+
 export function defaultLawBudgets(): LawBudgets {
   return Object.fromEntries(
-    LAW_KEYS.map((k) => [k, { mode: "amount", value: LAW_DEFS[k].cost, period: "month" }]),
+    LAW_KEYS.map((k) => [k, { mode: "percent", value: LAW_DEFAULT_PCT, period: "month" }]),
   ) as LawBudgets;
 }
 
@@ -1232,6 +1239,8 @@ function computeStats(s: Sim): CityStats {
   let waterUse = 0;
   let waterGive = 0;
   let police = 0;
+  let amenity = 0;
+  let homes = 0;
   for (const b of s.buildings) {
     const d = CATALOG[b.kind];
     const lv = b.level;
@@ -1240,9 +1249,15 @@ function computeStats(s: Sim): CityStats {
     waterUse += d.waterUse * lv;
     powerGive += Math.round(d.powerGive * (1 + (lv - 1) * 0.45));
     waterGive += Math.round(d.waterGive * (1 + (lv - 1) * 0.45));
-    happy += d.happy + Math.sign(d.happy) * (lv - 1) * 2;
+    amenity += d.happy + Math.sign(d.happy) * (lv - 1) * 2;
+    if (d.pop > 0) homes += 1;
     if (b.kind === "police") police += 1;
   }
+  // Parks, schools, landmarks (and the nuisance of industry) count per household:
+  // a village's few gardens matter as much as a big city's many. Up to ±25 points;
+  // the raw sum used to reach thousands and pinned approval at 100%.
+  const perHome = amenity / Math.max(4, homes);
+  happy += Math.round(25 * Math.tanh(perHome / 6));
   const capacity = pop;
   pop = Math.round(capacity * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1));
   const blackout = s.disaster?.kind === "blackout" && s.day < s.disaster.until;
@@ -1253,10 +1268,11 @@ function computeStats(s: Sim): CityStats {
   if (shortP) happy -= 18;
   if (shortW) happy -= 14;
   if (pop >= 48 && police === 0) happy -= 10;
-  if (s.tax > 40) happy -= Math.min(24, Math.round((s.tax - 40) / 18));
-  else if (s.tax > 8) happy -= Math.round((s.tax - 8) * 0.6);
+  // Tax above 8%: 0.6 a point up to 40%, then a point per 5% more, with no ceiling.
+  if (s.tax > 8) happy -= Math.round((Math.min(s.tax, 40) - 8) * 0.6 + Math.max(0, s.tax - 40) / 5);
   if (s.tax < 5) happy += 5;
-  happy += lawEffect(s, "happy");
+  // Laws and the board's projects lift the mood, but together by 20 points at most.
+  happy += clamp(lawEffect(s, "happy"), -20, 20);
   const hit = s.disaster && s.day < s.disaster.until ? s.disaster.kind : null;
   if (hit === "storm") happy -= 14;
   if (hit === "flood") happy -= 10;
@@ -1507,7 +1523,7 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
   v *= 1 + lawEffect(s, "all");
   // Oil and shipping follow the world economy.
   if (d.cat === "industry" && crisisOf(s) === "economic") v *= b.kind === "refinery" ? 0.55 : 0.75;
-  const tax = 0.55 + (clamp(s.tax, 0, 300) / 100) * 1.2;
+  const tax = 0.55 + (Math.max(0, s.tax) / 100) * 1.2;
   return v * st.mult * tax;
 }
 
@@ -3049,7 +3065,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.started = Boolean(p.started);
     s.day = clamp(Number(p.day) || 0, 0, 365 * 400);
     s.speed = clamp(Number(p.speed ?? 1), 0, 3) as Sim["speed"];
-    s.tax = clamp(Number(p.tax ?? 7), 0, 300);
+    s.tax = Math.max(0, Number(p.tax ?? 7) || 0);
     s.randomDisasters = Boolean(p.randomDisasters);
     s.difficulty = "easy";
     s.luckAt = Math.max(0, Number(p.luckAt) || 0);
@@ -3125,10 +3141,16 @@ export function loadSim(district?: DistrictId | null): Sim {
       for (const key of Object.keys(s.lawBudget) as (keyof Ordinances)[]) {
         const v = (lb as Partial<LawBudgets>)[key];
         if (!v || typeof v !== "object") continue;
+        // Older saves: fixed amounts become the default share; a once-a-year
+        // percentage of one month's income becomes its monthly equivalent.
+        const pct = Math.max(0, Number(v.value) || 0);
         s.lawBudget[key] = {
-          mode: v.mode === "percent" ? "percent" : "amount",
-          value: Math.max(0, Number(v.value) || 0),
-          period: v.period === "year" ? "year" : "month",
+          mode: "percent",
+          value:
+            v.mode === "percent"
+              ? Math.min(LAW_MAX_PCT, v.period === "year" ? Math.round((pct / 12) * 10) / 10 : pct)
+              : LAW_DEFAULT_PCT,
+          period: "month",
         };
       }
     const d = p.disaster;

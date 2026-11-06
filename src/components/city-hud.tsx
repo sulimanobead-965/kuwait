@@ -99,6 +99,7 @@ import {
   type LawBudget,
   lawPayment,
   lawStrength,
+  LAW_MAX_PCT,
   lawMonthly,
   type Sample,
   type Sim,
@@ -184,7 +185,7 @@ function Laws({
     <div className="space-y-2" dir={dirOf()}>
       <p className="text-xs leading-relaxed">
         {t(
-          "لكل قانون تحدد طريقة التمويل: مبلغ ثابت أو نسبة من دخل الشهر، ويُدفع شهرياً أو مرة في السنة. كلما زاد التمويل قوي أثر القانون، حتى ٣ أضعاف.",
+          "لكل قانون تختار بالمؤشر نسبة سنوية من دخل المدينة تُصرف عليه، وتُقسّط على أشهر السنة. كلما زادت النسبة قوي أثر القانون، حتى ٣ أضعاف.",
         )}
       </p>
       <p className="sc-lcd h-auto py-1 text-xs">
@@ -236,47 +237,23 @@ function Laws({
                   <span className="block text-xs opacity-80">{t(law.detail)}</span>
                 </span>
               </button>
-              <div className="mt-1 grid grid-cols-2 gap-1">
-                <div className="flex gap-1">
-                  {(["amount", "percent"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={b.mode === mode}
-                      onClick={() => onLawBudget(law.key, { mode })}
-                      className={`sc-menu h-8 flex-1 px-1 text-[11px] ${b.mode === mode ? "sc-on" : ""}`}
-                    >
-                      {mode === "amount" ? t("مبلغ") : t("نسبة")}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-1">
-                  {(["month", "year"] as const).map((period) => (
-                    <button
-                      key={period}
-                      type="button"
-                      aria-pressed={b.period === period}
-                      onClick={() => onLawBudget(law.key, { period })}
-                      className={`sc-menu h-8 flex-1 px-1 text-[11px] ${b.period === period ? "sc-on" : ""}`}
-                    >
-                      {period === "month" ? t("شهري") : t("سنوي")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-1">
-                <NumberField
-                  label={b.mode === "amount" ? t("المبلغ") : t("النسبة من دخل الشهر")}
+              <label className="mt-1 block text-xs font-extrabold">
+                {t("النسبة السنوية من دخل المدينة: {n}٪", { n: b.value })}
+                <input
+                  type="range"
+                  min={0}
+                  max={LAW_MAX_PCT}
+                  step={0.5}
                   value={b.value}
-                  onChange={(v) => onLawBudget(law.key, { value: v })}
-                  suffix={b.mode === "amount" ? currency() : percentSign()}
-                  testid={`law-${law.key}-value`}
+                  data-testid={`law-${law.key}-value`}
+                  aria-label={t("نسبة تمويل القانون")}
+                  onChange={(e) => onLawBudget(law.key, { value: Number(e.target.value) })}
+                  className="mt-1 h-9 w-full accent-sc-leaf"
                 />
-              </div>
+              </label>
               <p className="mt-1 text-[11px] font-extrabold">
-                {t("يكلف {amount} د.ك {per} · قوة الأثر {pct}٪", {
-                  amount: fmt(lawPayment(snap, law.key)),
-                  per: b.period === "month" ? t("شهرياً") : t("سنوياً"),
+                {t("يكلف {amount} د.ك سنوياً (يُقسّط شهرياً) · قوة الأثر {pct}٪", {
+                  amount: fmt(lawPayment(snap, law.key) * 12),
                   pct: Math.round(strength * 100),
                 })}
               </p>
@@ -1371,7 +1348,7 @@ function Budget({
         <input
           type="range"
           min={0}
-          max={300}
+          max={Math.max(300, Math.ceil(snap.tax / 100) * 100)}
           step={5}
           value={snap.tax}
           aria-label={t("نسبة الضريبة")}
@@ -1379,6 +1356,15 @@ function Budget({
           className="mt-1 h-11 w-full accent-sc-leaf"
         />
       </label>
+      <div className="w-40">
+        <NumberField
+          label={t("أو اكتب أي نسبة (بلا حد أعلى)")}
+          value={snap.tax}
+          onChange={onTax}
+          suffix={percentSign()}
+          testid="tax-value"
+        />
+      </div>
       <CostSliders snap={snap} onCost={onCost} onAutoRaise={onAutoRaise} />
       <HousingAid snap={snap} onHousingAid={onHousingAid} onGiveAid={onGiveAid} />
       <Murabaha snap={snap} onMurabaha={onMurabaha} />

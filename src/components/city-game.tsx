@@ -58,6 +58,7 @@ import {
   coastal,
   collectAll,
   saveFailed,
+  LAW_MAX_PCT,
   collectOne,
   createInitial,
   createInitialDistrict,
@@ -752,7 +753,7 @@ export function CityGame() {
   }
 
   function onTax(n: number) {
-    simRef.current.tax = Math.max(0, Math.min(300, n));
+    simRef.current.tax = Math.max(0, Number.isFinite(n) ? n : 0);
     sync();
   }
 
@@ -885,7 +886,13 @@ export function CityGame() {
     const cur = simRef.current.lawBudget[key];
     simRef.current.lawBudget = {
       ...simRef.current.lawBudget,
-      [key]: { ...cur, ...patch, value: Math.max(0, patch.value ?? cur.value) },
+      [key]: {
+        ...cur,
+        ...patch,
+        mode: "percent",
+        period: "month",
+        value: Math.min(LAW_MAX_PCT, Math.max(0, patch.value ?? cur.value)),
+      },
     };
     sync();
   }
