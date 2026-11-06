@@ -33,6 +33,7 @@ import {
   PeopleButton,
   type Player,
 } from "@/components/hud-social";
+import { LAW_DEFS, LAW_KEYS } from "@/game/laws";
 import { murabahaInstallment, type BondOrder, type ProjectOrder } from "@/game/finance";
 import type { NpcId } from "@/game/npcs";
 import { DEVELOPERS, type DeveloperId, type DevelopmentKind } from "@/game/developments";
@@ -92,6 +93,7 @@ import {
   type LawBudget,
   lawPayment,
   lawStrength,
+  lawMonthly,
   type Sample,
   type Sim,
   type ZonePick,
@@ -139,13 +141,11 @@ const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "education", label: "التعليم", token: "--color-gulf" },
 ];
 
-const LAWS: { key: keyof Ordinances; title: string; detail: string }[] = [
-  { key: "education", title: "ميزانية التعليم", detail: "ترفع التعليم والرضا." },
-  { key: "recycling", title: "إعادة التدوير", detail: "تقلل التلوث وترفع الرضا." },
-  { key: "carpool", title: "مشاركة السيارات", detail: "تخفف الزحمة." },
-  { key: "clinicFund", title: "دعم المستوصفات", detail: "ترفع الصحة." },
-  { key: "smokeBan", title: "منع الدخان", detail: "هواء أنظف، وتجارة المحلات تهدأ شوي." },
-];
+const LAWS: { key: keyof Ordinances; title: string; detail: string }[] = LAW_KEYS.map((key) => ({
+  key,
+  title: LAW_DEFS[key].title,
+  detail: LAW_DEFS[key].detail,
+}));
 
 function Laws({
   snap,
@@ -163,9 +163,33 @@ function Laws({
           "لكل قانون تحدد طريقة التمويل: مبلغ ثابت أو نسبة من دخل الشهر، ويُدفع شهرياً أو مرة في السنة. كلما زاد التمويل قوي أثر القانون، حتى ٣ أضعاف.",
         )}
       </p>
+      <p className="sc-lcd h-auto py-1 text-xs">
+        {t("القوانين المفعّلة {on} من {all} · تكلفتها {amount} د.ك شهرياً", {
+          on: LAWS.filter((l) => snap.ordinances[l.key]).length,
+          all: LAWS.length,
+          amount: fmt(LAWS.reduce((n, l) => n + lawMonthly(snap, l.key), 0)),
+        })}
+      </p>
       <ul className="space-y-2">
         {LAWS.map((law) => {
           const on = snap.ordinances[law.key];
+          if (!on)
+            return (
+              <li key={law.key} data-testid={`law-${law.key}`}>
+                <button
+                  type="button"
+                  aria-pressed={false}
+                  onClick={() => onOrdinance(law.key, true)}
+                  className="flex w-full items-center gap-2 rounded-md border-2 border-sc-ink/30 bg-sc-mint p-2 text-start text-sc-ink"
+                >
+                  <span className="grid h-6 w-6 place-items-center rounded border-2 border-sc-ink bg-white" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold">{t(law.title)}</span>
+                    <span className="block text-xs opacity-80">{t(law.detail)}</span>
+                  </span>
+                </button>
+              </li>
+            );
           const b = snap.lawBudget[law.key];
           const strength = lawStrength(snap, law.key);
           return (

@@ -1292,13 +1292,6 @@ function createInitialPreview(): Sim {
       stored: 0,
       born: 0,
     })),
-    ordinances: {
-      education: false,
-      recycling: false,
-      carpool: false,
-      clinicFund: false,
-      smokeBan: false,
-    },
     disaster: null,
     randomDisasters: false,
     log: [],

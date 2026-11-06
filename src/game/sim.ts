@@ -8,6 +8,7 @@ import {
   type FinanceState,
 } from "./finance";
 import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
+import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import {
   DEVELOPERS,
@@ -115,7 +116,7 @@ export type Sim = {
   streak: number;
 };
 
-export type CostKey = "housing" | "education" | "health" | "utilities" | "transport";
+export type CostKey = keyof typeof COST_ITEMS;
 export type Costs = Record<CostKey, number>;
 export type YearRow = {
   year: number;
@@ -136,26 +137,15 @@ export type CityEvent = { kind: EventKind; until: number };
 
 export type Difficulty = "easy" | "medium" | "hard";
 
-export type Ordinances = {
-  education: boolean;
-  recycling: boolean;
-  carpool: boolean;
-  clinicFund: boolean;
-  smokeBan: boolean;
-};
+export type Ordinances = Record<LawKey, boolean>;
 
 export type LawBudget = { mode: "amount" | "percent"; value: number; period: "month" | "year" };
 export type LawBudgets = Record<keyof Ordinances, LawBudget>;
 
 export function defaultLawBudgets(): LawBudgets {
-  const one = (value: number): LawBudget => ({ mode: "amount", value, period: "month" });
-  return {
-    education: one(20),
-    recycling: one(10),
-    carpool: one(6),
-    clinicFund: one(14),
-    smokeBan: one(8),
-  };
+  return Object.fromEntries(
+    LAW_KEYS.map((k) => [k, { mode: "amount", value: LAW_DEFS[k].cost, period: "month" }]),
+  ) as LawBudgets;
 }
 
 export type DisasterKind = "fire" | "storm" | "blackout" | "flood";
@@ -224,13 +214,17 @@ export function formatCityDate(day: number) {
 }
 
 export function emptyOrdinances(): Ordinances {
-  return {
-    education: false,
-    recycling: false,
-    carpool: false,
-    clinicFund: false,
-    smokeBan: false,
-  };
+  return Object.fromEntries(LAW_KEYS.map((k) => [k, false])) as Ordinances;
+}
+
+/** Sum of one effect over all active laws, each weighted by its funding strength. */
+export function lawEffect(s: Sim, effect: keyof LawEffects) {
+  let total = 0;
+  for (const key of LAW_KEYS) {
+    const v = (LAW_DEFS[key].effects as LawEffects)[effect];
+    if (v && s.ordinances[key]) total += v * lawStrength(s, key);
+  }
+  return total;
 }
 
 /** Set while a prepaid package (model area) places its own buildings. */
@@ -445,20 +439,51 @@ function housingCapacity(s: Sim) {
 
 // ---------------------------------------------------------------- cost of living
 
-export const COST_ITEMS: Record<
-  CostKey,
-  { name: string; perResident: number; weight: number; blurb: string }
-> = {
-  housing: { name: "السكن والإيجارات", perResident: 0.015, weight: 0.35, blurb: "أكبر بند في ميزانية الأسرة" },
-  education: { name: "التعليم", perResident: 0.008, weight: 0.2, blurb: "رسوم المدارس والكتب" },
-  health: { name: "الصحة", perResident: 0.007, weight: 0.2, blurb: "المستوصفات والأدوية" },
-  utilities: { name: "الكهرباء والماء", perResident: 0.007, weight: 0.15, blurb: "فواتير البيت" },
-  transport: { name: "النقل والمواصلات", perResident: 0.003, weight: 0.1, blurb: "الباصات والبنزين" },
+/**
+ * What residents pay the city each month, per item. `perResident` is KD per resident
+ * at 100٪; `weight` is how much the item counts in the cost-of-living index (the
+ * weights are normalised, so 100٪ everywhere is an index of 100).
+ */
+const COST_TABLE = {
+  housing: { name: "السكن والإيجارات", perResident: 0.015, weight: 0.21, blurb: "أكبر بند في ميزانية الأسرة" },
+  education: { name: "التعليم", perResident: 0.008, weight: 0.12, blurb: "رسوم المدارس والكتب" },
+  health: { name: "الصحة", perResident: 0.007, weight: 0.12, blurb: "المستوصفات والأدوية" },
+  utilities: { name: "الكهرباء والماء", perResident: 0.007, weight: 0.09, blurb: "فواتير البيت" },
+  transport: { name: "النقل والمواصلات", perResident: 0.003, weight: 0.06, blurb: "الباصات والبنزين" },
+  internet: { name: "الإنترنت", perResident: 0.003, weight: 0.025, blurb: "اشتراكات البيوت" },
+  mobile: { name: "الاتصالات والهاتف", perResident: 0.0025, weight: 0.02, blurb: "خطوط الهواتف" },
+  food: { name: "المواد الغذائية في الجمعيات", perResident: 0.006, weight: 0.05, blurb: "رسوم وأرباح الجمعيات التعاونية" },
+  cookingGas: { name: "غاز الطبخ", perResident: 0.001, weight: 0.01, blurb: "أسطوانات الغاز" },
+  sewage: { name: "الصرف الصحي", perResident: 0.0015, weight: 0.01, blurb: "رسوم شبكة المجاري" },
+  waste: { name: "جمع النفايات", perResident: 0.0015, weight: 0.01, blurb: "النظافة العامة" },
+  parking: { name: "المواقف", perResident: 0.001, weight: 0.015, blurb: "مواقف السيارات العامة" },
+  nurseries: { name: "الحضانات ورياض الأطفال", perResident: 0.002, weight: 0.02, blurb: "رسوم الصغار" },
+  university: { name: "الجامعات والمعاهد", perResident: 0.003, weight: 0.025, blurb: "رسوم الدراسة العليا" },
+  sports: { name: "الأندية الرياضية", perResident: 0.001, weight: 0.01, blurb: "اشتراكات الأندية" },
+  entertainment: { name: "الترفيه والسينما", perResident: 0.002, weight: 0.015, blurb: "التذاكر والفعاليات" },
+  domesticWorkers: { name: "رسوم العمالة المنزلية", perResident: 0.002, weight: 0.02, blurb: "الإقامات والتأمين" },
+  vehicles: { name: "تسجيل المركبات", perResident: 0.0015, weight: 0.015, blurb: "الدفاتر والفحص" },
+  licenses: { name: "رسوم البلدية والتراخيص", perResident: 0.0015, weight: 0.01, blurb: "المعاملات والرخص" },
+  healthInsurance: { name: "التأمين الصحي", perResident: 0.003, weight: 0.03, blurb: "بوالص العلاج" },
+  medicines: { name: "الأدوية", perResident: 0.0015, weight: 0.015, blurb: "الصيدليات" },
+  weddings: { name: "صالات الأفراح والمناسبات", perResident: 0.001, weight: 0.01, blurb: "حجوزات المناسبات" },
+  parksBeaches: { name: "الحدائق والشواطئ", perResident: 0.0005, weight: 0.01, blurb: "رسوم الدخول" },
+  culture: { name: "الثقافة والمكتبات", perResident: 0.0005, weight: 0.01, blurb: "المسارح والمتاحف" },
+  security: { name: "الحراسة والأمن الخاص", perResident: 0.001, weight: 0.015, blurb: "حراسة المجمعات" },
 };
+
+const COST_WEIGHT_TOTAL = Object.values(COST_TABLE).reduce((n, x) => n + x.weight, 0);
+
+export const COST_ITEMS: Record<
+  keyof typeof COST_TABLE,
+  { name: string; perResident: number; weight: number; blurb: string }
+> = Object.fromEntries(
+  Object.entries(COST_TABLE).map(([k, v]) => [k, { ...v, weight: v.weight / COST_WEIGHT_TOTAL }]),
+) as typeof COST_TABLE;
 export const COST_KEYS = Object.keys(COST_ITEMS) as CostKey[];
 
 export function defaultCosts(): Costs {
-  return { housing: 100, education: 100, health: 100, utilities: 100, transport: 100 };
+  return Object.fromEntries(COST_KEYS.map((k) => [k, 100])) as Costs;
 }
 
 /** Weighted cost-of-living index (100 = normal). */
@@ -1106,8 +1131,7 @@ export function stats(s: Sim): CityStats {
   if (s.tax > 40) happy -= Math.min(24, Math.round((s.tax - 40) / 18));
   else if (s.tax > 8) happy -= Math.round((s.tax - 8) * 0.6);
   if (s.tax < 5) happy += 5;
-  happy += 3 * lawStrength(s, "education");
-  happy += 2 * lawStrength(s, "recycling");
+  happy += lawEffect(s, "happy");
   const hit = s.disaster && s.day < s.disaster.until ? s.disaster.kind : null;
   if (hit === "storm") happy -= 14;
   if (hit === "flood") happy -= 10;
@@ -1125,7 +1149,10 @@ export function stats(s: Sim): CityStats {
   const crisis = crisisOf(s);
   if (crisis) {
     let hit2 = CRISES[crisis].happy;
-    if (crisis === "pandemic") hit2 *= 1 - serviceCoverage(s, capacity).clinic * 0.6;
+    if (crisis === "pandemic")
+      hit2 *=
+        (1 - serviceCoverage(s, capacity).clinic * 0.6) *
+        Math.max(0.2, 1 - lawEffect(s, "pandemic"));
     happy -= Math.round(hit2);
   }
   const mood = calendarMood(s);
@@ -1270,8 +1297,11 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
     v *= 1.1;
   if (d.needsPop > 0 && st.pop < d.needsPop) v *= 0.35;
   if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1);
-  if (s.ordinances.smokeBan && (b.kind === "shop" || b.kind === "tower"))
-    v *= Math.max(0.6, 1 - 0.1 * lawStrength(s, "smokeBan"));
+  if (b.kind === "shop" || b.kind === "tower" || b.kind === "avenues" || b.kind === "mubarakiya")
+    v *= Math.max(0.5, 1 + lawEffect(s, "commerce"));
+  if (CATALOG[b.kind].cat === "landmarks") v *= 1 + lawEffect(s, "landmarks");
+  if (d.coastBoost && coastal(b.c, b.r)) v *= 1 + lawEffect(s, "coast");
+  v *= 1 + lawEffect(s, "all");
   const tax = 0.55 + (clamp(s.tax, 0, 300) / 100) * 1.2;
   return v * st.mult * tax;
 }
@@ -2048,21 +2078,27 @@ export function metrics(s: Sim, st = stats(s)): Sample {
   let coast = 0;
   for (const b of s.buildings) if (coastal(b.c, b.r)) coast += 1;
   const jobs = shops * 18 + towers * 26;
-  const unemployment =
-    st.pop <= 0 ? 0 : clamp(((st.pop - jobs) / Math.max(st.pop, 1)) * 100, 0, 100);
-  let pollution = industryN * 18 + towers * 7 - parks * 8;
-  pollution -= 14 * lawStrength(s, "recycling");
-  pollution -= 12 * lawStrength(s, "smokeBan");
-  pollution = clamp(pollution, 0, 100);
-  let traffic = clamp((s.buildings.length * 70) / Math.max(3, s.roads.length) - 20, 0, 100);
-  traffic = clamp(traffic - 18 * lawStrength(s, "carpool"), 0, 100);
-  const crime = clamp(62 - police * 16 - parks * 4 + Math.max(0, st.pop - 60) / 10, 0, 100);
-  const health = clamp(
-    36 + clinics * 16 + water * 0.28 - pollution * 0.22 + 12 * lawStrength(s, "clinicFund"),
+  const unemployment = clamp(
+    (st.pop <= 0 ? 0 : ((st.pop - jobs) / Math.max(st.pop, 1)) * 100) + lawEffect(s, "unemployment"),
     0,
     100,
   );
-  const education = clamp(24 + 42 * lawStrength(s, "education") + clinics * 5, 0, 100);
+  let pollution = industryN * 18 + towers * 7 - parks * 8;
+  pollution += lawEffect(s, "pollution");
+  pollution = clamp(pollution, 0, 100);
+  let traffic = clamp((s.buildings.length * 70) / Math.max(3, s.roads.length) - 20, 0, 100);
+  traffic = clamp(traffic + lawEffect(s, "traffic"), 0, 100);
+  const crime = clamp(
+    62 - police * 16 - parks * 4 + Math.max(0, st.pop - 60) / 10 + lawEffect(s, "crime"),
+    0,
+    100,
+  );
+  const health = clamp(
+    36 + clinics * 16 + water * 0.28 - pollution * 0.22 + lawEffect(s, "health"),
+    0,
+    100,
+  );
+  const education = clamp(24 + lawEffect(s, "education") + clinics * 5, 0, 100);
   const land = clamp(30 + parks * 8 + coast * 4 + st.happy * 0.2, 0, 100);
   return {
     day: s.day,
@@ -2162,13 +2198,9 @@ function stats0(s: Sim) {
   return { residents: Math.round(pop * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1)) * RESIDENTS_PER_UNIT };
 }
 
-export const ORDINANCE_COST: Record<keyof Ordinances, number> = {
-  education: 20,
-  recycling: 10,
-  carpool: 6,
-  clinicFund: 14,
-  smokeBan: 8,
-};
+export const ORDINANCE_COST = Object.fromEntries(
+  LAW_KEYS.map((k) => [k, LAW_DEFS[k].cost]),
+) as Record<LawKey, number>;
 
 export function monthlyUpkeep(s: Sim) {
   let n = 0;
@@ -2178,6 +2210,7 @@ export function monthlyUpkeep(s: Sim) {
   for (const key of Object.keys(ORDINANCE_COST) as (keyof Ordinances)[])
     if (s.ordinances[key] && s.lawBudget[key].period === "month") n += lawPayment(s, key);
   if (consulting(s)) n *= 0.85;
+  n *= Math.max(0.5, 1 - lawEffect(s, "upkeep"));
   // Civil defense during a regional war.
   if (crisisOf(s) === "war") n += 40 + s.buildings.length * 2;
   return priceOf(n, s);
@@ -2256,7 +2289,8 @@ export function advanceDays(s: Sim, days: number) {
       0.35 +
         (st.happy / 100) * 0.75 +
         (ev?.draw ?? 0) -
-        (crisis ? CRISES[crisis].leave : 0) -
+        (crisis ? CRISES[crisis].leave : 0) +
+        lawEffect(s, "draw") -
         // Extreme living costs empty the city no matter how happy it was.
         Math.min(0.45, Math.max(0, costIndex(s) - 300) / 2000),
       OCCUPANCY_MIN,
@@ -2333,7 +2367,7 @@ export function disasterBill(s: Sim, kind: DisasterKind) {
   const size = s.buildings.length * 8;
   const share = Math.max(0, s.coins) * (kind === "fire" ? 0.03 : 0.06);
   const base = { fire: 150, storm: 250, blackout: 180, flood: 300 }[kind];
-  return Math.round(base + size + share);
+  return Math.round((base + size + share) * Math.max(0.2, 1 - lawEffect(s, "disaster")));
 }
 
 export function triggerDisaster(
@@ -2577,13 +2611,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     }
     const o = p.ordinances;
     if (o && typeof o === "object") {
-      s.ordinances = {
-        education: Boolean(o.education),
-        recycling: Boolean(o.recycling),
-        carpool: Boolean(o.carpool),
-        clinicFund: Boolean(o.clinicFund),
-        smokeBan: Boolean(o.smokeBan),
-      };
+      for (const key of LAW_KEYS) s.ordinances[key] = Boolean((o as Partial<Ordinances>)[key]);
     }
     const lb = p.lawBudget;
     if (lb && typeof lb === "object")

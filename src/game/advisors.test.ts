@@ -3,8 +3,13 @@ import test from "node:test";
 import { DEVELOPMENTS } from "./developments.ts";
 import { CATALOG, maxLevelOf } from "./catalog.ts";
 import { LAND } from "./land.ts";
+import { LAW_KEYS } from "./laws.ts";
 import {
   developmentMonth,
+  COST_KEYS,
+  costIndex,
+  incomePerSec,
+  metrics,
   lawPayment,
   lawStrength,
   monthlyUpkeep,
@@ -357,4 +362,21 @@ test("laws: funded by amount or share of income, monthly or yearly, with stronge
   const base = town();
   assert.equal(upkeepMonthly, monthlyUpkeep(base), "yearly laws add nothing to the monthly bill");
   assert.ok(lawStrength(y, "clinicFund") > 0);
+});
+
+test("25 laws and 25 cost-of-living items, all wired into the city", () => {
+  assert.equal(LAW_KEYS.length, 25);
+  assert.equal(COST_KEYS.length, 25);
+  const s = town();
+  assert.equal(costIndex(s), 100, "all items at 100٪ keep the index at 100");
+  const crimeBefore = metrics(s).crime;
+  s.ordinances.communityWatch = true;
+  assert.ok(metrics(s).crime < crimeBefore, "community safety lowers crime");
+  const rich = town();
+  rich.ordinances.integrity = true;
+  const b = rich.buildings.find((x) => CATALOG[x.kind].income > 0)!;
+  assert.ok(incomePerSec(b, rich) > incomePerSec(b, town()), "integrity raises all income");
+  const fees = feeRevenue(s);
+  s.costs.internet = 300;
+  assert.ok(feeRevenue(s) > fees, "a new cost item brings in money");
 });

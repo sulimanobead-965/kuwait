@@ -220,6 +220,8 @@ export function CostSliders({
 }) {
   const st = stats(snap);
   const rev = costRevenue(snap, st);
+  const [showAll, setShowAll] = useState(false);
+  const [allRate, setAllRate] = useState(100);
   const index = costIndex(snap);
   return (
     <div className="space-y-2">
@@ -235,7 +237,24 @@ export function CostSliders({
           { max: fmt(COST_MAX), total: fmt(rev.total) },
         )}
       </p>
-      {COST_KEYS.map((key) => {
+      <div className="flex items-end gap-1">
+        <NumberField
+          label={t("طبّق نسبة واحدة على كل البنود")}
+          value={allRate}
+          onChange={setAllRate}
+          suffix={percentSign()}
+          testid="cost-all"
+        />
+        <button
+          type="button"
+          data-testid="cost-all-apply"
+          onClick={() => COST_KEYS.forEach((k) => onCost(k, allRate))}
+          className="sc-menu sc-on shrink-0 px-3 text-xs"
+        >
+          {t("طبّق")}
+        </button>
+      </div>
+      {(showAll ? COST_KEYS : COST_KEYS.slice(0, 5)).map((key) => {
         const v = snap.costs[key];
         const set = (n: number) => onCost(key, Math.max(0, Math.min(COST_MAX, Math.round(n))));
         return (
@@ -268,6 +287,16 @@ export function CostSliders({
           </div>
         );
       })}
+      <button
+        type="button"
+        data-testid="cost-show-all"
+        onClick={() => setShowAll((v) => !v)}
+        className="sc-textbtn h-9 w-full text-xs"
+      >
+        {showAll
+          ? t("اعرض البنود الأساسية فقط")
+          : t("اعرض كل البنود ({n})", { n: COST_KEYS.length })}
+      </button>
       <div className="flex items-center gap-1 text-xs font-extrabold">
         <span className="flex-1">{t("زيادة سنوية تلقائية")}</span>
         {[0, 5, 10, 50, 100].map((pct) => (
