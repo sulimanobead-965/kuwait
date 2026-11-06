@@ -12,6 +12,13 @@ import {
   advanceDays,
   advanceQuest,
   bulldoze,
+  buyModelArea,
+  checkPromotion,
+  repayLoan,
+  startEvent,
+  takeLoan,
+  type EventKind,
+  type ModelKind,
   cloneSim,
   coastal,
   collectAll,
@@ -83,6 +90,7 @@ export function CityGame() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [districtChooser, setDistrictChooser] = useState(false);
   const toastSeq = useRef(0);
+  const notifyRef = useRef<{ promotion: () => void }>({ promotion: () => {} });
 
   toolRef.current = tool;
 
@@ -174,7 +182,15 @@ export function CityGame() {
         audio.play("quest", simRef.current.mute);
         toastRef.current(`تمت المهمة +${fmt(gained.reward)} د.ك`);
       }
+      notePromotion();
     }
+    function notePromotion() {
+      const up = checkPromotion(simRef.current);
+      if (!up) return;
+      audio.play("quest", simRef.current.mute);
+      toastRef.current(`مبروك! صرت ${up.title} · مكافأة ${fmt(up.bonus)} د.ك`);
+    }
+    notifyRef.current = { promotion: notePromotion };
     function collect(id: string) {
       const n = collectOne(simRef.current, id);
       if (n <= 0) return;
@@ -243,10 +259,18 @@ export function CityGame() {
           tick(sim, 0.25);
           acc -= 0.25;
         }
+        const logBefore = sim.log[0];
         advanceDays(sim, dt * daysPerSec);
+        if (sim.log[0] !== logBefore && sim.log[0]) {
+          // Disasters, loans paid off, events ending: show what just happened.
+          const news = sim.log[0];
+          if (/حريق|عاصفة|سيول|انقطاع/.test(news)) audio.play("error", sim.mute);
+          toastRef.current(news);
+        }
         hudAcc += dt;
         if (hudAcc > 0.45) {
           hudAcc = 0;
+          notePromotion();
           syncRef.current();
         }
       }
@@ -455,6 +479,42 @@ export function CityGame() {
     sync();
   }
 
+  function onFees(n: number) {
+    simRef.current.fees = Math.max(50, Math.min(200, n));
+    sync();
+  }
+
+  function onLoan(amount: number) {
+    const act = takeLoan(simRef.current, amount);
+    pushToast(act.ok ? `دخل حسابك ${fmt(amount)} د.ك من البنك` : act.msg);
+    sync();
+  }
+
+  function onRepay(amount: number) {
+    const act = repayLoan(simRef.current, amount);
+    pushToast(act.ok ? "تم السداد" : act.msg);
+    sync();
+  }
+
+  function onEvent(kind: EventKind) {
+    const act = startEvent(simRef.current, kind);
+    if (!act.ok) pushToast(act.msg);
+    sync();
+  }
+
+  function onModel(kind: ModelKind) {
+    const act = buyModelArea(simRef.current, kind, timeRef.current);
+    if (!act.ok) {
+      pushToast(act.msg);
+      return;
+    }
+    advanceQuest(simRef.current);
+    notifyRef.current.promotion();
+    worldRef.current?.focus({ c: act.c, r: act.r }, 30);
+    sync();
+    pushToast(`تم البناء: ${act.built} مبنى`);
+  }
+
   function onOrdinance(key: keyof Ordinances, value: boolean) {
     simRef.current.ordinances = { ...simRef.current.ordinances, [key]: value };
     sync();
@@ -544,7 +604,7 @@ export function CityGame() {
 
   return (
     <main className="game-shell relative bg-sc-bar text-sc-mint">
-      <h1 className="sr-only">عمدة الكويت</h1>
+      <h1 className="sr-only">المحافظ</h1>
       <canvas
         ref={canvasRef}
         data-testid="city-canvas"
@@ -579,6 +639,11 @@ export function CityGame() {
         onZone={onZone}
         onBuild={onBuild}
         onTax={onTax}
+        onFees={onFees}
+        onLoan={onLoan}
+        onRepay={onRepay}
+        onEvent={onEvent}
+        onModel={onModel}
         onOrdinance={onOrdinance}
         onDisaster={onDisaster}
         onRandom={onRandom}

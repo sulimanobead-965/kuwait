@@ -239,7 +239,7 @@ export class FallbackCityWorld {
     if (sim.district !== this.district) {
       this.district = sim.district;
       if (sim.district) this.frameDistrict();
-      else this.focus({ c: 26, r: 24 }, 65);
+      else this.focus({ c: 46, r: 17 }, 65);
     }
     this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
     const ctx = this.ctx;

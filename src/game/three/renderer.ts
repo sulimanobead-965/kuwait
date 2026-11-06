@@ -66,6 +66,12 @@ type BuildingRecord = {
   position: THREE.Vector3;
 };
 
+/** Finger travel (px) before a build tap turns into a map drag. */
+const PLACE_SLOP = 14;
+/** Start-screen showcase sits on the real Sharq waterfront (see land.ts). */
+const PREVIEW_SHIFT = { c: 20, r: -7 } as const;
+export const PREVIEW_FOCUS = { c: 26 + PREVIEW_SHIFT.c, r: 24 + PREVIEW_SHIFT.r } as const;
+
 export class CityWorld {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -309,6 +315,11 @@ export class CityWorld {
       return;
     }
     this.callbacks.strokeEnd();
+    // Finish any glide so the first drag frame starts from where the map really is.
+    this.target.copy(this.targetGoal);
+    this.viewHeight = this.viewHeightGoal;
+    this.updateProjection();
+    this.poseCamera();
     const p = this.local(e);
     const road = Boolean(this.sim?.started && this.currentTool?.kind === "road");
     const zone = Boolean(this.sim?.started && this.currentTool?.kind === "zone");
@@ -360,20 +371,43 @@ export class CityWorld {
       this.drawZone(this.zone, this.hover);
       return;
     }
-    if (drag.place && drag.moved < 88) return;
+    if (drag.place && drag.moved < PLACE_SLOP) return;
     if (drag.moved > 3) {
-      const factor = this.viewHeight / this.height;
-      const right = new THREE.Vector3(Math.SQRT1_2, 0, -Math.SQRT1_2);
-      const front = new THREE.Vector3(Math.SQRT1_2, 0, Math.SQRT1_2);
-      this.targetGoal
-        .addScaledVector(right, -dx * factor)
-        .addScaledVector(
-          front,
-          (dy * factor) / Math.sin(THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES)),
-        );
-      clampCameraTarget(this.targetGoal, this.viewHeightGoal);
+      // Keep the ground point under the finger glued to it: project the previous and
+      // current pointer onto the ground with the same camera and move by the difference.
+      const before = this.groundAt(p.x - dx, p.y - dy);
+      const after = this.groundAt(p.x, p.y);
+      if (!before || !after) return;
+      this.target.add(before.sub(after));
+      clampCameraTarget(this.target, this.viewHeight);
+      this.targetGoal.copy(this.target);
+      this.poseCamera();
     }
   };
+
+  private groundAt(x: number, y: number) {
+    const pixel = new THREE.Vector2((x / this.width) * 2 - 1, -(y / this.height) * 2 + 1);
+    this.raycaster.setFromCamera(pixel, this.camera);
+    const point = new THREE.Vector3();
+    return this.raycaster.ray.intersectPlane(this.groundPlane, point);
+  }
+
+  private poseCamera() {
+    const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES),
+      yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
+    this.camera.position
+      .copy(this.target)
+      .add(
+        new THREE.Vector3(
+          Math.sin(yaw) * Math.cos(pitch) * 100,
+          Math.sin(pitch) * 100,
+          Math.cos(yaw) * Math.cos(pitch) * 100,
+        ),
+      );
+    this.camera.lookAt(this.target);
+    this.camera.updateMatrixWorld();
+    this.dirtyShadows = true;
+  }
 
   private onUp = (e: PointerEvent) => {
     this.pointers.delete(e.pointerId);
@@ -409,7 +443,7 @@ export class CityWorld {
       this.zone = null;
       return;
     }
-    if (drag.place && drag.moved < 88 && this.sim) {
+    if (drag.place && drag.moved < PLACE_SLOP && this.sim) {
       const released = this.rayCell(e);
       const cell =
         nearestOpenLot(this.sim, released.c, released.r, 1) ??
@@ -599,7 +633,7 @@ export class CityWorld {
         this.scene.add(this.districtNumbers);
       }
       if (district) this.frameDistrict();
-      else this.focus({ c: 26, r: 24 }, 31);
+      else this.focus(PREVIEW_FOCUS, 31);
     }
     const preview =
       !input.started && !input.district && input.buildings.length === 0 && input.roads.length === 0;
@@ -616,7 +650,7 @@ export class CityWorld {
         (14 + input.buildings.length) * Math.max(1, 0.9 / aspect),
       );
     }
-    if (preview && force) this.focus({ c: 26, r: 24 }, 31);
+    if (preview && force) this.focus(PREVIEW_FOCUS, 31);
     const roadSignature = sim.roads.join("|");
     if (roadSignature !== this.roadSignature) {
       this.roadSignature = roadSignature;
@@ -842,19 +876,7 @@ export class CityWorld {
     this.target.lerp(this.targetGoal, smoothing);
     if (viewChanged) {
       this.updateProjection();
-      const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES),
-        yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
-      this.camera.position
-        .copy(this.target)
-        .add(
-          new THREE.Vector3(
-            Math.sin(yaw) * Math.cos(pitch) * 100,
-            Math.sin(pitch) * 100,
-            Math.cos(yaw) * Math.cos(pitch) * 100,
-          ),
-        );
-      this.camera.lookAt(this.target);
-      this.dirtyShadows = true;
+      this.poseCamera();
     }
     if (this.sim) this.updateCars(this.sim);
     this.updateLighting(dt);
@@ -958,9 +980,13 @@ export class CityWorld {
 }
 
 function createInitialPreview(): Sim {
+  // Sharq waterfront on the real map: landmarks along one avenue south of Ras Ajuza.
+  const dc = PREVIEW_SHIFT.c;
+  const dr = PREVIEW_SHIFT.r;
   const roads = [];
-  for (let c = 17; c <= 34; c += 1) roads.push(`${c},23`);
-  for (const c of [19, 24, 29, 34]) for (let r = 24; r <= 27; r += 1) roads.push(`${c},${r}`);
+  for (let c = 17; c <= 34; c += 1) roads.push(`${c + dc},${23 + dr}`);
+  for (const c of [19, 24, 29, 34])
+    for (let r = 24; r <= 27; r += 1) roads.push(`${c + dc},${r + dr}`);
   const lots: [Sim["buildings"][number]["kind"], number, number, number?][] = [
     ["palace", 18, 22],
     ["mosque", 21, 22],
@@ -990,8 +1016,8 @@ function createInitialPreview(): Sim {
     buildings: lots.map(([kind, c, r, level = 1], i) => ({
       id: `show-${i}`,
       kind,
-      c,
-      r,
+      c: c + dc,
+      r: r + dr,
       level,
       stored: 0,
       born: 0,
@@ -1009,6 +1035,12 @@ function createInitialPreview(): Sim {
     history: [],
     difficulty: "easy",
     luckAt: 0,
+    fees: 100,
+    occupancy: 1,
+    loan: 0,
+    event: null,
+    fame: 0,
+    rank: 0,
   };
 }
 

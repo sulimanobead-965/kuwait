@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DISTRICTS,
   districtById,
+  districtOffset,
   districtRoads,
   isDistrictId,
   isDistrictLand,
@@ -23,7 +24,14 @@ import {
   placeRoad,
   planZone,
   saveSim,
+  type Sim,
 } from "./sim.ts";
+
+/** Real prices apply; these layout checks are about geometry, not budgets. */
+function rich(s: Sim): Sim {
+  s.coins = 1e9;
+  return s;
+}
 
 function locate(id: DistrictId, number: number) {
   const sector = districtById(id)!.sectors.find((item) => item.number === number)!;
@@ -31,8 +39,17 @@ function locate(id: DistrictId, number: number) {
   return sector;
 }
 
-function srcOf(sector: { x: number; y: number }) {
-  return sourceCell(sector.x, sector.y);
+/** Source cell in template coordinates, i.e. with the real-map relocation undone. */
+function srcOf(id: DistrictId, sector: { x: number; y: number }) {
+  const at = sourceCell(sector.x, sector.y);
+  const { dc, dr } = districtOffset(id);
+  return { c: at.c - dc, r: at.r - dr };
+}
+
+/** Scaled cells of a Yarmouk template source cell, wherever Yarmouk sits on the map. */
+function yarmoukCells(c: number, r: number) {
+  const { dc, dr } = districtOffset("yarmouk");
+  return cellsFromSource(c + dc, r + dr);
 }
 
 test("the playable land is five times the source mask", () => {
@@ -55,11 +72,11 @@ test("only the three verified sign layouts, with the exact sector ordering", () 
   assert.equal(districtById("free")?.name, "منطقة حرة");
   assert.equal(districtById("free")?.sectors.length, 0);
   assert.deepEqual(
-    [2, 3, 1, 4].map((n) => srcOf(locate("yarmouk", n)).r < 27),
+    [2, 3, 1, 4].map((n) => srcOf("yarmouk", locate("yarmouk", n)).r < 27),
     [true, true, false, false],
   );
   assert.deepEqual(
-    [3, 2, 4, 1].map((n) => srcOf(locate("adailiya", n)).r < 27),
+    [3, 2, 4, 1].map((n) => srcOf("adailiya", locate("adailiya", n)).r < 27),
     [true, true, false, false],
   );
   for (const [left, right, row] of [
@@ -67,8 +84,8 @@ test("only the three verified sign layouts, with the exact sector ordering", () 
     [6, 3, 24],
     [5, 4, 29],
   ] as const) {
-    assert.equal(srcOf(locate("surra", left)).r, row);
-    assert.equal(srcOf(locate("surra", right)).r, row);
+    assert.equal(srcOf("surra", locate("surra", left)).r, row);
+    assert.equal(srcOf("surra", locate("surra", right)).r, row);
     assert.ok(locate("surra", right).x > locate("surra", left).x);
   }
 });
@@ -109,7 +126,7 @@ test("every one of the fourteen sectors is buildable and planning stays within o
   for (const district of DISTRICTS) {
     if (district.id === "free") continue;
     for (const sector of district.sectors) {
-      const city = createInitialDistrict(district.id);
+      const city = rich(createInitialDistrict(district.id));
       const lot = sector.cells[0]!;
       assert.equal(
         placeBuilding(city, "villa", lot.c, lot.r, 1).ok,
@@ -117,7 +134,7 @@ test("every one of the fourteen sectors is buildable and planning stays within o
         `${district.id}: sector ${sector.number}`,
       );
     }
-    const city = createInitialDistrict(district.id);
+    const city = rich(createInitialDistrict(district.id));
     const sector = district.sectors[0]!;
     const start = sector.cells[0]!;
     const result = planZone(
@@ -135,17 +152,17 @@ test("every one of the fourteen sectors is buildable and planning stays within o
       assert.equal(sectorAt(district.id, cellKey(b.c, b.r)), sector.number);
     }
   }
-  const city = createInitialDistrict("yarmouk");
+  const city = rich(createInitialDistrict("yarmouk"));
   const schematic = districtRoads(districtById("yarmouk")!)[0]!.split(",").map(Number);
   assert.equal(bulldoze(city, schematic[0]!, schematic[1]!).ok, false);
-  const outside = cellsFromSource(28, 21)[0]!;
-  const besideRoad = cellsFromSource(27, 21)[0]!;
+  const outside = yarmoukCells(28, 21)[0]!;
+  const besideRoad = yarmoukCells(27, 21)[0]!;
   assert.equal(placeBuilding(city, "villa", outside.c, outside.r, 0).ok, true);
   assert.equal(placeRoad(city, besideRoad.c, besideRoad.r).ok, true);
-  const roadCells = cellsFromSource(29, 21);
+  const roadCells = yarmoukCells(29, 21);
   const road = roadCells[roadCells.length - 1]!;
   const beside = planZone(
-    createInitialDistrict("yarmouk"),
+    rich(createInitialDistrict("yarmouk")),
     road.c,
     road.r,
     road.c,
@@ -156,7 +173,7 @@ test("every one of the fourteen sectors is buildable and planning stays within o
   assert.equal(beside.ok, true);
   const only = sectorsForZone("yarmouk", road.c, road.r, road.c, road.r);
   assert.equal(only.length, 1);
-  const filled = createInitialDistrict("yarmouk");
+  const filled = rich(createInitialDistrict("yarmouk"));
   const crossed = planZone(
     filled,
     locate("yarmouk", 2).cells[0]!.c,
@@ -179,8 +196,9 @@ test("every one of the fourteen sectors is buildable and planning stays within o
       key,
     );
   }
-  const far = cellsFromSource(8, 22)[0]!;
-  const open = createInitialDistrict("yarmouk");
+  // Open land east of Yarmouk on the real map.
+  const far = cellsFromSource(32, 22)[0]!;
+  const open = rich(createInitialDistrict("yarmouk"));
   const outsideZone = planZone(
     open,
     far.c,
@@ -192,15 +210,15 @@ test("every one of the fourteen sectors is buildable and planning stays within o
   );
   assert.equal(outsideZone.ok, true);
   if (outsideZone.ok) assert.ok(outsideZone.built > 5);
-  const snapped = nearestOpenLot(createInitialDistrict("yarmouk"), road.c, road.r, 2);
+  const snapped = nearestOpenLot(rich(createInitialDistrict("yarmouk")), road.c, road.r, 2);
   assert.ok(snapped);
   assert.equal(isDistrictLand("yarmouk", cellKey(snapped.c, snapped.r)), true);
-  const legacy = createInitial();
+  const legacy = rich(createInitial());
   const legacyLot = cellsFromSource(34, 21)[0]!;
   const legacyRoad = cellsFromSource(33, 21)[0]!;
   assert.equal(placeRoad(legacy, legacyRoad.c, legacyRoad.r).ok, true);
   assert.equal(placeBuilding(legacy, "villa", legacyLot.c, legacyLot.r, 0).ok, true);
-  const free = createInitialDistrict("free");
+  const free = rich(createInitialDistrict("free"));
   assert.equal(free.roads.length, 0);
   const freeLot = cellsFromSource(20, 24)[0]!;
   assert.equal(placeBuilding(free, "villa", freeLot.c, freeLot.r, 1).ok, true);
@@ -229,7 +247,7 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
     length: 0,
   };
   try {
-    const legacy = createInitial();
+    const legacy = rich(createInitial());
     const legacyRoad = cellsFromSource(17, 23)[0]!;
     const legacyHome = cellsFromSource(18, 23)[0]!;
     placeRoad(legacy, legacyRoad.c, legacyRoad.r);
@@ -258,7 +276,7 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
     assert.equal(loadSim().buildings[0]!.kind, "boubyan");
 
     for (const id of ["yarmouk", "adailiya", "surra"] as const) {
-      const neighbor = createInitialDistrict(id);
+      const neighbor = rich(createInitialDistrict(id));
       neighbor.started = true;
       saveSim(neighbor);
       assert.equal(loadSim(id).district, id);

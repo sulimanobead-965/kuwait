@@ -1,4 +1,8 @@
-/** Playable interpretations of three supplied signs, not GIS or cadastral surveys. */
+/**
+ * Playable interpretations of three supplied signs, not cadastral surveys. Each plan is
+ * drawn on a 15×13 template and then moved (dc, dr source cells) onto the real spot of
+ * the neighborhood on the Kuwait City map in `land.ts`.
+ */
 import { cellsFromSource, LAND, SOURCE_COLS, SOURCE_LAND, SOURCE_ROWS } from "./land";
 const srcIsLand = (c: number, r: number) =>
   c >= 0 && r >= 0 && c < SOURCE_COLS && r < SOURCE_ROWS && SOURCE_LAND[r]?.[c] === 1;
@@ -22,6 +26,9 @@ interface Definition {
   name: string;
   description: string;
   main: (r: number) => [number, number];
+  /** Source-cell offset from the template to the real neighborhood location. */
+  dc: number;
+  dr: number;
   blocks: readonly (readonly [number, Side, number, number])[];
 }
 const definitions: readonly Definition[] = [
@@ -30,6 +37,9 @@ const definitions: readonly Definition[] = [
     name: "اليرموك",
     description: "شارع رئيسي مستقيم وتقاطع أفقي يفصل قطعتَي ٢/٣ عن ١/٤.",
     main: () => [36, 37],
+    // 47.966° E, 29.311° N
+    dc: -20,
+    dr: 1,
     blocks: [
       [2, "l", 19, 26],
       [3, "r", 19, 26],
@@ -42,6 +52,9 @@ const definitions: readonly Definition[] = [
     name: "العديلية",
     description: "شارع رئيسي طولي وتقاطع أفقي: ٣/٢ أعلى المخطط، و٤/١ أسفله.",
     main: () => [36, 37],
+    // 47.987° E, 29.329° N
+    dc: -15,
+    dr: -4,
     blocks: [
       [3, "l", 19, 26],
       [2, "r", 19, 26],
@@ -54,6 +67,9 @@ const definitions: readonly Definition[] = [
     name: "السرة",
     description: "شارع رئيسي مستقيم بين عمودين، وتقاطعان أفقيان يفصلان القطع الست.",
     main: () => [36, 37],
+    // 48.003° E, 29.307° N
+    dc: -11,
+    dr: 1,
     blocks: [
       [1, "l", 19, 22],
       [2, "r", 19, 22],
@@ -74,7 +90,8 @@ const sourceDistricts: readonly District[] = definitions.map((d) => ({
       const [lo, hi] = d.main(r),
         left = side === "l" ? 30 : hi + 1,
         right = side === "l" ? lo - 1 : 42;
-      for (let c = left; c <= right; c++) if (srcIsLand(c, r)) cells.push({ c, r });
+      for (let c = left; c <= right; c++)
+        if (srcIsLand(c + d.dc, r + d.dr)) cells.push({ c: c + d.dc, r: r + d.dr });
     }
     const sorted = [...cells].sort(
       (a, b) =>
@@ -122,6 +139,10 @@ const land = new Map<DistrictId, Set<string>>(),
   roadSet = new Map<DistrictId, Set<string>>();
 
 function sourceRoads(district: District): string[] {
+  const d = definitions.find((item) => item.id === district.id)!;
+  // Template coordinates in, real map coordinates out.
+  const key = (c: number, r: number) => `${c + d.dc},${r + d.dr}`;
+  const land = (c: number, r: number) => srcIsLand(c + d.dc, r + d.dr);
   const parcels = new Set<string>();
   for (const sector of district.sectors) {
     for (const cell of sector.cells) parcels.add(`${cell.c},${cell.r}`);
@@ -129,24 +150,21 @@ function sourceRoads(district: District): string[] {
   const roads = new Set<string>();
   for (let r = 18; r <= 30; r += 1) {
     for (let c = 29; c <= 43; c += 1) {
-      const key = `${c},${r}`;
-      if ((c === 29 || c === 43 || r === 18 || !parcels.has(key)) && srcIsLand(c, r)) roads.add(key);
+      if ((c === 29 || c === 43 || r === 18 || !parcels.has(key(c, r))) && land(c, r))
+        roads.add(key(c, r));
     }
   }
-  const definition = definitions.find((d) => d.id === district.id)!;
   for (let r = 18; r <= 30; r += 1)
-    for (let c = definition.main(r)[0]; c <= definition.main(r)[1]; c += 1)
-      if (srcIsLand(c, r)) roads.add(`${c},${r}`);
+    for (let c = d.main(r)[0]; c <= d.main(r)[1]; c += 1) if (land(c, r)) roads.add(key(c, r));
   for (let r = 18; r < 30; r += 1) {
-    const current = definition.main(r),
-      next = definition.main(r + 1);
+    const current = d.main(r),
+      next = d.main(r + 1);
     for (const edge of [current[0], current[1], next[0], next[1]]) {
       for (const [c, row] of [
         [edge, r],
         [edge, r + 1],
       ] as const) {
-        const key = `${c},${row}`;
-        if (c >= 29 && c <= 43 && !parcels.has(key) && srcIsLand(c, row)) roads.add(key);
+        if (c >= 29 && c <= 43 && !parcels.has(key(c, row)) && land(c, row)) roads.add(key(c, row));
       }
     }
   }
@@ -191,11 +209,19 @@ export const isDistrictLand = (id: DistrictId | null, key: string) =>
   !id || id === "free" ? id !== "free" : land.get(id)?.has(key) === true;
 export const sectorAt = (id: DistrictId | null, key: string | null) =>
   key !== null && id ? numbers.get(id)?.get(key) : undefined;
-/** Straight source centerline, before the five-times land scale. */
+/** Straight source centerline columns (map position, before the five-times land scale). */
 export function districtArterial(id: DistrictId): readonly (readonly [number, number])[] {
   const definition = definitions.find((d) => d.id === id);
   if (!definition) return [];
-  return Array.from({ length: 13 }, (_, i) => definition.main(i + 18));
+  return Array.from({ length: 13 }, (_, i) => {
+    const [lo, hi] = definition.main(i + 18);
+    return [lo + definition.dc, hi + definition.dc] as const;
+  });
+}
+/** Source-cell shift that moved a neighborhood template onto its real map location. */
+export function districtOffset(id: DistrictId) {
+  const definition = definitions.find((d) => d.id === id);
+  return { dc: definition?.dc ?? 0, dr: definition?.dr ?? 0 };
 }
 export const isSchematicRoad = (id: DistrictId | null | undefined, key: string) =>
   id ? roadSet.get(id)?.has(key) === true : false;

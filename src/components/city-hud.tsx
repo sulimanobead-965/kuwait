@@ -17,6 +17,10 @@ import {
   Trash2,
   Volume2,
   VolumeX,
+  Trophy,
+  Building2,
+  CloudRain,
+  Landmark as Bank,
   X,
   Zap,
   ZapOff,
@@ -38,6 +42,19 @@ import {
   upgradeCost,
   coastal,
   blockReason,
+  disasterBill,
+  EVENTS,
+  feeRevenue,
+  loanInstallment,
+  LOAN_LIMIT,
+  LOAN_RATE,
+  MODEL_AREAS,
+  RANKS,
+  rankOf,
+  serviceCoverage,
+  SERVICE_NAMES,
+  type EventKind,
+  type ModelKind,
   type DisasterKind,
   type Ordinances,
   type Sample,
@@ -55,7 +72,7 @@ export type HudTool =
   | null;
 
 type GraphKey = Exclude<keyof Sample, "day">;
-type Panel = "graphs" | "budget" | "laws" | "advisors" | "disasters";
+type Panel = "graphs" | "budget" | "laws" | "advisors" | "disasters" | "projects";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -76,11 +93,11 @@ const SERIES: { key: GraphKey; label: string; token: string }[] = [
 ];
 
 const LAWS: { key: keyof Ordinances; title: string; detail: string }[] = [
-  { key: "education", title: "ميزانية التعليم", detail: "ترفع التعليم والرضا. ٨٠ د.ك كل شهر." },
-  { key: "recycling", title: "إعادة التدوير", detail: "تقلل التلوث. ٤٠ د.ك كل شهر." },
-  { key: "carpool", title: "مشاركة السيارات", detail: "تخفف الزحمة. ٢٥ د.ك كل شهر." },
-  { key: "clinicFund", title: "دعم المستوصفات", detail: "ترفع الصحة. ٥٥ د.ك كل شهر." },
-  { key: "smokeBan", title: "منع الدخان", detail: "هواء أنظف، وتجارة المحلات تهدأ شوي. ٣٠ د.ك." },
+  { key: "education", title: "ميزانية التعليم", detail: "ترفع التعليم والرضا. ٢٠ د.ك كل شهر." },
+  { key: "recycling", title: "إعادة التدوير", detail: "تقلل التلوث. ١٠ د.ك كل شهر." },
+  { key: "carpool", title: "مشاركة السيارات", detail: "تخفف الزحمة. ٦ د.ك كل شهر." },
+  { key: "clinicFund", title: "دعم المستوصفات", detail: "ترفع الصحة. ١٤ د.ك كل شهر." },
+  { key: "smokeBan", title: "منع الدخان", detail: "هواء أنظف، وتجارة المحلات تهدأ شوي. ٨ د.ك." },
 ];
 
 function fmt(n: number) {
@@ -105,6 +122,11 @@ export function CityHud({
   onZone,
   onBuild,
   onTax,
+  onFees,
+  onLoan,
+  onRepay,
+  onEvent,
+  onModel,
   onOrdinance,
   onDisaster,
   onRandom,
@@ -139,6 +161,11 @@ export function CityHud({
   onZone: () => void;
   onBuild: (kind: Kind) => void;
   onTax: (n: number) => void;
+  onFees: (n: number) => void;
+  onLoan: (amount: number) => void;
+  onRepay: (amount: number) => void;
+  onEvent: (kind: EventKind) => void;
+  onModel: (kind: ModelKind) => void;
   onOrdinance: (key: keyof Ordinances, value: boolean) => void;
   onDisaster: (kind: DisasterKind) => void;
   onRandom: (value: boolean) => void;
@@ -233,6 +260,22 @@ export function CityHud({
           </div>
         )}
         {snap.started && (
+          <button
+            type="button"
+            data-testid="rank"
+            onClick={() => togglePanel("advisors")}
+            className="safe-top pointer-events-auto absolute left-2 top-0 mt-2 flex flex-col items-start rounded-md bg-sc-ink/85 px-2 py-1 text-right text-sc-mint"
+            dir="rtl"
+          >
+            <span className="flex items-center gap-1 text-sm font-extrabold">
+              <Trophy size={14} /> {RANKS[rankOf(st.pop)]!.title}
+            </span>
+            <span className={`text-xs font-bold ${st.happy < 40 ? "text-coral" : "text-sc-lime"}`}>
+              رضا الناس {st.happy}%
+            </span>
+          </button>
+        )}
+        {snap.started && (
           <div className="pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
             <Round label="تقريب" onClick={() => onZoom(1.28)}>
               <Plus size={18} />
@@ -301,6 +344,7 @@ export function CityHud({
                   {panel === "laws" && "القوانين"}
                   {panel === "advisors" && "المستشارون"}
                   {panel === "disasters" && "الكوارث"}
+                  {panel === "projects" && "المشاريع والفعاليات"}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -317,7 +361,28 @@ export function CityHud({
                     }
                   />
                 )}
-                {panel === "budget" && <Budget snap={snap} onTax={onTax} />}
+                {panel === "budget" && (
+                  <Budget
+                    snap={snap}
+                    onTax={onTax}
+                    onFees={onFees}
+                    onLoan={onLoan}
+                    onRepay={onRepay}
+                  />
+                )}
+                {panel === "projects" && (
+                  <Projects
+                    snap={snap}
+                    onEvent={(kind) => {
+                      onEvent(kind);
+                      setPanel(null);
+                    }}
+                    onModel={(kind) => {
+                      onModel(kind);
+                      setPanel(null);
+                    }}
+                  />
+                )}
                 {panel === "laws" && (
                   <ul className="space-y-2">
                     {LAWS.map((law) => {
@@ -359,11 +424,12 @@ export function CityHud({
                 dir="rtl"
               >
                 <p className="text-sm font-bold text-sc-leaf">
-                  أربعة خيارات: ثلاثة أحياء ومنطقة حرة
+                  مساعد المختار ← مختار المنطقة ← المحافظ
                 </p>
-                <h2 className="mt-1 text-3xl font-extrabold leading-tight">عمدة الكويت</h2>
+                <h2 className="mt-1 text-3xl font-extrabold leading-tight">المحافظ</h2>
                 <p className="mt-2 text-base leading-relaxed">
-                  اختر حيًا مخططًا أو المنطقة الحرة لكل المدينة. المعاينة لا تبدأ مدينة ولا تغيّر الحفظ.
+                  ابدأ مساعداً للمختار على خريطة الكويت الحقيقية. أرضِ الناس بالخدمات والأسعار العادلة
+                  لتكبر منطقتك وتترقّى.
                 </p>
                 <button
                   type="button"
@@ -526,6 +592,9 @@ export function CityHud({
               </Menu>
               <Menu on={panel === "budget"} onClick={() => togglePanel("budget")}>
                 الميزانية
+              </Menu>
+              <Menu on={panel === "projects"} onClick={() => togglePanel("projects")}>
+                المشاريع
               </Menu>
               <Menu on={panel === "laws"} onClick={() => togglePanel("laws")}>
                 القوانين
@@ -761,27 +830,26 @@ function GraphCanvas({
   );
 }
 
-function Budget({ snap, onTax }: { snap: Sim; onTax: (n: number) => void }) {
-  const income = monthlyIncome(snap);
-  const cost = monthlyUpkeep(snap);
+function Budget({
+  snap,
+  onTax,
+  onFees,
+  onLoan,
+  onRepay,
+}: {
+  snap: Sim;
+  onTax: (n: number) => void;
+  onFees: (n: number) => void;
+  onLoan: (amount: number) => void;
+  onRepay: (amount: number) => void;
+}) {
+  const st = stats(snap);
+  const income = monthlyIncome(snap) + feeRevenue(snap, st);
+  const due = loanInstallment(snap);
+  const cost = monthlyUpkeep(snap) + due;
+  const room = Math.max(0, LOAN_LIMIT - snap.loan);
   return (
     <div className="space-y-3" dir="rtl">
-      <p className="text-sm leading-relaxed">
-        الضريبة الحالية <b>{snap.tax}%</b>. حدها ٣٠٠٪، ودخل السكان مضاعف.
-      </p>
-      <label className="block text-sm font-extrabold">
-        نسبة الضريبة
-        <input
-          type="range"
-          min={0}
-          max={300}
-          step={5}
-          value={snap.tax}
-          aria-label="نسبة الضريبة"
-          onChange={(e) => onTax(Number(e.target.value))}
-          className="mt-1 h-11 w-full accent-sc-leaf"
-        />
-      </label>
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
         <div className="sc-lcd h-auto flex-col py-2">
           <span>دخل الشهر</span>
@@ -793,9 +861,164 @@ function Budget({ snap, onTax }: { snap: Sim; onTax: (n: number) => void }) {
         </div>
         <div className="sc-lcd h-auto flex-col py-2">
           <span>الفرق</span>
-          <span dir="ltr">{fmt(income - cost)}</span>
+          <span dir="ltr" className={income - cost < 0 ? "text-coral" : ""}>
+            {fmt(income - cost)}
+          </span>
         </div>
       </div>
+      <label className="block text-sm font-extrabold">
+        الضريبة {snap.tax}%
+        <span className="block text-xs font-medium opacity-80">
+          أعلى = دخل أكبر من المباني، لكن الرضا ينزل فوق ٨٪.
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={300}
+          step={5}
+          value={snap.tax}
+          aria-label="نسبة الضريبة"
+          onChange={(e) => onTax(Number(e.target.value))}
+          className="mt-1 h-11 w-full accent-sc-leaf"
+        />
+      </label>
+      <label className="block text-sm font-extrabold">
+        أسعار الخدمات {snap.fees}%
+        <span className="block text-xs font-medium opacity-80">
+          رسوم الكهرباء والماء والمعاملات: {fmt(feeRevenue(snap, st))} د.ك شهرياً. فوق ١٠٠٪ يزعل
+          الناس ويطلعون، وتحتها يرتاحون.
+        </span>
+        <input
+          type="range"
+          min={50}
+          max={200}
+          step={10}
+          value={snap.fees}
+          aria-label="أسعار الخدمات"
+          onChange={(e) => onFees(Number(e.target.value))}
+          className="mt-1 h-11 w-full accent-sc-leaf"
+        />
+      </label>
+      <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
+        <p className="flex items-center gap-1 text-sm font-extrabold">
+          <Bank size={16} /> قرض البنك
+        </p>
+        <p className="mt-1 text-xs leading-relaxed">
+          الفائدة {Math.round(LOAN_RATE * 100)}٪. القسط ينخصم كل شهر تلقائياً
+          {snap.loan > 0 ? ` (${fmt(due)} د.ك)` : ""}. الدين الحالي{" "}
+          <b dir="ltr">{fmt(snap.loan)}</b> د.ك من حد {fmt(LOAN_LIMIT)}.
+        </p>
+        {snap.coins < 0 && (
+          <p className="mt-1 text-xs font-extrabold text-coral">
+            الرصيد بالسالب: خذ قرضاً لتغطية العجز.
+          </p>
+        )}
+        <div className="mt-2 grid grid-cols-3 gap-1">
+          {[2000, 5000, 10000].map((amount) => (
+            <button
+              key={amount}
+              type="button"
+              data-testid={`loan-${amount}`}
+              disabled={amount * (1 + LOAN_RATE) > room}
+              onClick={() => onLoan(amount)}
+              className="sc-menu text-xs disabled:opacity-40"
+            >
+              +{fmt(amount)}
+            </button>
+          ))}
+        </div>
+        {snap.loan > 0 && (
+          <button
+            type="button"
+            onClick={() => onRepay(snap.loan)}
+            disabled={snap.coins <= 0}
+            className="sc-menu sc-on mt-1 w-full text-xs disabled:opacity-40"
+          >
+            سدّد ما تقدر عليه
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Projects({
+  snap,
+  onEvent,
+  onModel,
+}: {
+  snap: Sim;
+  onEvent: (kind: EventKind) => void;
+  onModel: (kind: ModelKind) => void;
+}) {
+  const running = snap.event && snap.day < snap.event.until ? snap.event : null;
+  return (
+    <div className="space-y-3" dir="rtl">
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <Building2 size={16} /> مناطق نموذجية جاهزة
+      </p>
+      <p className="text-xs leading-relaxed">
+        تُبنى بالكامل في أقرب أرض فاضية تكفيها، بشوارعها وخدماتها، بسعر أقل من البناء قطعة قطعة.
+      </p>
+      <ul className="space-y-2">
+        {(Object.keys(MODEL_AREAS) as ModelKind[]).map((kind) => {
+          const def = MODEL_AREAS[kind];
+          const poor = snap.coins < def.cost;
+          return (
+            <li key={kind}>
+              <button
+                type="button"
+                data-testid={`model-${kind}`}
+                onClick={() => onModel(kind)}
+                className={`sc-choice w-full rounded-md px-2 py-2 text-right ${poor ? "opacity-60" : ""}`}
+              >
+                <span className="flex justify-between text-sm font-extrabold">
+                  <span>{def.name}</span>
+                  <span dir="ltr">{fmt(def.cost)} د.ك</span>
+                </span>
+                <span className="block text-xs font-medium opacity-80">{def.blurb}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <Trophy size={16} /> فعاليات ورياضة
+      </p>
+      <p className="text-xs leading-relaxed">
+        الفعالية ترفع الرضا والدخل وتجذب سكاناً جدداً طوال مدتها، وتترك سمعة دائمة للمنطقة.
+      </p>
+      {running && (
+        <p className="sc-lcd text-sm">
+          {EVENTS[running.kind].name} لين {formatCityDate(running.until)}
+        </p>
+      )}
+      <ul className="space-y-2">
+        {(Object.keys(EVENTS) as EventKind[]).map((kind) => {
+          const def = EVENTS[kind];
+          const poor = snap.coins < def.cost;
+          return (
+            <li key={kind}>
+              <button
+                type="button"
+                data-testid={`event-${kind}`}
+                disabled={Boolean(running)}
+                onClick={() => onEvent(kind)}
+                className={`sc-choice w-full rounded-md px-2 py-2 text-right disabled:opacity-40 ${poor ? "opacity-60" : ""}`}
+              >
+                <span className="flex justify-between text-sm font-extrabold">
+                  <span>{def.name}</span>
+                  <span dir="ltr">{fmt(def.cost)} د.ك</span>
+                </span>
+                <span className="block text-xs font-medium opacity-80">
+                  {def.blurb} {def.days} يوم · دخل +{Math.round(def.income * 100)}٪ · رضا +
+                  {def.happy}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -804,8 +1027,11 @@ function Advisors({ snap }: { snap: Sim }) {
   const st = stats(snap);
   const m = metrics(snap, st);
   const q = QUESTS[snap.quest];
+  const rank = rankOf(st.pop);
+  const next = RANKS[rank + 1];
+  const cover = serviceCoverage(snap);
   const rows = [
-    ["السكان", fmt(st.pop)],
+    ["السكان", `${fmt(st.pop)} / ${fmt(st.capacity)}`],
     ["الرضا", `${st.happy}%`],
     ["الكهرباء", `${Math.round(m.power)}%`],
     ["الماء", `${Math.round(m.water)}%`],
@@ -826,6 +1052,21 @@ function Advisors({ snap }: { snap: Sim }) {
           </li>
         ))}
       </ul>
+      <p className="rounded-md bg-sc-mint px-2 py-2 text-sm font-extrabold text-sc-ink">
+        لقبك: {RANKS[rank]!.title}
+        {next ? ` · ${fmt(Math.max(0, next.pop - st.pop))} ساكن للترقية إلى ${next.title}` : " · أعلى لقب"}
+      </p>
+      <div className="grid grid-cols-5 gap-1 text-center text-xs font-extrabold">
+        {(Object.keys(cover) as (keyof typeof cover)[]).map((key) => (
+          <p
+            key={key}
+            className={`sc-lcd h-auto flex-col py-1 ${cover[key] < 0.6 ? "text-coral" : ""}`}
+          >
+            <span>{SERVICE_NAMES[key]}</span>
+            <span dir="ltr">{Math.round(cover[key] * 100)}%</span>
+          </p>
+        ))}
+      </div>
       {q && (
         <p className="text-sm font-extrabold">
           المهمة: {q.text} · {Math.min(q.total, Math.round(q.progress(snap)))}/{q.total}
@@ -856,8 +1097,8 @@ function Disasters({
   return (
     <div className="space-y-2" dir="rtl">
       <p className="text-sm leading-relaxed">
-        الكوارث من عندك، مثل لوحة سيم سيتي. الحريق يضرب مبنى، العاصفة تنزل الرضا، وانقطاع الكهرباء
-        يطفّي الإنتاج لين ما تعدّي.
+        الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل
+        الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ قرضاً من الميزانية.
       </p>
       {active && <p className="sc-lcd text-sm">جارية لين {formatCityDate(active.until)}</p>}
       <div className="grid grid-cols-1 gap-2">
@@ -882,6 +1123,17 @@ function Disasters({
         >
           <ZapOff size={16} /> انقطاع كهرباء
         </button>
+        <button
+          type="button"
+          className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
+          onClick={() => onDisaster("flood")}
+        >
+          <CloudRain size={16} /> أمطار وسيول
+        </button>
+        <p className="text-xs">
+          الخسارة المتوقعة الآن: حريق {fmt(disasterBill(snap, "fire"))} · عاصفة{" "}
+          {fmt(disasterBill(snap, "storm"))} · سيول {fmt(disasterBill(snap, "flood"))} د.ك
+        </p>
       </div>
       <button
         type="button"
@@ -889,7 +1141,7 @@ function Disasters({
         onClick={() => onRandom(!snap.randomDisasters)}
         className={`sc-menu w-full text-sm ${snap.randomDisasters ? "sc-on" : ""}`}
       >
-        {snap.randomDisasters ? "الكوارث العشوائية شغّالة" : "تفعيل كوارث عشوائية نادرة"}
+        {snap.randomDisasters ? "الكوارث تضرب عشوائياً (اضغط للإيقاف)" : "تفعيل الكوارث العشوائية"}
       </button>
     </div>
   );

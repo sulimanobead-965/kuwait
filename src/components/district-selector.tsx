@@ -192,7 +192,7 @@ export function DistrictSelector({
         <header className="district-header">
           <div>
             <span className="district-eyebrow">
-              <Map size={15} /> عمدة الكويت
+              <Map size={15} /> المحافظ
             </span>
             <h2 id="district-title">اختر الحي أو المنطقة الحرة</h2>
           </div>
