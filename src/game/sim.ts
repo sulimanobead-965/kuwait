@@ -1,4 +1,5 @@
 import { CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
+import { consulting, emptyFinance, financeMonth, loadFinance, type FinanceState } from "./finance";
 import { COLS, GRID_GEN, LAND, ROWS } from "./land";
 export { districtById, isDistrictLand } from "./districts";
 import {
@@ -41,8 +42,14 @@ export type Sim = {
   luckAt: number;
   /** Legacy v2 saves intentionally omit this optional top-level field. */
   district?: DistrictId | null;
-  /** Service fees (electricity, water, permits) in percent of the normal tariff. */
-  fees: number;
+  /** Cost of living the governor sets, in percent of the normal tariff per item. */
+  costs: Costs;
+  /** Automatic yearly raise of every cost item, in percent (0 = frozen). */
+  autoRaise: number;
+  /** Year-end measurements (most recent last). */
+  years: YearRow[];
+  /** Running totals for the current year. */
+  ytd: { income: number; spend: number; residents0: number };
   /** Share of housing capacity that is lived in (0.25–1); drifts toward satisfaction. */
   occupancy: number;
   /** Outstanding loan, interest included. Repaid monthly. */
@@ -57,6 +64,29 @@ export type Sim = {
   fx: CellFx[];
   /** A running global crisis. */
   crisis: Crisis | null;
+  /** Bank, developer and consultancy dealings. */
+  finance: FinanceState;
+  /** One-off story markers (event held, loan repaid, crisis survived…). */
+  flags: string[];
+  achievements: string[];
+  /** Coins ever collected from buildings (tutorial and achievements). */
+  collected: number;
+  /** Wall-clock bookkeeping for daily rewards and offline earnings. */
+  lastSeen: number;
+  dailyDay: string;
+  streak: number;
+};
+
+export type CostKey = "housing" | "education" | "health" | "utilities" | "transport";
+export type Costs = Record<CostKey, number>;
+export type YearRow = {
+  year: number;
+  residents: number;
+  happy: number;
+  costIndex: number;
+  income: number;
+  spend: number;
+  coins: number;
 };
 
 export type CellFx = { kind: "fire" | "smoke"; c: number; r: number; until: number };
@@ -100,7 +130,10 @@ export type Sample = {
 };
 
 export type CityStats = {
+  /** Housing units lived in (simulation scale). */
   pop: number;
+  /** People: `pop × RESIDENTS_PER_UNIT`. */
+  residents: number;
   /** Homes available if everyone moved in. */
   capacity: number;
   /** Lowest service coverage, 0–1. */
@@ -155,27 +188,31 @@ export function priceOf(base: number, _s: Sim) {
   return prepaid ? 0 : Math.round(base);
 }
 
+/** People per housing unit: the grid counts households, the HUD counts residents. */
+export const RESIDENTS_PER_UNIT = 15;
+
 // ---------------------------------------------------------------- titles
 
+/** Thresholds are in residents. */
 export const RANKS: readonly { title: string; pop: number }[] = [
   { title: "مساعد المختار", pop: 0 },
-  { title: "مختار المنطقة", pop: 800 },
-  { title: "المحافظ", pop: 4000 },
+  { title: "مختار المنطقة", pop: 15_000 },
+  { title: "المحافظ", pop: 100_000 },
 ];
 
-export function rankOf(pop: number) {
+export function rankOf(residents: number) {
   let i = 0;
-  for (let n = 0; n < RANKS.length; n += 1) if (pop >= RANKS[n]!.pop) i = n;
+  for (let n = 0; n < RANKS.length; n += 1) if (residents >= RANKS[n]!.pop) i = n;
   return i;
 }
 
 /** Announces a promotion once; returns the new title or null. */
 export function checkPromotion(s: Sim, st = stats(s)) {
-  const now = rankOf(st.pop);
+  const now = rankOf(st.residents);
   if (now <= s.rank) return null;
   s.rank = now;
   const title = RANKS[now]!.title;
-  const bonus = now === 1 ? 1500 : 5000;
+  const bonus = now === 1 ? 5000 : 50000;
   s.coins += bonus;
   pushLog(s, `ترقية: صرت ${title}`);
   return { title, bonus };
@@ -230,16 +267,24 @@ export const EVENTS: Record<
 };
 
 function activeEvent(s: Sim) {
-  return s.event && s.day < s.event.until ? EVENTS[s.event.kind] : null;
+  if (!s.event || s.day >= s.event.until) return null;
+  const def = EVENTS[s.event.kind];
+  // A stadium doubles what a football tournament does for the city.
+  if (s.event.kind === "football" && s.buildings.some((b) => b.kind === "stadium"))
+    return { ...def, income: def.income * 2, happy: def.happy + 6, draw: def.draw * 2 };
+  return def;
 }
 
 export function startEvent(s: Sim, kind: EventKind): Act {
   if (activeEvent(s)) return { ok: false, msg: "في فعالية شغّالة. استنى تخلص" };
+  if (crisisOf(s) === "pandemic") return { ok: false, msg: "الوباء يمنع التجمعات الآن" };
   const def = EVENTS[kind];
   if (s.coins < def.cost) return { ok: false, msg: `تحتاج ${def.cost.toLocaleString("en-US")} د.ك` };
-  if (stats(s).pop < 40) return { ok: false, msg: "تحتاج ٤٠ ساكن على الأقل لتنظيم فعالية" };
+  if (stats(s).residents < 600)
+    return { ok: false, msg: "تحتاج ٦٠٠ ساكن على الأقل لتنظيم فعالية" };
   s.coins -= def.cost;
   s.event = { kind, until: s.day + def.days };
+  s.flags.push(`event:${kind}`);
   pushLog(s, `انطلقت: ${def.name}`);
   return { ok: true };
 }
@@ -265,7 +310,10 @@ export function repayLoan(s: Sim, amount: number): Act {
   if (pay <= 0) return { ok: false, msg: s.loan <= 0 ? "ما عليك دين" : "الرصيد ما يكفي للسداد" };
   s.coins -= pay;
   s.loan -= pay;
-  if (s.loan <= 0) pushLog(s, "سدّدت القرض كاملاً");
+  if (s.loan <= 0) {
+    pushLog(s, "سدّدت القرض كاملاً");
+    if (!s.flags.includes("repaid")) s.flags.push("repaid");
+  }
   return { ok: true };
 }
 
@@ -305,9 +353,275 @@ function housingCapacity(s: Sim) {
   return pop;
 }
 
-/** Monthly revenue from service fees paid by residents. */
+// ---------------------------------------------------------------- cost of living
+
+export const COST_ITEMS: Record<
+  CostKey,
+  { name: string; perResident: number; weight: number; blurb: string }
+> = {
+  housing: { name: "السكن والإيجارات", perResident: 0.015, weight: 0.35, blurb: "أكبر بند في ميزانية الأسرة" },
+  education: { name: "التعليم", perResident: 0.008, weight: 0.2, blurb: "رسوم المدارس والكتب" },
+  health: { name: "الصحة", perResident: 0.007, weight: 0.2, blurb: "المستوصفات والأدوية" },
+  utilities: { name: "الكهرباء والماء", perResident: 0.007, weight: 0.15, blurb: "فواتير البيت" },
+  transport: { name: "النقل والمواصلات", perResident: 0.003, weight: 0.1, blurb: "الباصات والبنزين" },
+};
+export const COST_KEYS = Object.keys(COST_ITEMS) as CostKey[];
+
+export function defaultCosts(): Costs {
+  return { housing: 100, education: 100, health: 100, utilities: 100, transport: 100 };
+}
+
+/** Weighted cost-of-living index (100 = normal). */
+export function costIndex(s: Sim) {
+  return Math.round(COST_KEYS.reduce((n, k) => n + COST_ITEMS[k].weight * s.costs[k], 0));
+}
+
+/** Monthly revenue per cost item and in total. */
+export function costRevenue(s: Sim, st = stats(s)) {
+  const rows = {} as Record<CostKey, number>;
+  let total = 0;
+  for (const k of COST_KEYS) {
+    const v = Math.round(st.residents * COST_ITEMS[k].perResident * (s.costs[k] / 100));
+    rows[k] = v;
+    total += v;
+  }
+  return { rows, total };
+}
+
+/** Monthly revenue from living costs paid by residents. */
 export function feeRevenue(s: Sim, st = stats(s)) {
-  return Math.round(st.pop * 0.25 * ((s.fees ?? 100) / 100));
+  return costRevenue(s, st).total;
+}
+
+// ---------------------------------------------------------------- global crises
+
+export const CRISES: Record<
+  CrisisKind,
+  { name: string; months: [number, number]; income: number; happy: number; leave: number; blurb: string }
+> = {
+  economic: {
+    name: "أزمة اقتصادية عالمية",
+    months: [14, 26],
+    income: 0.65,
+    happy: 8,
+    leave: 0.04,
+    blurb: "الدخل ينزل، والبنوك والشركات معرضة للإفلاس.",
+  },
+  pandemic: {
+    name: "وباء عالمي",
+    months: [8, 14],
+    income: 0.8,
+    happy: 14,
+    leave: 0.1,
+    blurb: "الناس تطلع والفعاليات ممنوعة. المستوصفات تخفف الأثر.",
+  },
+  war: {
+    name: "حرب إقليمية",
+    months: [6, 12],
+    income: 0.72,
+    happy: 16,
+    leave: 0.08,
+    blurb: "خوف ونزوح ومصاريف دفاع مدني كل شهر.",
+  },
+};
+
+export function crisisOf(s: Sim): CrisisKind | null {
+  return s.crisis && s.day < s.crisis.until ? s.crisis.kind : null;
+}
+
+export function startCrisis(s: Sim, kind: CrisisKind, random = Math.random) {
+  if (crisisOf(s)) return { ok: false as const, msg: "في أزمة جارية" };
+  const [a, b] = CRISES[kind].months;
+  s.crisis = { kind, until: s.day + Math.round(a + random() * (b - a)) * 30 };
+  const msg = `${CRISES[kind].name}! ${CRISES[kind].blurb}`;
+  pushLog(s, msg);
+  if (kind === "pandemic" && s.event) s.event = null;
+  return { ok: true as const, msg };
+}
+
+// ---------------------------------------------------------------- calendar
+
+/** Kuwait National Day / Liberation Day week, and Ramadan with its Eid. */
+export function calendarMood(s: Sim) {
+  const d = new Date(EPOCH + Math.floor(s.day) * 86400000);
+  const month = d.getUTCMonth();
+  const date = d.getUTCDate();
+  const national = month === 1 && date >= 20 && date <= 28;
+  // Ramadan 1380 AH began on 17 Feb 1961; the lunar year is ~354.37 days.
+  const lunar = 354.367;
+  const since = (Math.floor(s.day) - 4 + lunar * 10) % lunar;
+  const ramadan = since < 30;
+  const eid = since >= 30 && since < 33;
+  return { national, ramadan, eid };
+}
+
+export function isCelebrating(s: Sim) {
+  const mood = calendarMood(s);
+  return Boolean(activeEvent(s)) || mood.national || mood.eid;
+}
+
+// ---------------------------------------------------------------- neighbors
+
+const neighborCache = new WeakMap<Sim, { sig: string; map: Map<string, Kind> }>();
+
+function kindGrid(s: Sim) {
+  const last = s.buildings[s.buildings.length - 1];
+  const sig = `${s.buildings.length}:${last?.id ?? ""}:${last?.kind ?? ""}`;
+  const hit = neighborCache.get(s);
+  if (hit && hit.sig === sig) return hit.map;
+  const map = new Map<string, Kind>();
+  for (const b of s.buildings) map.set(cellKey(b.c, b.r), b.kind);
+  neighborCache.set(s, { sig, map });
+  return map;
+}
+
+/** Income multiplier from neighbors, with readable reasons. */
+export function neighborEffect(s: Sim, b: Building) {
+  const grid = kindGrid(s);
+  const near: Kind[] = [];
+  for (let dr = -1; dr <= 1; dr += 1)
+    for (let dc = -1; dc <= 1; dc += 1) {
+      if (!dc && !dr) continue;
+      const k = grid.get(cellKey(b.c + dc, b.r + dr));
+      if (k) near.push(k);
+    }
+  const count = (kinds: Kind[]) => near.filter((k) => kinds.includes(k)).length;
+  let mult = 1;
+  const notes: string[] = [];
+  const d = CATALOG[b.kind];
+  if (d.pop > 0) {
+    const parks = Math.min(2, count(["park"]));
+    if (parks) {
+      mult *= 1 + parks * 0.12;
+      notes.push(`بجانب حديقة +${parks * 12}٪`);
+    }
+    const shops = Math.min(2, count(["shop", "mubarakiya", "avenues"]));
+    if (shops) {
+      mult *= 1 + shops * 0.06;
+      notes.push(`قريب من السوق +${shops * 6}٪`);
+    }
+    const plants = count(["power", "water"]);
+    if (plants) {
+      mult *= Math.max(0.5, 1 - plants * 0.15);
+      notes.push(`بجانب محطة −${plants * 15}٪`);
+    }
+  } else if (d.cat === "commerce" || ["avenues", "mubarakiya", "hamra"].includes(b.kind)) {
+    const homes = Math.min(4, near.filter((k) => CATALOG[k].pop > 0).length);
+    if (homes) {
+      mult *= 1 + homes * 0.05;
+      notes.push(`زبائن من البيوت حوله +${homes * 5}٪`);
+    }
+  }
+  return { mult, notes };
+}
+
+// ---------------------------------------------------------------- story eras
+
+export const ERAS = ["الاستقلال ١٩٦١", "طفرة النفط", "الكويت الحديثة", "مدينة المليون"];
+
+export function eraOf(s: Sim) {
+  if (s.quest >= QUESTS.length) return ERAS.length - 1;
+  return QUESTS[s.quest]?.era ?? 0;
+}
+
+export function isUnlocked(s: Sim, kind: Kind) {
+  return (CATALOG[kind].era ?? 0) <= eraOf(s);
+}
+
+// ---------------------------------------------------------------- achievements
+
+const has = (s: Sim, kind: Kind) => s.buildings.some((b) => b.kind === kind);
+
+export const ACHIEVEMENTS: readonly {
+  id: string;
+  name: string;
+  detail: string;
+  test: (s: Sim, st: CityStats) => boolean;
+}[] = [
+  { id: "first", name: "أول حجر", detail: "ابنِ أول مبنى", test: (s) => s.buildings.length > 0 },
+  { id: "ten", name: "فريج صغير", detail: "١٠ مبانٍ", test: (s) => s.buildings.length >= 10 },
+  { id: "hundred", name: "منطقة كاملة", detail: "١٠٠ مبنى", test: (s) => s.buildings.length >= 100 },
+  { id: "chalet", name: "على البحر", detail: "ابنِ شاليهاً", test: (s) => has(s, "chalet") },
+  {
+    id: "sky",
+    name: "ناطحة سحاب",
+    detail: "رقِّ مبنى تجارياً أو سكنياً للمستوى ٥",
+    test: (s) => s.buildings.some((b) => b.level >= 5),
+  },
+  {
+    id: "icons",
+    name: "معالم الكويت",
+    detail: "ابنِ كل المعالم",
+    test: (s) => Object.values(CATALOG).every((d) => d.cat !== "landmarks" || has(s, d.kind)),
+  },
+  { id: "r10k", name: "١٠ آلاف ساكن", detail: "", test: (_s, st) => st.residents >= 10_000 },
+  { id: "r100k", name: "١٠٠ ألف ساكن", detail: "", test: (_s, st) => st.residents >= 100_000 },
+  { id: "r1m", name: "مدينة المليون", detail: "مليون ساكن", test: (_s, st) => st.residents >= 1_000_000 },
+  { id: "happy", name: "شعب سعيد", detail: "رضا ٩٠٪", test: (_s, st) => st.happy >= 90 },
+  { id: "rich", name: "خزينة عامرة", detail: "مليون د.ك في الصندوق", test: (s) => s.coins >= 1_000_000 },
+  { id: "bonds", name: "مستثمر", detail: "اشترِ سندات", test: (s) => s.flags.includes("bonds") },
+  { id: "repaid", name: "بلا ديون", detail: "سدّد قرضاً كاملاً", test: (s) => s.flags.includes("repaid") },
+  {
+    id: "events",
+    name: "عاصمة الفعاليات",
+    detail: "نظّم ٣ فعاليات",
+    test: (s) => s.flags.filter((f) => f.startsWith("event:")).length >= 3,
+  },
+  {
+    id: "survivor",
+    name: "صامد",
+    detail: "اعبر أزمة عالمية",
+    test: (s) => s.flags.includes("crisis-survived"),
+  },
+  { id: "decade", name: "عشر سنوات", detail: "احكم ١٠ سنوات", test: (s) => s.day >= 3600 },
+];
+
+export function checkAchievements(s: Sim, st = stats(s)) {
+  const fresh: { name: string }[] = [];
+  for (const a of ACHIEVEMENTS) {
+    if (s.achievements.includes(a.id) || !a.test(s, st)) continue;
+    s.achievements.push(a.id);
+    fresh.push({ name: a.name });
+  }
+  return fresh;
+}
+
+// ---------------------------------------------------------------- daily & offline
+
+function localDay(ms: number) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/**
+ * Rewards for coming back: a daily bonus that grows with the streak, and a share of
+ * the city's net monthly result for the time away (one game month per 10 minutes,
+ * half value, at most four years).
+ */
+export function welcomeBack(s: Sim, nowMs: number) {
+  const out = { daily: 0, streak: s.streak, offline: 0, months: 0 };
+  if (!s.started) return out;
+  const today = localDay(nowMs);
+  if (s.dailyDay !== today) {
+    const yesterday = localDay(nowMs - 86400000);
+    s.streak = s.dailyDay === yesterday ? Math.min(30, s.streak + 1) : 1;
+    s.dailyDay = today;
+    const st = stats(s);
+    out.daily = Math.round((300 + st.residents * 0.02) * Math.min(7, s.streak));
+    out.streak = s.streak;
+    s.coins += out.daily;
+  }
+  if (s.lastSeen > 0 && nowMs - s.lastSeen > 5 * 60_000) {
+    const months = Math.min(48, Math.floor((nowMs - s.lastSeen) / 600_000));
+    const net = monthlyIncome(s) + feeRevenue(s) - monthlyUpkeep(s);
+    if (months > 0 && net > 0) {
+      out.months = months;
+      out.offline = Math.round(net * months * 0.5);
+      s.coins += out.offline;
+    }
+  }
+  s.lastSeen = nowMs;
+  return out;
 }
 
 export function routeOnLand(c0: number, r0: number, c1: number, r1: number) {
@@ -383,7 +697,10 @@ export function createInitial(): Sim {
     difficulty: "easy",
     luckAt: 0,
     district: null,
-    fees: 100,
+    costs: defaultCosts(),
+    autoRaise: 0,
+    years: [],
+    ytd: { income: 0, spend: 0, residents0: 0 },
     occupancy: 0.85,
     loan: 0,
     event: null,
@@ -391,6 +708,13 @@ export function createInitial(): Sim {
     rank: 0,
     fx: [],
     crisis: null,
+    finance: emptyFinance(),
+    flags: [],
+    achievements: [],
+    collected: 0,
+    lastSeen: 0,
+    dailyDay: "",
+    streak: 0,
   };
   s.history.push(takeSample(s));
   return s;
@@ -405,6 +729,17 @@ export function cloneSim(s: Sim): Sim {
     disaster: s.disaster ? { ...s.disaster } : null,
     event: s.event ? { ...s.event } : null,
     crisis: s.crisis ? { ...s.crisis } : null,
+    costs: { ...s.costs },
+    ytd: { ...s.ytd },
+    years: [...s.years],
+    flags: [...s.flags],
+    achievements: [...s.achievements],
+    finance: {
+      ...s.finance,
+      bonds: s.finance.bonds.map((b) => ({ ...b })),
+      projects: s.finance.projects.map((p) => ({ ...p })),
+      down: { ...s.finance.down },
+    },
     fx: s.fx.map((f) => ({ ...f })),
     log: [...s.log],
     history: s.history,
@@ -421,6 +756,8 @@ export const QUESTS: {
   total: number;
   progress: (s: Sim) => number;
   done: (s: Sim) => boolean;
+  /** Index into ERAS; finishing the last quest of an era opens the next one. */
+  era?: number;
 }[] = [
   {
     text: "ارصف ١٦ طرق",
@@ -455,11 +792,100 @@ export const QUESTS: {
       s.buildings.some((b) => isLandmark(b.kind)),
   },
   {
-    text: "أوصل السكان إلى ٢٠٠",
+    text: "أوصل السكان إلى ٣٬٠٠٠",
     reward: 2000,
-    total: 200,
-    progress: (s) => Math.min(200, stats(s).pop),
-    done: (s) => stats(s).pop >= 200,
+    total: 3000,
+    era: 0,
+    progress: (s) => Math.min(3000, stats(s).residents),
+    done: (s) => stats(s).residents >= 3000,
+  },
+  {
+    text: "طفرة النفط: افتح ٥ محلات",
+    reward: 3000,
+    total: 5,
+    era: 1,
+    progress: (s) => Math.min(5, s.buildings.filter((b) => b.kind === "shop").length),
+    done: (s) => s.buildings.filter((b) => b.kind === "shop").length >= 5,
+  },
+  {
+    text: "ابنِ سوق المباركية",
+    reward: 4000,
+    total: 1,
+    era: 1,
+    progress: (s) => Math.min(1, s.buildings.filter((b) => b.kind === "mubarakiya").length),
+    done: (s) => s.buildings.filter((b) => b.kind === "mubarakiya").length >= 1,
+  },
+  {
+    text: "رقِّ برج مكاتب للمستوى ٣",
+    reward: 5000,
+    total: 1,
+    era: 1,
+    progress: (s) => Math.min(1, s.buildings.filter((b) => ["tower"].includes(b.kind) && b.level >= 3).length),
+    done: (s) => s.buildings.filter((b) => ["tower"].includes(b.kind) && b.level >= 3).length >= 1,
+  },
+  {
+    text: "أوصل السكان إلى ١٥٬٠٠٠",
+    reward: 8000,
+    total: 15000,
+    era: 1,
+    progress: (s) => Math.min(15000, stats(s).residents),
+    done: (s) => stats(s).residents >= 15000,
+  },
+  {
+    text: "الكويت الحديثة: ابنِ ٣ شاليهات",
+    reward: 12000,
+    total: 3,
+    era: 2,
+    progress: (s) => Math.min(3, s.buildings.filter((b) => b.kind === "chalet").length),
+    done: (s) => s.buildings.filter((b) => b.kind === "chalet").length >= 3,
+  },
+  {
+    text: "ارفع برج الحمراء",
+    reward: 20000,
+    total: 1,
+    era: 2,
+    progress: (s) => Math.min(1, s.buildings.filter((b) => b.kind === "hamra").length),
+    done: (s) => s.buildings.filter((b) => b.kind === "hamra").length >= 1,
+  },
+  {
+    text: "افتتح مجمع الأفنيوز",
+    reward: 25000,
+    total: 1,
+    era: 2,
+    progress: (s) => Math.min(1, s.buildings.filter((b) => b.kind === "avenues").length),
+    done: (s) => s.buildings.filter((b) => b.kind === "avenues").length >= 1,
+  },
+  {
+    text: "حوّل مبنى إلى ناطحة سحاب (مستوى ٥)",
+    reward: 30000,
+    total: 1,
+    era: 2,
+    progress: (s) => Math.min(1, s.buildings.filter((b) => ["apartments","shop","tower"].includes(b.kind) && b.level >= 5).length),
+    done: (s) => s.buildings.filter((b) => ["apartments","shop","tower"].includes(b.kind) && b.level >= 5).length >= 1,
+  },
+  {
+    text: "أوصل السكان إلى ١٠٠٬٠٠٠",
+    reward: 60000,
+    total: 100000,
+    era: 2,
+    progress: (s) => Math.min(100000, stats(s).residents),
+    done: (s) => stats(s).residents >= 100000,
+  },
+  {
+    text: "مدينة المليون: ٥٠٠٬٠٠٠ ساكن",
+    reward: 200000,
+    total: 500000,
+    era: 3,
+    progress: (s) => Math.min(500000, stats(s).residents),
+    done: (s) => stats(s).residents >= 500000,
+  },
+  {
+    text: "مليون ساكن في الكويت",
+    reward: 500000,
+    total: 1000000,
+    era: 3,
+    progress: (s) => Math.min(1000000, stats(s).residents),
+    done: (s) => stats(s).residents >= 1000000,
   },
 ];
 
@@ -506,9 +932,19 @@ export function stats(s: Sim): CityStats {
   // A village forgives a lot; a big district without services does not.
   const weight = clamp((capacity - 60) / 400, 0, 1) * 9;
   for (const v of Object.values(cover)) happy -= Math.round((1 - v) * weight);
-  // Fees above the normal tariff anger people; below it pleases them.
-  const fees = s.fees ?? 100;
-  happy -= Math.round((fees - 100) / 7);
+  // Living costs above the normal tariff anger people; below it pleases them.
+  happy -= Math.round((costIndex(s) - 100) / 6);
+  const crisis = crisisOf(s);
+  if (crisis) {
+    let hit2 = CRISES[crisis].happy;
+    if (crisis === "pandemic") hit2 *= 1 - serviceCoverage(s, capacity).clinic * 0.6;
+    happy -= Math.round(hit2);
+  }
+  const mood = calendarMood(s);
+  if (mood.national) happy += 6;
+  if (mood.eid) happy += 4;
+  if (mood.ramadan && s.buildings.some((b) => b.kind === "mosque")) happy += 4;
+  if (consulting(s)) happy += 3;
   const ev = activeEvent(s);
   if (ev) happy += ev.happy;
   happy += Math.min(12, s.fame ?? 0);
@@ -519,9 +955,12 @@ export function stats(s: Sim): CityStats {
   const utilFactor = util >= 0.999 ? 1 : 0.22 + util * 0.78;
   // Unhappy cities earn less: 0.35× at the floor, 1.3× when everyone is pleased.
   const ev2 = activeEvent(s);
-  const mult = (0.3 + (happy / 100) * 1.0) * utilFactor * (1 + (ev2?.income ?? 0));
+  const crisisMult = crisis ? CRISES[crisis].income : 1;
+  const mult =
+    (0.3 + (happy / 100) * 1.0) * utilFactor * (1 + (ev2?.income ?? 0)) * crisisMult;
   return {
     pop,
+    residents: pop * RESIDENTS_PER_UNIT,
     capacity,
     service,
     happy,
@@ -534,8 +973,15 @@ export function stats(s: Sim): CityStats {
   };
 }
 
+const roadCache = new WeakMap<Sim, { n: number; last: string; set: Set<string> }>();
+
 function roadSet(s: Sim) {
-  return new Set(s.roads);
+  const last = s.roads[s.roads.length - 1] ?? "";
+  const hit = roadCache.get(s);
+  if (hit && hit.n === s.roads.length && hit.last === last) return hit.set;
+  const set = new Set(s.roads);
+  roadCache.set(s, { n: s.roads.length, last, set });
+  return set;
 }
 
 function besideRoad(c: number, r: number, roads: Set<string>) {
@@ -546,7 +992,9 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
   const d = CATALOG[b.kind];
   if (d.income <= 0) return 0;
   if (d.needsRoad && !besideRoad(b.c, b.r, roadSet(s))) return 0;
-  let v = d.income * (1 + (b.level - 1) * 0.62);
+  let v = d.income * (1 + (b.level - 1) * 0.62) * (b.level >= 4 ? 1.5 : 1);
+  v *= neighborEffect(s, b).mult;
+  if (calendarMood(s).ramadan && ["shop", "avenues", "mubarakiya"].includes(b.kind)) v *= 1.1;
   if (d.needsPop > 0 && st.pop < d.needsPop) v *= 0.35;
   if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, 0.25, 1);
   if (d.coastBoost && coastal(b.c, b.r)) v *= 1.15;
@@ -586,6 +1034,8 @@ export function collectOne(s: Sim, id: string) {
   if (n <= 0) return 0;
   b.stored -= n;
   s.coins += n;
+  s.collected = (s.collected ?? 0) + n;
+  s.ytd.income += n;
   return n;
 }
 
@@ -626,6 +1076,10 @@ export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: num
   if (s.roads.includes(cellKey(c, r)) || s.buildings.some((b) => b.c === c && b.r === r)) {
     return { ok: false, msg: "الأرض مشغولة" };
   }
+  if (CATALOG[kind].needsCoast && !coastal(c, r))
+    return { ok: false, msg: "الشاليه لازم يكون على البحر مباشرة" };
+  if (!prepaid && !isUnlocked(s, kind))
+    return { ok: false, msg: `يُفتح في حقبة ${ERAS[CATALOG[kind].era ?? 0]}` };
   const cost = priceOf(CATALOG[kind].cost, s);
   if (cost > 0 && s.coins < cost) return { ok: false, msg: "الرصيد ما يكفي" };
   s.coins -= cost;
@@ -1008,6 +1462,22 @@ export function buyModelArea(
   const site = findModelSite(s, def.w, def.h);
   if (!site) return { ok: false, msg: "ما في أرض فاضية تكفي المشروع" };
   s.coins -= def.cost;
+  s.ytd.spend += def.cost;
+  const built = placePackage(s, kind, now, site);
+  pushLog(s, `افتتاح ${def.name}`);
+  return { ok: true, c: site.c + def.w / 2, r: site.r + def.h / 2, built };
+}
+
+/** Builds a model area for free (prepaid, handed over, or a starter town). */
+export function placePackage(
+  s: Sim,
+  kind: ModelKind,
+  now: number,
+  at?: { c: number; r: number } | null,
+) {
+  const def = MODEL_AREAS[kind];
+  const site = at ?? findModelSite(s, def.w, def.h);
+  if (!site) return 0;
   prepaid = true;
   let built = 0;
   try {
@@ -1038,8 +1508,7 @@ export function buyModelArea(
   } finally {
     prepaid = false;
   }
-  pushLog(s, `افتتاح ${def.name}`);
-  return { ok: true, c: site.c + def.w / 2, r: site.r + def.h / 2, built };
+  return built;
 }
 
 export function bulldoze(s: Sim, c: number, r: number): Act {
@@ -1106,7 +1575,7 @@ export function metrics(s: Sim, st = stats(s)): Sample {
     water,
     power,
     crime,
-    pop: clamp(st.pop / 4, 0, 100),
+    pop: clamp((Math.log10(Math.max(1, st.residents)) / 6) * 100, 0, 100),
     funds: clamp(Math.max(0, s.coins) / 80, 0, 100),
     pollution,
     traffic,
@@ -1170,6 +1639,9 @@ export function monthlyUpkeep(s: Sim) {
   for (const k of s.roads) if (!roadIsSchematic(s.district, k)) n += 0.3;
   for (const key of Object.keys(ORDINANCE_COST) as (keyof Ordinances)[])
     if (s.ordinances[key]) n += ORDINANCE_COST[key];
+  if (consulting(s)) n *= 0.85;
+  // Civil defense during a regional war.
+  if (crisisOf(s) === "war") n += 40 + s.buildings.length * 2;
   return priceOf(n, s);
 }
 
@@ -1206,18 +1678,38 @@ export function advanceDays(s: Sim, days: number) {
   let rolled = false;
   for (let m = before + 1; m <= after; m += 1) {
     const st = stats(s);
-    s.coins += feeRevenue(s, st);
-    s.coins -= monthlyUpkeep(s);
+    const fees = feeRevenue(s, st);
+    const upkeep = monthlyUpkeep(s);
+    s.coins += fees;
+    s.coins -= upkeep;
+    s.ytd.income += fees;
+    s.ytd.spend += upkeep;
     const due = loanInstallment(s);
     if (due > 0) {
       s.coins -= due;
+      s.ytd.spend += due;
       s.loan = Math.max(0, s.loan - due);
-      if (s.loan === 0) pushLog(s, "سدّدت القرض كاملاً");
+      if (s.loan === 0) {
+        pushLog(s, "سدّدت القرض كاملاً");
+        if (!s.flags.includes("repaid")) s.flags.push("repaid");
+      }
     }
-    s.coins = Math.max(-20000, s.coins);
+    const crisis = crisisOf(s);
+    financeMonth(s, {
+      log: (msg) => pushLog(s, msg),
+      handover: () => placePackage(s, "homes", 0),
+      economicCrisis: crisis === "economic",
+      war: crisis === "war",
+      random: Math.random,
+    });
+    s.coins = Math.max(-5_000_000, s.coins);
     // People move in when they are happy and served, and leave when they are not.
     const ev = activeEvent(s);
-    const target = clamp(0.35 + (st.happy / 100) * 0.75 + (ev?.draw ?? 0), 0.25, 1);
+    const target = clamp(
+      0.35 + (st.happy / 100) * 0.75 + (ev?.draw ?? 0) - (crisis ? CRISES[crisis].leave : 0),
+      0.25,
+      1,
+    );
     const before2 = s.occupancy;
     s.occupancy = clamp(s.occupancy + (target - s.occupancy) * 0.35, 0.25, 1);
     if (st.capacity >= 60 && before2 - s.occupancy > 0.04)
@@ -1231,10 +1723,41 @@ export function advanceDays(s: Sim, days: number) {
         roll < 0.28 ? "fire" : roll < 0.56 ? "storm" : roll < 0.8 ? "blackout" : "flood",
       );
     }
+    if (s.randomDisasters && !crisisOf(s) && s.buildings.length > 12 && Math.random() < 0.012) {
+      const roll = Math.random();
+      startCrisis(s, roll < 0.45 ? "economic" : roll < 0.75 ? "pandemic" : "war");
+    }
+    if (s.crisis && s.day >= s.crisis.until) {
+      pushLog(s, `انتهت ${CRISES[s.crisis.kind].name}. الحمد لله على السلامة`);
+      if (!s.flags.includes("crisis-survived")) s.flags.push("crisis-survived");
+      s.crisis = null;
+    }
+    // Year end: measure, then apply the automatic yearly raise.
+    if (m % 12 === 0) closeYear(s);
   }
+  s.fx = s.fx.filter((f) => s.day < f.until);
   endEvent(s);
   if (s.history.length > 1200) s.history.splice(0, s.history.length - 1200);
   if (!brokeBefore && s.coins < 0) pushLog(s, "عجز: مصروف الشهر أكبر من الصندوق");
+}
+
+function closeYear(s: Sim) {
+  const st = stats(s);
+  const year = new Date(EPOCH + Math.floor(s.day) * 86400000).getUTCFullYear() - 1;
+  s.years.push({
+    year,
+    residents: st.residents,
+    happy: st.happy,
+    costIndex: costIndex(s),
+    income: Math.round(s.ytd.income),
+    spend: Math.round(s.ytd.spend),
+    coins: Math.round(s.coins),
+  });
+  if (s.years.length > 60) s.years.splice(0, s.years.length - 60);
+  s.ytd = { income: 0, spend: 0, residents0: st.residents };
+  if (s.autoRaise > 0)
+    for (const k of COST_KEYS) s.costs[k] = clamp(Math.round(s.costs[k] * (1 + s.autoRaise / 100)), 50, 250);
+  pushLog(s, `التقرير السنوي ${year} جاهز`);
 }
 
 function endEvent(s: Sim) {
@@ -1267,6 +1790,8 @@ export function triggerDisaster(
     if (!targets.length) return { ok: false, msg: "ما في مبنى يطاله الحريق" };
     const b = targets[Math.floor(Math.random() * targets.length)]!;
     const name = CATALOG[b.kind].name;
+    s.fx.push({ kind: "fire", c: b.c, r: b.r, until: s.day + 14 });
+    s.fx.push({ kind: "smoke", c: b.c, r: b.r, until: s.day + 30 });
     if (b.level > 1) b.level -= 1;
     else {
       const i = s.buildings.findIndex((x) => x.id === b.id);
@@ -1316,7 +1841,18 @@ export function bulletin(s: Sim, st = stats(s)) {
   if (s.tax >= 80) lines.push("الضريبة عالية والناس تتذمر");
   if (s.coins < 0) lines.push("صندوق البلدية في عجز. خذ قرضاً من الميزانية");
   if (st.capacity >= 60 && st.service < 0.6) lines.push("الخدمات ناقصة والناس متضايقة");
-  if ((s.fees ?? 100) > 130) lines.push("الرسوم غالية والسكان يشتكون");
+  if (costIndex(s) > 125) lines.push("غلاء المعيشة: السكن والتعليم غالية والناس تشتكي");
+  const crisis = crisisOf(s);
+  if (crisis) lines.unshift(`${CRISES[crisis].name} لين ${formatCityDate(s.crisis!.until)}`);
+  const mood = calendarMood(s);
+  if (mood.national) lines.push("العيد الوطني وعيد التحرير: الأعلام في كل مكان");
+  if (mood.ramadan)
+    lines.push(
+      s.buildings.some((b) => b.kind === "mosque")
+        ? "رمضان كريم: إفطار جماعي في المسجد الكبير"
+        : "رمضان كريم: ابنِ المسجد الكبير للإفطار الجماعي",
+    );
+  if (mood.eid) lines.push("عيدكم مبارك");
   if (s.loan > 0) lines.push(`دين البنك ${Math.round(s.loan).toLocaleString("en-US")} د.ك`);
   const ev = activeEvent(s);
   if (ev) lines.push(`فعالية جارية: ${ev.name}`);
@@ -1350,11 +1886,53 @@ export function advanceQuest(s: Sim) {
   return gained;
 }
 
-export function createInitialDistrict(district: DistrictId): Sim {
+/**
+ * A fresh neighborhood. With `seed`, it comes with a small starter town so the
+ * first minute shows a living place: homes, a co-op, a school, a park, power and water.
+ */
+export function createInitialDistrict(district: DistrictId, seed = true): Sim {
   const s = createInitial();
   s.district = district;
   s.roads = districtRoads(districtById(district)!);
+  if (seed) seedStarter(s);
   return s;
+}
+
+const STARTER: Kind[] = ["villa", "villa", "villa", "modern", "shop", "school", "park", "power", "water"];
+
+function seedStarter(s: Sim) {
+  const roads = roadSet(s);
+  prepaid = true;
+  try {
+    const district = districtById(s.district);
+    const sector = district?.sectors[0];
+    if (sector) {
+      // Lots that front the planned streets first, nearest the sector's corner.
+      const lots = [...sector.cells].sort(
+        (a, b) =>
+          Number(!besideRoad(a.c, a.r, roads)) - Number(!besideRoad(b.c, b.r, roads)) ||
+          a.r - b.r ||
+          a.c - b.c,
+      );
+      let i = 0;
+      for (const kind of STARTER) {
+        while (i < lots.length) {
+          const lot = lots[i++]!;
+          if (placeBuilding(s, kind, lot.c, lot.r, 0).ok) break;
+        }
+      }
+    } else {
+      placePackage(s, "homes", 0);
+      const plant = findModelSite(s, 2, 1);
+      if (plant) {
+        placeBuilding(s, "power", plant.c, plant.r, 0);
+        placeBuilding(s, "water", plant.c + 1, plant.r, 0);
+      }
+    }
+  } finally {
+    prepaid = false;
+  }
+  s.occupancy = 0.9;
 }
 
 export const roadIsSchematic = (district: DistrictId | null | undefined, key: string) =>
@@ -1368,7 +1946,8 @@ export function loadSim(district?: DistrictId | null): Sim {
     if (!raw) return district ? createInitialDistrict(district) : createInitial();
     const p = JSON.parse(raw) as Partial<Sim> & { v?: number; grid?: number };
     if (p.v !== 1 && p.v !== 2) return district ? createInitialDistrict(district) : createInitial();
-    const s = district ? createInitialDistrict(district) : createInitial();
+    // Saved cities bring their own buildings; never add the starter town on top.
+    const s = district ? createInitialDistrict(district, false) : createInitial();
     s.history = [];
     s.coins = Math.max(-8000, Math.floor(Number(p.coins) || 0));
     s.quest = clamp(Number(p.quest) || 0, 0, QUESTS.length);
@@ -1381,7 +1960,34 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.difficulty = "easy";
     s.luckAt = Math.max(0, Number(p.luckAt) || 0);
     if (p.randomDisasters === undefined) s.randomDisasters = true;
-    s.fees = clamp(Number(p.fees ?? 100), 50, 200);
+    const legacyFees = (p as { fees?: number }).fees;
+    const rawCosts = (p.costs ?? {}) as Partial<Costs>;
+    for (const k of COST_KEYS)
+      s.costs[k] = clamp(Number(rawCosts[k] ?? legacyFees ?? 100), 50, 250);
+    s.autoRaise = clamp(Number(p.autoRaise) || 0, 0, 10);
+    if (Array.isArray(p.years)) s.years = p.years.filter((y) => y && typeof y === "object").slice(-60);
+    if (p.ytd && typeof p.ytd === "object")
+      s.ytd = {
+        income: Number(p.ytd.income) || 0,
+        spend: Number(p.ytd.spend) || 0,
+        residents0: Number(p.ytd.residents0) || 0,
+      };
+    s.finance = loadFinance(p.finance);
+    s.flags = Array.isArray(p.flags) ? p.flags.filter((x) => typeof x === "string") : [];
+    s.achievements = Array.isArray(p.achievements)
+      ? p.achievements.filter((x) => typeof x === "string")
+      : [];
+    s.collected = Math.max(0, Number(p.collected) || 0);
+    s.lastSeen = Math.max(0, Number(p.lastSeen) || 0);
+    s.dailyDay = typeof p.dailyDay === "string" ? p.dailyDay : "";
+    s.streak = clamp(Number(p.streak) || 0, 0, 30);
+    const cr = p.crisis;
+    if (cr && typeof cr === "object" && cr.kind in CRISES)
+      s.crisis = { kind: cr.kind, until: Number(cr.until) || 0 };
+    if (Array.isArray(p.fx))
+      s.fx = p.fx
+        .filter((f) => f && typeof f === "object" && (f.kind === "fire" || f.kind === "smoke"))
+        .map((f) => ({ kind: f.kind, c: Number(f.c) || 0, r: Number(f.r) || 0, until: Number(f.until) || 0 }));
     s.occupancy = clamp(Number(p.occupancy ?? 0.85), 0.25, 1);
     s.loan = Math.max(0, Number(p.loan) || 0);
     s.fame = clamp(Number(p.fame) || 0, 0, 12);
@@ -1445,7 +2051,7 @@ export function loadSim(district?: DistrictId | null): Sim {
         kind: b.kind as Kind,
         c,
         r,
-        level: clamp(Number(b.level) || 1, 1, 3),
+        level: clamp(Number(b.level) || 1, 1, maxLevelOf(b.kind as Kind)),
         stored: Math.max(0, Number(b.stored) || 0),
         born: 0,
       });
@@ -1506,7 +2112,19 @@ export function saveSim(s: Sim) {
     history: s.history.slice(-1200),
     difficulty: s.difficulty,
     luckAt: s.luckAt,
-    fees: s.fees,
+    costs: s.costs,
+    autoRaise: s.autoRaise,
+    years: s.years,
+    ytd: s.ytd,
+    finance: s.finance,
+    flags: s.flags,
+    achievements: s.achievements,
+    collected: s.collected,
+    lastSeen: s.lastSeen,
+    dailyDay: s.dailyDay,
+    streak: s.streak,
+    crisis: s.crisis,
+    fx: s.fx,
     occupancy: s.occupancy,
     loan: s.loan,
     event: s.event,

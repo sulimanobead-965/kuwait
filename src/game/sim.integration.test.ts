@@ -16,6 +16,7 @@ import {
   tick,
   upgrade,
   bulldoze,
+  QUESTS,
 } from "./sim.ts";
 import { CATALOG, KINDS } from "./catalog.ts";
 import { cellsFromSource, GRID_GEN } from "./land.ts";
@@ -59,14 +60,16 @@ test("placement occupancy upgrades and income remain playable", () => {
   assert.equal(s.buildings.length, 1);
 });
 
-test("all 17 catalog types are placeable on the same 3D grid", () => {
+test("every inland catalog type is placeable on the same 3D grid", () => {
   const s = city();
-  KINDS.forEach((kind, i) => {
+  s.quest = QUESTS.length; // every era unlocked
+  const inland = KINDS.filter((kind) => !CATALOG[kind].needsCoast);
+  inland.forEach((kind, i) => {
     const lot = at(12 + (i % 10), 26 + Math.floor(i / 10));
     assert.equal(placeBuilding(s, kind, lot.c, lot.r, i).ok, true, kind);
     assert.ok(CATALOG[kind].name.length > 0);
   });
-  assert.equal(s.buildings.length, 17);
+  assert.equal(s.buildings.length, inland.length);
   assert.ok(stats(s).waterGive > 0);
 });
 

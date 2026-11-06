@@ -5,6 +5,7 @@ import { CELL_SIZE, LAND_HEIGHT, cellWorld } from "./camera.ts";
 import { PALETTE as P } from "./palette.ts";
 import { roadIsSchematic, type Sim } from "../sim.ts";
 import { roadMarkingsAt } from "./road-markings.ts";
+import { districtById, sectorAt } from "../districts.ts";
 
 function tint(geo: THREE.BufferGeometry, color: string) {
   const c = new THREE.Color(color);
@@ -115,55 +116,117 @@ export function createTerrain() {
   return { group, material };
 }
 
+/** Soft pastel per numbered parcel so neighboring sectors read apart on sand. */
+const PARCEL_TINTS = ["#8fc7b4", "#e3a98b", "#a7b5e0", "#d9c86f", "#c49ccc", "#86b9d6", "#b9cf8c", "#e3a0ad"];
+
+function parcelTint(number: number) {
+  return PARCEL_TINTS[(number - 1 + PARCEL_TINTS.length * 8) % PARCEL_TINTS.length]!;
+}
+
 export function createGrid(
   avoid: ReadonlySet<string> = new Set(),
   district: Sim["district"] = null,
 ) {
   const vertices: number[] = [];
+  const colors: number[] = [];
   const half = CELL_SIZE / 2;
+  const y = LAND_HEIGHT + 0.015;
+  const base = new THREE.Color(P.dark);
+  const edge = new THREE.Color();
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
       if (!LAND[r]![c] || avoid.has(`${c},${r}`) || roadIsSchematic(district, `${c},${r}`))
         continue;
       const { x, z } = cellWorld(c, r);
-      vertices.push(
-        x - half,
-        LAND_HEIGHT + 0.015,
-        z - half,
-        x + half,
-        LAND_HEIGHT + 0.015,
-        z - half,
-      );
-      vertices.push(
-        x + half,
-        LAND_HEIGHT + 0.015,
-        z - half,
-        x + half,
-        LAND_HEIGHT + 0.015,
-        z + half,
-      );
-      vertices.push(
-        x + half,
-        LAND_HEIGHT + 0.015,
-        z + half,
-        x - half,
-        LAND_HEIGHT + 0.015,
-        z + half,
-      );
-      vertices.push(
-        x - half,
-        LAND_HEIGHT + 0.015,
-        z + half,
-        x - half,
-        LAND_HEIGHT + 0.015,
-        z - half,
-      );
+      const own = sectorAt(district ?? null, `${c},${r}`);
+      if (own !== undefined) edge.set(parcelTint(own)).multiplyScalar(0.45);
+      const sides = [
+        [x - half, z - half, x + half, z - half, 0, -1],
+        [x + half, z - half, x + half, z + half, 1, 0],
+        [x + half, z + half, x - half, z + half, 0, 1],
+        [x - half, z + half, x - half, z - half, -1, 0],
+      ] as const;
+      for (const [x0, z0, x1, z1, dc, dr] of sides) {
+        // Parcel borders are drawn darker and in the parcel's own hue.
+        const border =
+          own !== undefined && sectorAt(district ?? null, `${c + dc},${r + dr}`) !== own;
+        const color = border ? edge : base;
+        const alpha = border ? 0.55 : 0.17;
+        vertices.push(x0, y, z0, x1, y, z1);
+        colors.push(color.r, color.g, color.b, alpha, color.r, color.g, color.b, alpha);
+      }
     }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  const material = new THREE.LineBasicMaterial({ color: P.dark, transparent: true, opacity: 0.17 });
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+  });
   return new THREE.LineSegments(geometry, material);
+}
+
+/**
+ * Always-visible parcel wash: a faint pastel fill per numbered sector and a thin,
+ * slightly stronger strip along each parcel's outer edge. Null outside planned districts.
+ */
+export function createParcels(avoid: ReadonlySet<string>, district: Sim["district"] = null) {
+  const sectors = districtById(district)?.sectors;
+  if (!sectors?.length) return null;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const y = LAND_HEIGHT + 0.006;
+  const half = CELL_SIZE / 2;
+  const strip = 0.16;
+  const color = new THREE.Color();
+  const quad = (x0: number, z0: number, x1: number, z1: number, alpha: number) => {
+    const i = positions.length / 3;
+    positions.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1);
+    for (let k = 0; k < 4; k += 1) colors.push(color.r, color.g, color.b, alpha);
+    indices.push(i, i + 2, i + 1, i, i + 3, i + 2);
+  };
+  for (const sector of sectors) {
+    for (const { c, r } of sector.cells) {
+      const key = `${c},${r}`;
+      if (avoid.has(key) || roadIsSchematic(district, key) || !LAND[r]?.[c]) continue;
+      const { x, z } = cellWorld(c, r);
+      color.set(parcelTint(sector.number));
+      quad(x - half, z - half, x + half, z + half, 0.3);
+      color.multiplyScalar(0.55);
+      for (const [dc, dr] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        if (sectorAt(district ?? null, `${c + dc},${r + dr}`) === sector.number) continue;
+        if (dc === 1) quad(x + half - strip, z - half, x + half, z + half, 0.6);
+        if (dc === -1) quad(x - half, z - half, x - half + strip, z + half, 0.6);
+        if (dr === 1) quad(x - half, z + half - strip, x + half, z + half, 0.6);
+        if (dr === -1) quad(x - half, z - half, x + half, z - half + strip, 0.6);
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  // Lit like the sand underneath, so the wash dims with the day-night cycle.
+  const material = new THREE.MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.receiveShadow = true;
+  mesh.renderOrder = -1;
+  return mesh;
 }
 export function createRoads(roadKeys: string[]) {
   const asphalt: THREE.BufferGeometry[] = [];

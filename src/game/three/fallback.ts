@@ -99,7 +99,7 @@ export class FallbackCityWorld {
     this.zoneBox = box;
   }
   zoom(factor: number) {
-    this.viewHeightGoal = Math.max(15, Math.min(92, this.viewHeightGoal / factor));
+    this.viewHeightGoal = Math.max(15, Math.min(150, this.viewHeightGoal / factor));
   }
 
   frameDistrict() {
@@ -176,7 +176,7 @@ export class FallbackCityWorld {
       const [a, b] = [...this.pointers.values()];
       this.viewHeightGoal = Math.max(
         15,
-        Math.min(92, (this.viewHeight * 170) / Math.max(30, Math.hypot(a!.x - b!.x, a!.y - b!.y))),
+        Math.min(150, (this.viewHeight * 170) / Math.max(30, Math.hypot(a!.x - b!.x, a!.y - b!.y))),
       );
       return;
     }
@@ -296,10 +296,24 @@ export class FallbackCityWorld {
     for (const b of [...sim.buildings].sort((a, z) => a.c + a.r - z.c - z.r)) {
       const p = this.project(cellWorld(b.c, b.r).x, cellWorld(b.c, b.r).z);
       const scale = this.height / this.viewHeight;
-      const width = ["kuwait", "mosque", "palace"].includes(b.kind) ? 15 * scale : 12 * scale;
-      const h = ["kuwait", "liberation", "boubyan", "tower"].includes(b.kind)
-        ? 32 * scale
-        : 15 * scale;
+      const width = ["avenues", "stadium", "opera", "mubarakiya"].includes(b.kind)
+        ? 17 * scale
+        : ["kuwait", "mosque", "palace"].includes(b.kind)
+          ? 15 * scale
+          : ["hamra"].includes(b.kind)
+            ? 10 * scale
+            : 12 * scale;
+      const skyscraper = ["apartments", "shop", "tower"].includes(b.kind) && b.level >= 4;
+      const h =
+        b.kind === "hamra"
+          ? 48 * scale
+          : skyscraper
+            ? (b.level >= 5 ? 42 : 36) * scale
+            : ["kuwait", "liberation", "boubyan", "tower"].includes(b.kind)
+              ? 32 * scale
+              : ["avenues", "stadium", "mubarakiya", "chalet"].includes(b.kind)
+                ? 9 * scale
+                : 15 * scale;
       if (b.kind === "park") {
         ctx.fillStyle = "#477e60";
         ctx.fillRect(p.x - width / 2, p.y - 3, width, 5);

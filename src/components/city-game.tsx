@@ -7,6 +7,14 @@ import type { Cell } from "@/game/three/camera";
 import type { DayMode } from "@/game/three/day-night";
 import { FallbackCityWorld } from "@/game/three/fallback";
 import { createAudio } from "@/game/audio";
+import {
+  buyBond,
+  deposit as depositMoney,
+  hireConsultant,
+  startProject,
+  withdraw as withdrawMoney,
+} from "@/game/finance";
+import { TUTORIAL, WelcomeBack, type Celebration } from "@/components/hud-panels";
 import { CATALOG, type Category, type Kind } from "@/game/catalog";
 import {
   advanceDays,
@@ -14,6 +22,14 @@ import {
   bulldoze,
   buyModelArea,
   checkPromotion,
+  checkAchievements,
+  eraOf,
+  ERAS,
+  RANKS,
+  startCrisis,
+  welcomeBack,
+  type CostKey,
+  type CrisisKind,
   repayLoan,
   startEvent,
   takeLoan,
@@ -64,6 +80,26 @@ declare global {
   }
 }
 
+/** Little dinar coins fly from a building to the treasury counter. */
+function flyCoins(from: { x: number; y: number }) {
+  const layer = document.querySelector(".coin-fly-layer");
+  const target = document.getElementById("hud-coins")?.getBoundingClientRect();
+  if (!layer || !target || from.x < 0) return;
+  const dx = target.left + target.width / 2 - from.x;
+  const dy = target.top + target.height / 2 - from.y;
+  for (let i = 0; i < 6; i += 1) {
+    const coin = document.createElement("i");
+    coin.className = "coin-fly";
+    coin.style.left = `${from.x + (Math.random() - 0.5) * 24}px`;
+    coin.style.top = `${from.y + (Math.random() - 0.5) * 16}px`;
+    coin.style.setProperty("--dx", `${dx}px`);
+    coin.style.setProperty("--dy", `${dy}px`);
+    coin.style.animationDelay = `${i * 45}ms`;
+    layer.appendChild(coin);
+    window.setTimeout(() => coin.remove(), 1100 + i * 45);
+  }
+}
+
 function fmt(n: number) {
   return Math.floor(n).toLocaleString("en-US");
 }
@@ -91,6 +127,40 @@ export function CityGame() {
   const [districtChooser, setDistrictChooser] = useState(false);
   const toastSeq = useRef(0);
   const notifyRef = useRef<{ promotion: () => void }>({ promotion: () => {} });
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const celebrateQueue = useRef<Celebration[]>([]);
+  const [welcome, setWelcome] = useState<ReturnType<typeof welcomeBack> | null>(null);
+  const [music, setMusic] = useState(false);
+  const audioRef = useRef<ReturnType<typeof createAudio> | null>(null);
+  const [tutorial, setTutorial] = useState<number>(() => {
+    if (typeof localStorage === "undefined") return -1;
+    const raw = localStorage.getItem("omdat-tutorial");
+    return raw === "done" ? -1 : Number(raw ?? 0) || 0;
+  });
+  const tutorialBase = useRef<{
+    roads: number;
+    buildings: number;
+    collected: number;
+    levels: number;
+  } | null>(null);
+
+  function celebrate(item: Celebration) {
+    celebrateQueue.current.push(item);
+    setCelebration((current) => current ?? celebrateQueue.current.shift() ?? null);
+  }
+  const celebrateRef = useRef(celebrate);
+  celebrateRef.current = celebrate;
+
+  function nextCelebration() {
+    setCelebration(celebrateQueue.current.shift() ?? null);
+  }
+
+  function advanceTutorial(step: number) {
+    const next = step + 1 >= TUTORIAL.length ? -1 : step + 1;
+    localStorage.setItem("omdat-tutorial", next < 0 ? "done" : String(next));
+    tutorialBase.current = null;
+    setTutorial(next);
+  }
 
   toolRef.current = tool;
 
@@ -103,6 +173,7 @@ export function CityGame() {
   }
 
   function sync() {
+    simRef.current.lastSeen = Date.now();
     const next = cloneSim(simRef.current);
     setSnap(next);
     saveSim(simRef.current);
@@ -124,6 +195,7 @@ export function CityGame() {
       if (world instanceof CityWorld) world.renderer.debug.checkShaderErrors = true;
     }
     const audio = createAudio();
+    audioRef.current = audio;
     let failed = false;
     try {
       world = new CityWorld(
@@ -164,6 +236,11 @@ export function CityGame() {
       simRef.current.started = true;
       simRef.current.speed = 0;
     }
+    if (simRef.current.started) {
+      const back = welcomeBack(simRef.current, Date.now());
+      if (back.daily > 0 || back.offline > 0) setWelcome(back);
+      saveSim(simRef.current);
+    }
     setSnap(cloneSim(simRef.current));
     world.sync(simRef.current, timeRef.current, true);
     window.__city3d = {
@@ -184,16 +261,42 @@ export function CityGame() {
       }
       notePromotion();
     }
+    let eraSeen = eraOf(simRef.current);
     function notePromotion() {
-      const up = checkPromotion(simRef.current);
-      if (!up) return;
-      audio.play("quest", simRef.current.mute);
-      toastRef.current(`مبروك! صرت ${up.title} · مكافأة ${fmt(up.bonus)} د.ك`);
+      const sim = simRef.current;
+      const up = checkPromotion(sim);
+      if (up) {
+        audio.play("quest", sim.mute);
+        celebrateRef.current({
+          kind: "rank",
+          title: up.title,
+          detail: `مكافأة ${fmt(up.bonus)} د.ك. ${
+            up.title === RANKS[RANKS.length - 1]!.title
+              ? "صرت المحافظ! الهدف القادم: مليون ساكن."
+              : `الترقية القادمة: ${RANKS[RANKS.findIndex((r) => r.title === up.title) + 1]?.title ?? ""}`
+          }`,
+        });
+      }
+      const era = eraOf(sim);
+      if (era > eraSeen) {
+        eraSeen = era;
+        celebrateRef.current({
+          kind: "era",
+          title: ERAS[era]!,
+          detail: "انفتحت مبانٍ ومعالم جديدة في قائمة البناء.",
+        });
+      }
+      for (const a of checkAchievements(sim)) {
+        audio.play("collect", sim.mute);
+        toastRef.current(`🏆 إنجاز: ${a.name}`);
+      }
     }
     notifyRef.current = { promotion: notePromotion };
     function collect(id: string) {
+      const b = simRef.current.buildings.find((x) => x.id === id);
       const n = collectOne(simRef.current, id);
       if (n <= 0) return;
+      if (b && world instanceof CityWorld) flyCoins(world.projectCell(b.c, b.r));
       audio.play("collect", simRef.current.mute);
       syncRef.current();
       toastRef.current(`+${fmt(n)} د.ك`);
@@ -349,6 +452,29 @@ export function CityGame() {
     if (worldRef.current) worldRef.current.disabled = districtChooser;
   }, [districtChooser]);
 
+  // The tutorial watches the city and moves on when the player does each step.
+  useEffect(() => {
+    if (tutorial < 0 || !snap.started) return;
+    const now = {
+      roads: snap.roads.length,
+      buildings: snap.buildings.length,
+      collected: snap.collected,
+      levels: snap.buildings.reduce((n, b) => n + b.level, 0),
+    };
+    const base = tutorialBase.current;
+    if (!base) {
+      tutorialBase.current = now;
+      return;
+    }
+    const done =
+      (tutorial === 0 && snap.speed > 0) ||
+      (tutorial === 1 && now.roads > base.roads) ||
+      (tutorial === 2 && now.buildings > base.buildings) ||
+      (tutorial === 3 && now.collected > base.collected) ||
+      (tutorial === 4 && now.levels > base.levels);
+    if (done) advanceTutorial(tutorial);
+  }, [snap, tutorial]);
+
   useEffect(() => {
     if (!snap.started) return;
     const footer = document.querySelector("main.game-shell footer");
@@ -479,9 +605,83 @@ export function CityGame() {
     sync();
   }
 
-  function onFees(n: number) {
-    simRef.current.fees = Math.max(50, Math.min(200, n));
+  function onCost(key: CostKey, value: number) {
+    simRef.current.costs = { ...simRef.current.costs, [key]: Math.max(50, Math.min(250, value)) };
     sync();
+  }
+
+  function onAutoRaise(pct: number) {
+    simRef.current.autoRaise = pct;
+    sync();
+  }
+
+  function finance(act: { ok: boolean; msg: string }) {
+    pushToast(act.msg);
+    sync();
+  }
+
+  function onCrisis(kind: CrisisKind) {
+    const act = startCrisis(simRef.current, kind);
+    pushToast(act.msg);
+    sync();
+  }
+
+  function onMusic() {
+    const next = !music;
+    setMusic(next);
+    audioRef.current?.music(next);
+  }
+
+  async function onPhoto() {
+    const world = worldRef.current;
+    const canvas = canvasRef.current;
+    if (!world || !canvas) return;
+    try {
+      const shot =
+        world instanceof CityWorld &&
+        typeof (world as { snapshot?: () => string }).snapshot === "function"
+          ? (world as unknown as { snapshot: () => string }).snapshot()
+          : canvas.toDataURL("image/jpeg", 0.92);
+      const img = new Image();
+      img.src = shot;
+      await img.decode();
+      const out = document.createElement("canvas");
+      out.width = img.width;
+      out.height = img.height + 90;
+      const ctx = out.getContext("2d")!;
+      ctx.fillStyle = "#0e6e78";
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(img, 0, 0);
+      const st = stats(simRef.current);
+      ctx.fillStyle = "#f3eee4";
+      ctx.textAlign = "right";
+      ctx.direction = "rtl";
+      ctx.font = "bold 34px 'Noto Kufi Arabic', sans-serif";
+      const name = districtById(simRef.current.district)?.name ?? "الكويت";
+      ctx.fillText(`المحافظ · ${name}`, out.width - 24, img.height + 42);
+      ctx.font = "22px 'Noto Kufi Arabic', sans-serif";
+      ctx.fillText(
+        `${st.residents.toLocaleString("en-US")} ساكن · رضا ${st.happy}%`,
+        out.width - 24,
+        img.height + 74,
+      );
+      const blob = await new Promise<Blob | null>((ok) => out.toBlob(ok, "image/jpeg", 0.9));
+      if (!blob) throw new Error("no image");
+      const file = new File([blob], "kuwait-city.jpg", { type: "image/jpeg" });
+      const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+      if (nav.share && nav.canShare?.({ files: [file] })) {
+        await nav.share({ files: [file], title: "مدينتي في المحافظ" });
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "kuwait-city.jpg";
+        a.click();
+        window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        pushToast("تم حفظ صورة المدينة");
+      }
+    } catch {
+      pushToast("ما قدرت ألتقط الصورة");
+    }
   }
 
   function onLoan(amount: number) {
@@ -605,6 +805,7 @@ export function CityGame() {
   return (
     <main className="game-shell relative bg-sc-bar text-sc-mint">
       <h1 className="sr-only">المحافظ</h1>
+      <div className="coin-fly-layer" aria-hidden="true" />
       <canvas
         ref={canvasRef}
         data-testid="city-canvas"
@@ -639,7 +840,27 @@ export function CityGame() {
         onZone={onZone}
         onBuild={onBuild}
         onTax={onTax}
-        onFees={onFees}
+        onCost={onCost}
+        onAutoRaise={onAutoRaise}
+        onDeposit={(a) => finance(depositMoney(simRef.current, a))}
+        onWithdraw={(a) => finance(withdrawMoney(simRef.current, a))}
+        onBond={(i) => finance(buyBond(simRef.current, i))}
+        onProject={(i) => finance(startProject(simRef.current, i))}
+        onConsult={() => finance(hireConsultant(simRef.current))}
+        onCrisis={onCrisis}
+        onPhoto={onPhoto}
+        onMusic={onMusic}
+        music={music}
+        tutorial={tutorial}
+        onTutorialSkip={() => {
+          localStorage.setItem("omdat-tutorial", "done");
+          setTutorial(-1);
+        }}
+        onPanel={(p) => {
+          if (p === "budget" && tutorial === TUTORIAL.length - 1) advanceTutorial(tutorial);
+        }}
+        celebration={celebration}
+        onCelebrationClose={nextCelebration}
         onLoan={onLoan}
         onRepay={onRepay}
         onEvent={onEvent}
@@ -662,6 +883,18 @@ export function CityGame() {
         onZoneApply={onZoneApply}
         onZoneCancel={onZoneCancel}
       />
+      {welcome && (
+        <WelcomeBack
+          daily={welcome.daily}
+          streak={welcome.streak}
+          offline={welcome.offline}
+          months={welcome.months}
+          onClose={() => {
+            setWelcome(null);
+            sync();
+          }}
+        />
+      )}
       <DistrictSelector
         open={districtChooser}
         current={simRef.current.district ?? null}

@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import type { HudTool } from "../../components/city-hud.tsx";
 import type { Sim } from "@/game/sim";
-import { cellKey, isLand, nearestOpenLot } from "@/game/sim";
+import { cellKey, createInitial, isCelebrating, isLand, nearestOpenLot } from "@/game/sim";
+import type { CrisisKind, DisasterKind } from "@/game/sim";
 import { COLS, ROWS } from "@/game/land";
 import { isLandmark } from "@/game/catalog";
 import { districtBounds, districtById, sectorsForZone } from "@/game/districts";
@@ -19,11 +20,13 @@ import {
 } from "./camera.ts";
 import { lightingAt, type DayMode } from "./day-night.ts";
 import { createBuildingObject } from "./models.ts";
+import { CityFx, type FxCell, type FxInput } from "./fx.ts";
 import { PALETTE, cityMaterials } from "./palette.ts";
 import { mountDinarCoin } from "@/game/coin-face";
 import {
   carGeometry,
   createGrid,
+  createParcels,
   createDistrictNumbers,
   createRoads,
   createTerrain,
@@ -69,6 +72,8 @@ type BuildingRecord = {
 
 /** Finger travel (px) before a build tap turns into a map drag. */
 const PLACE_SLOP = 14;
+/** Farthest zoom-out: lets a phone see a whole neighborhood (or much of the free zone). */
+const MAX_VIEW = 150;
 /** Start-screen showcase sits on the real Sharq waterfront (see land.ts). */
 const PREVIEW_SHIFT = { c: 20, r: -7 } as const;
 export const PREVIEW_FOCUS = { c: 26 + PREVIEW_SHIFT.c, r: 24 + PREVIEW_SHIFT.r } as const;
@@ -80,6 +85,40 @@ export class CityWorld {
   private materials = cityMaterials();
   private terrain = createTerrain();
   private grid = createGrid();
+  private parcels: THREE.Mesh | null = null;
+  private fx = new CityFx();
+  private fxInput: FxInput = {
+    disaster: null,
+    crisis: null,
+    celebrating: false,
+    cells: [],
+    day: 0,
+    night: 0,
+    target: new THREE.Vector3(),
+    viewHeight: 47,
+    aspect: 1,
+    pixelsPerUnit: 20,
+    heightAt: (c, r) => this.heights.get(cellKey(c, r)) ?? 0,
+  };
+  /** Top height of each building by cell key, for anchoring fire and smoke. */
+  private heights = new Map<string, number>();
+  private box = new THREE.Box3();
+  /** Debug-only visual overrides set through `window.__cityFx` in development. */
+  private fxOverride: {
+    disaster?: DisasterKind | null;
+    crisis?: CrisisKind | null;
+    celebrate?: boolean;
+    cells?: FxCell[];
+  } = {};
+  private phaseOverride: number | null = null;
+  private celebrateDay = -1;
+  private celebrateCached = false;
+  private puffed = new Set<string>();
+  private landmarkSignature = "";
+  private waterSignature = "";
+  private sky = new THREE.Color();
+  private carColor = new THREE.Color();
+  private carMatrix = new THREE.Matrix4();
   private roadMesh: THREE.Mesh | null = null;
   private roadDetail: THREE.Mesh | null = null;
   private roadLights: THREE.Mesh | null = null;
@@ -211,7 +250,8 @@ export class CityWorld {
       }),
     );
     this.zoneMesh.visible = false;
-    this.scene.add(this.highlight, this.zoneMesh);
+    this.scene.add(this.highlight, this.zoneMesh, this.fx.group);
+    if (import.meta.env.DEV) this.installFxDebug();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas);
     this.timer.connect(document);
@@ -242,6 +282,80 @@ export class CityWorld {
 
   diagnostics(): Readonly<WorldDiagnostics> {
     return this.dbg;
+  }
+
+  /** Render once and return the frame as a JPEG data URL (for the "city photo" share). */
+  snapshot(): string {
+    if (this.dirtyShadows) this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.render(this.scene, this.camera);
+    this.dirtyShadows = false;
+    return this.renderer.domElement.toDataURL("image/jpeg", 0.92);
+  }
+
+  /**
+   * Development helper: `window.__cityFx.force({ disaster: "storm", phase: 0.6, ... })`
+   * forces effects on screen without touching the simulation; `clear()` undoes it.
+   */
+  private installFxDebug() {
+    const w = window as unknown as { __cityFx?: unknown };
+    w.__cityFx = {
+      force: (o: {
+        disaster?: DisasterKind | null;
+        crisis?: CrisisKind | null;
+        celebrate?: boolean;
+        fire?: [number, number][];
+        smoke?: [number, number][];
+        phase?: number | null;
+      }) => {
+        if ("disaster" in o) this.fxOverride.disaster = o.disaster;
+        if ("crisis" in o) this.fxOverride.crisis = o.crisis;
+        if ("celebrate" in o) this.fxOverride.celebrate = o.celebrate;
+        if (o.fire || o.smoke)
+          this.fxOverride.cells = [
+            ...(o.fire ?? []).map(([c, r]) => ({ kind: "fire" as const, c, r, until: Infinity })),
+            ...(o.smoke ?? []).map(([c, r]) => ({ kind: "smoke" as const, c, r, until: Infinity })),
+          ];
+        if ("phase" in o) this.phaseOverride = o.phase ?? null;
+      },
+      clear: () => {
+        this.fxOverride = {};
+        this.phaseOverride = null;
+      },
+      mood: () => ({ ...this.fx.mood }),
+      probe: (id: string) => {
+        const scale = this.buildings.get(id)?.object.scale;
+        return { y: scale?.y ?? -1, x: scale?.x ?? -1, ...this.fx.particleCounts() };
+      },
+      birds: () =>
+        this.fx.flockCenters().map(([x, y, z]) => {
+          const p = new THREE.Vector3(x, y, z).project(this.camera);
+          return [Math.round(((p.x + 1) * this.width) / 2), Math.round(((1 - p.y) * this.height) / 2)];
+        }),
+      info: () => ({
+        parcels: this.parcels?.geometry.getAttribute("position").count ?? 0,
+        parcelsInScene: Boolean(this.parcels?.parent),
+        viewHeight: this.viewHeight,
+        buildings: this.sim?.buildings.map((b) => [b.id, b.kind, b.c, b.r]) ?? [],
+      }),
+    };
+  }
+
+  private updateFxInput(sim: Sim) {
+    const input = this.fxInput;
+    const o = this.fxOverride;
+    const disaster = sim.disaster && sim.day < sim.disaster.until ? sim.disaster.kind : null;
+    const crisis = sim.crisis && sim.day < sim.crisis.until ? sim.crisis.kind : null;
+    // isCelebrating builds a Date; only re-check when the day or the event changes.
+    const key = Math.floor(sim.day) * 2 + (sim.event && sim.day < sim.event.until ? 1 : 0);
+    if (key !== this.celebrateDay) {
+      this.celebrateDay = key;
+      this.celebrateCached = sim.started && isCelebrating(sim);
+    }
+    input.disaster = o.disaster !== undefined ? o.disaster : disaster;
+    input.crisis = o.crisis !== undefined ? o.crisis : crisis;
+    input.celebrating = o.celebrate ?? this.celebrateCached;
+    input.cells = o.cells ?? sim.fx ?? [];
+    input.day = o.cells ? 0 : sim.day;
   }
 
   private bindEvents() {
@@ -352,7 +466,7 @@ export class CityWorld {
       this.viewHeightGoal = THREE.MathUtils.clamp(
         (this.pinch.zoom * this.pinch.dist) / Math.max(12, dist),
         10,
-        92,
+        MAX_VIEW,
       );
       return;
     }
@@ -546,7 +660,7 @@ export class CityWorld {
   }
 
   zoom(factor: number) {
-    this.viewHeightGoal = THREE.MathUtils.clamp(this.viewHeightGoal / factor, 10, 92);
+    this.viewHeightGoal = THREE.MathUtils.clamp(this.viewHeightGoal / factor, 10, MAX_VIEW);
   }
 
   focus(cell: Cell, viewHeight = 32) {
@@ -652,14 +766,22 @@ export class CityWorld {
       );
     }
     if (preview && force) this.focus(PREVIEW_FOCUS, 31);
-    const roadSignature = sim.roads.join("|");
+    const roadSignature = `${input.district ?? ""}#${sim.roads.join("|")}`;
     if (roadSignature !== this.roadSignature) {
       this.roadSignature = roadSignature;
       this.scene.remove(this.grid);
       this.grid.geometry.dispose();
       this.grid.material.dispose();
       this.grid = createGrid(new Set(sim.roads), input.district);
+      this.grid.visible = Boolean(this.currentTool);
       this.scene.add(this.grid);
+      if (this.parcels) {
+        this.scene.remove(this.parcels);
+        this.parcels.geometry.dispose();
+        (this.parcels.material as THREE.Material).dispose();
+      }
+      this.parcels = createParcels(new Set(sim.roads), input.district);
+      if (this.parcels) this.scene.add(this.parcels);
       for (const item of [this.roadMesh, this.roadDetail, this.roadLights]) {
         if (item) {
           this.scene.remove(item);
@@ -716,6 +838,7 @@ export class CityWorld {
           position: new THREE.Vector3(at.x, LAND_HEIGHT + 4, at.z),
         };
         this.buildings.set(b.id, record);
+        this.heights.set(cellKey(b.c, b.r), this.box.setFromObject(built.object).max.y - LAND_HEIGHT);
         this.dirtyShadows = true;
       }
       const age = Math.max(0, now - b.born);
@@ -723,8 +846,22 @@ export class CityWorld {
         record.object.rotation.y = orient;
         this.dirtyShadows = true;
       }
-      const scale = age < 0.5 ? Math.min(1, 0.65 + age * 0.7) : 1;
-      record.object.scale.setScalar(scale);
+      if (age < BUILD_RISE) {
+        // Rise out of the ground with a small overshoot, plus a ring of dust at the base.
+        const t = age / BUILD_RISE;
+        const back = 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
+        const spread = 0.88 + 0.12 * (1 - (1 - t) ** 3);
+        record.object.scale.set(spread, Math.max(0.001, back), spread);
+        this.dirtyShadows = true;
+        const tag = `${b.id}@${b.born}`;
+        if (b.born > 0 && age < 0.35 && !this.puffed.has(tag)) {
+          this.puffed.add(tag);
+          this.fx.puff(at.x, at.z);
+        }
+      } else if (record.object.scale.y !== 1 || record.object.scale.x !== 1) {
+        record.object.scale.setScalar(1);
+        this.dirtyShadows = true;
+      }
       distribution[record.lod] = (distribution[record.lod] ?? 0) + 1;
     }
     for (const sprite of this.coinSprites.values()) sprite.visible = false;
@@ -733,7 +870,34 @@ export class CityWorld {
       this.hideCoin(id);
       this.scene.remove(record.object);
       this.buildings.delete(id);
+      const at = worldCell(record.object.position.x, record.object.position.z);
+      this.heights.delete(cellKey(at.c, at.r));
       this.dirtyShadows = true;
+    }
+    if (this.puffed.size > 64) this.puffed.clear();
+    this.updateFxInput(input);
+    const landmarkSignature = `${sim.buildings.length}:${input.district ?? ""}`;
+    if (landmarkSignature !== this.landmarkSignature) {
+      this.landmarkSignature = landmarkSignature;
+      const spots: number[] = [];
+      for (const b of sim.buildings) {
+        if (!isLandmark(b.kind) || spots.length >= 24) continue;
+        const at = cellWorld(b.c, b.r);
+        spots.push(at.x, at.z);
+      }
+      if (!spots.length && input.district) {
+        const box = districtBounds(input.district);
+        const at = cellWorld(box.c, box.r);
+        spots.push(at.x, at.z);
+      }
+      this.fx.landmarks = spots;
+    }
+    if (this.fxInput.disaster === "flood" || this.fx.mood.flood > 0) {
+      const waterSignature = `${this.roadSignature.length}|${sim.roads.length}|${sim.buildings.length}`;
+      if (waterSignature !== this.waterSignature) {
+        this.waterSignature = waterSignature;
+        this.fx.setWater(sim.roads, new Set(sim.buildings.map((b) => cellKey(b.c, b.r))));
+      }
     }
     if (this.cars.count === 0) this.dbg.instancedCars = 0;
     if (force) {
@@ -775,9 +939,12 @@ export class CityWorld {
       this.cars.count = 0;
       return;
     }
-    const matrix = new THREE.Matrix4();
+    const matrix = this.carMatrix;
     let count = 0;
+    // Pandemic lockdown empties ~60% of the streets.
+    const keep = 1 - 0.6 * this.fx.mood.pandemic;
     for (let i = 0; i < sim.roads.length && count < 60; i += 5) {
+      if (keep < 1 && ((i * 0.6180339) % 1) > keep) continue;
       const [c, r] = sim.roads[i]!.split(",").map(Number);
       const at = cellWorld(c!, r!);
       const horizontal =
@@ -792,7 +959,7 @@ export class CityWorld {
       this.cars.setMatrixAt(count++, matrix);
       this.cars.setColorAt(
         count - 1,
-        new THREE.Color(
+        this.carColor.set(
           i % 3 === 0 ? VehicleColors.gold : i % 3 === 1 ? VehicleColors.white : VehicleColors.teal,
         ),
       );
@@ -804,7 +971,10 @@ export class CityWorld {
   }
 
   private updateLighting(dt: number) {
-    const light = lightingAt(this.dbg.dayMode, (this.elapsed / 110 + 0.16) % 1);
+    const light = lightingAt(
+      this.phaseOverride === null ? this.dbg.dayMode : "auto",
+      this.phaseOverride ?? (this.elapsed / 110 + 0.16) % 1,
+    );
     this.dbg.night = light.night;
     this.sun.intensity = THREE.MathUtils.lerp(2.35, 0.11, light.night);
     this.sun.color.set(light.dusk > 0.25 ? "#ffd0a5" : light.night > 0.7 ? "#91bbdf" : "#fff0d5");
@@ -820,15 +990,19 @@ export class CityWorld {
         ),
       );
     this.sun.target.position.copy(this.target);
-    const sky = new THREE.Color().setRGB(
+    const sky = this.sky.setRGB(
       THREE.MathUtils.lerp(0.48, 0.035, light.night),
       THREE.MathUtils.lerp(0.72, 0.094, light.night),
       THREE.MathUtils.lerp(0.76, 0.17, light.night),
     );
+    const fog = this.scene.fog as THREE.Fog;
+    this.fx.grade(sky, fog, this.sun, this.hemi, light.night);
     this.scene.background = sky;
-    (this.scene.fog as THREE.Fog).color.copy(sky);
-    this.materials.windows.emissiveIntensity = 0.06 + light.emission * 2.4;
-    this.materials.lamps.emissiveIntensity = 0.1 + light.emission * 3.5;
+    fog.color.copy(sky);
+    // A blackout kills window glow and street lamps; the city goes dark.
+    const power = 1 - this.fx.mood.blackout;
+    this.materials.windows.emissiveIntensity = (0.06 + light.emission * 2.4) * power;
+    this.materials.lamps.emissiveIntensity = (0.1 + light.emission * 3.5) * power;
     if (!this.sim?.started && this.dbg.dayMode === "auto") this.sun.color.set("#ffe6bd");
     if (
       dt > 0 &&
@@ -836,6 +1010,16 @@ export class CityWorld {
       Math.floor(this.elapsed) !== Math.floor(this.elapsed - dt)
     )
       this.dirtyShadows = true;
+  }
+
+  private updateFx(dt: number) {
+    const input = this.fxInput;
+    input.night = this.dbg.night;
+    input.target.copy(this.target);
+    input.viewHeight = this.viewHeight;
+    input.aspect = this.width / this.height;
+    input.pixelsPerUnit = (this.height * this.renderer.getPixelRatio()) / this.viewHeight;
+    this.fx.update(dt, input);
   }
 
   private updateHover() {
@@ -881,6 +1065,7 @@ export class CityWorld {
     }
     if (this.sim) this.updateCars(this.sim);
     this.updateLighting(dt);
+    this.updateFx(dt);
     this.updateHover();
     for (const b of this.sim?.buildings ?? []) {
       if (b.stored < 1) continue;
@@ -941,6 +1126,10 @@ export class CityWorld {
   }
 
   dispose() {
+    this.scene.remove(this.fx.group);
+    this.fx.dispose();
+    const w = window as unknown as { __cityFx?: unknown };
+    delete w.__cityFx;
     if (this.districtNumbers) disposeDistrictNumbers(this.districtNumbers);
     for (const id of [...this.coinSprites.keys()]) this.hideCoin(id);
     this.coinTexture?.dispose();
@@ -1006,6 +1195,8 @@ function createInitialPreview(): Sim {
     ["school", 32, 27],
   ];
   return {
+    // New simulation fields come from the real initial state; the showcase overrides below.
+    ...createInitial(),
     coins: 3200,
     roads,
     quest: 0,
@@ -1036,7 +1227,6 @@ function createInitialPreview(): Sim {
     history: [],
     difficulty: "easy",
     luckAt: 0,
-    fees: 100,
     occupancy: 1,
     loan: 0,
     event: null,
@@ -1046,5 +1236,8 @@ function createInitialPreview(): Sim {
     crisis: null,
   };
 }
+
+/** Seconds a new building takes to rise out of the ground. */
+const BUILD_RISE = 0.8;
 
 const VehicleColors = { gold: "#c89030", white: "#ffffff", teal: PALETTE.gulf };

@@ -23,6 +23,13 @@ export const PALETTE = {
   blue: "#4c819a",
   gold: "#e1bb65",
   black: "#202d30",
+  pool: "#46c3c8",
+  pitch: "#4f9150",
+  track: "#b0654a",
+  deepGlass: "#2d5c6b",
+  clay: "#c8a77a",
+  canvas: "#efe7d6",
+  skylight: "#9fc4cb",
 } as const;
 
 export function cityMaterials() {

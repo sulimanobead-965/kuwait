@@ -127,7 +127,7 @@ const planned: District[] = sourceDistricts.map((district) => ({
 const freeDistrict: District = {
   id: "free",
   name: "منطقة حرة",
-  description: "كل اليابسة بالحجم الجديد، بلا قطع مرقّمة. ابنِ حيث شئت وارصف شوارعك.",
+  description: "كل اليابسة مع الطرق الدائرية والسريعة بشكل تقريبي. ابنِ حيث شئت وارصف شوارعك.",
   sectors: [],
 };
 
@@ -196,9 +196,56 @@ for (const district of sourceDistricts) {
   roadSet.set(district.id, roads);
   roadList.set(district.id, [...roads]);
 }
-roadSet.set("free", new Set());
-roadList.set("free", []);
+{
+  const highways = highwayCells();
+  roadSet.set("free", new Set(highways));
+  roadList.set("free", highways);
+}
 land.set("free", new Set());
+
+/**
+ * Approximate Kuwait City ring roads (1st–5th) and three radials, drawn on the
+ * real-coastline grid (land.ts: 181 m × 185 m cells, row 0 = 29.405° N, col 0 =
+ * 47.90° E). The rings are arcs around Sharq (≈47.975° E, 29.385° N) whose radii
+ * match where each ring crosses ~47.98° E: 29.362°, 29.350°, 29.335°, 29.318° and
+ * 29.300° N. Radials: Jahra Road west, Airport Road south, Fahaheel Road south-east.
+ * A playable sketch, not survey geometry.
+ */
+export function highwayCells(): string[] {
+  const rows = LAND.length;
+  const cols = LAND[0]?.length ?? 0;
+  const out = new Set<string>();
+  const put = (c: number, r: number) => {
+    if (r >= 0 && c >= 0 && r < rows && c < cols && LAND[r]?.[c] === 1) out.add(`${c},${r}`);
+  };
+  const center = { c: 40, r: 12 };
+  for (const radius of [14, 21, 30, 40, 51]) {
+    // 4-connected arc on the southern side of the centre.
+    let last: { c: number; r: number } | null = null;
+    for (let a = 0; a <= Math.PI; a += 0.5 / radius) {
+      const c = Math.round(center.c + Math.cos(a) * radius);
+      const r = Math.round(center.r + Math.sin(a) * radius);
+      if (last && last.c !== c && last.r !== r) put(c, last.r);
+      put(c, r);
+      last = { c, r };
+    }
+  }
+  const line = (c0: number, r0: number, c1: number, r1: number) => {
+    const n = Math.max(Math.abs(c1 - c0), Math.abs(r1 - r0));
+    let last: { c: number; r: number } | null = null;
+    for (let i = 0; i <= n; i += 1) {
+      const c = Math.round(c0 + ((c1 - c0) * i) / n);
+      const r = Math.round(r0 + ((r1 - r0) * i) / n);
+      if (last && last.c !== c && last.r !== r) put(c, last.r);
+      put(c, r);
+      last = { c, r };
+    }
+  };
+  line(center.c, center.r + 14, 0, 30); // Jahra Road
+  line(45, center.r + 13, 45, rows - 1); // Airport Road
+  line(center.c + 10, center.r + 10, 92, rows - 1); // Fahaheel Road
+  return [...out];
+}
 
 export const isDistrictId = (value: unknown): value is DistrictId =>
   value === "yarmouk" || value === "adailiya" || value === "surra" || value === "free";

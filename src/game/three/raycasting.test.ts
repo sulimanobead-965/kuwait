@@ -62,14 +62,19 @@ test("isometric orthographic ray returns original land lot", () => {
   }
 });
 
-test("portrait framing keeps neighborhood lots large enough to tap", () => {
+test("portrait framing shows the district while keeping lots tappable", () => {
   const phone = framedView(13, 12, 440, 956, 0.48);
   const desktop = framedView(13, 12, 1280, 720, 0.4);
   const step = CELL_SIZE * Math.SQRT1_2;
   const phonePx = (step / (phone.viewHeight * (440 / 956))) * 440;
-  assert.ok(phonePx >= 38, `phone cell ${phonePx.toFixed(1)}px`);
-  assert.ok(phone.viewHeight < 50, `phone zoomed out to ${phone.viewHeight}`);
+  assert.ok(phonePx >= 15, `phone cell ${phonePx.toFixed(1)}px`);
+  assert.ok(phone.viewHeight <= 92, `phone zoomed out to ${phone.viewHeight}`);
   assert.ok(desktop.viewHeight > 22 && desktop.viewHeight < 50);
+  // A full 29×27 neighborhood on a 390×844 phone with the HUD over the bottom 35%:
+  // its whole north–south depth fits above the footer.
+  const yarmouk = framedView(29, 27, 390, 844, 0.35);
+  const depth = (29 + 27) * step * Math.sin((32.5 * Math.PI) / 180);
+  assert.ok(yarmouk.viewHeight * 0.65 >= depth * 0.97, `district view ${yarmouk.viewHeight}`);
 });
 
 test("road paint has correctly oriented dashed approaches, stops, and empty junction interiors", () => {

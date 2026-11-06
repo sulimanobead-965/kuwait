@@ -409,3 +409,259 @@
   font-weight: 800;
   box-shadow: 0 1px 5px #10282b66;
 }
+
+/* ------------------------------------------------------------ bottom bar & more sheet */
+
+.hud-actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 0.35rem;
+  white-space: nowrap;
+}
+
+.more-sheet {
+  margin: 0 0.5rem 0.25rem;
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+}
+
+.more-item {
+  display: flex;
+  min-height: 4.2rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  border: 2px solid var(--color-sc-ink);
+  border-radius: 0.6rem;
+  background: var(--color-sc-mint);
+  color: var(--color-sc-ink);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.more-item:active {
+  background: var(--color-sc-lime);
+}
+
+/* ------------------------------------------------------------ banners */
+
+.crisis-banner {
+  border-radius: 999px;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+}
+
+.crisis-banner.is-bad {
+  background: var(--color-coral);
+  color: var(--color-sc-mint);
+}
+
+.crisis-banner.is-good {
+  background: var(--color-sc-leaf);
+  color: var(--color-sc-mint);
+}
+
+/* ------------------------------------------------------------ weather overlays */
+
+.weather-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.weather-layer > div {
+  position: absolute;
+  inset: -20%;
+}
+
+.weather-dust {
+  background:
+    radial-gradient(ellipse at 30% 40%, rgb(214 168 96 / 0.45), transparent 60%),
+    radial-gradient(ellipse at 70% 60%, rgb(190 140 70 / 0.4), transparent 55%),
+    rgb(205 160 95 / 0.32);
+  animation: dust-drift 6s linear infinite;
+}
+
+.weather-rain {
+  background-image: repeating-linear-gradient(
+    105deg,
+    rgb(200 225 240 / 0) 0 14px,
+    rgb(200 225 240 / 0.35) 14px 15px,
+    rgb(200 225 240 / 0) 15px 30px
+  );
+  background-size: 120px 120px;
+  background-color: rgb(30 50 70 / 0.18);
+  animation: rain-fall 0.45s linear infinite;
+}
+
+.weather-dark {
+  background: rgb(5 10 20 / 0.28);
+}
+
+.weather-war {
+  background: radial-gradient(ellipse at 50% 0%, rgb(160 40 20 / 0.28), transparent 70%);
+  animation: war-pulse 3.2s ease-in-out infinite;
+}
+
+.weather-haze {
+  background: rgb(120 140 110 / 0.16);
+}
+
+@keyframes dust-drift {
+  from {
+    transform: translateX(-6%);
+  }
+  to {
+    transform: translateX(6%);
+  }
+}
+
+@keyframes rain-fall {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -30px 120px;
+  }
+}
+
+@keyframes war-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------ celebration & welcome */
+
+.celebrate {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(4 12 8 / 0.45);
+}
+
+.celebrate-card {
+  position: relative;
+  width: min(22rem, 100%);
+  border-radius: 1rem;
+  padding: 1.1rem;
+  text-align: center;
+  animation: pop-in 420ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti i {
+  position: absolute;
+  top: -5%;
+  left: calc(var(--i) * 3.6%);
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  background: hsl(calc(var(--i) * 47deg) 80% 55%);
+  animation: confetti-fall calc(2.2s + var(--i) * 0.05s) ease-in calc(var(--i) * -0.13s) infinite;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translateY(110vh) rotate(720deg);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------ tutorial */
+
+.tutorial-card {
+  position: absolute;
+  /* Leave the right-hand tool column and the rank badge visible. */
+  right: 4.2rem;
+  left: 0.6rem;
+  top: 4.6rem;
+  z-index: 30;
+  border-radius: 0.8rem;
+  padding: 0.6rem 0.8rem;
+  max-width: 26rem;
+  margin-inline: auto;
+}
+
+.tut-pulse {
+  position: relative;
+  z-index: 31;
+  animation: tut-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes tut-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(57 255 57 / 0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgb(57 255 57 / 0);
+  }
+}
+
+/* ------------------------------------------------------------ coins flying to the treasury */
+
+.coin-fly-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+}
+
+.coin-fly {
+  position: fixed;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff6b0, #d6a12a 60%, #8a5d10);
+  box-shadow: 0 0 6px rgb(255 210 80 / 0.8);
+  animation: coin-fly 0.95s cubic-bezier(0.5, -0.4, 0.7, 1) forwards;
+}
+
+@keyframes coin-fly {
+  to {
+    transform: translate(var(--dx), var(--dy)) scale(0.5);
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-dust,
+  .weather-rain,
+  .weather-war,
+  .confetti i,
+  .tut-pulse,
+  .coin-fly {
+    animation: none;
+  }
+}

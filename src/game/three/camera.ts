@@ -45,7 +45,7 @@ export function framedView(
   const fit = Math.max(span / (aspect * 0.86), depth / (visible * 0.88));
   // Portrait phones cannot show a whole isometric block without shrinking lots
   // under a fingertip. Prefer readable lots and let the player pan sideways.
-  const minCellPx = width < 700 ? 40 : 26;
+  const minCellPx = width < 700 ? 16 : 26;
   const finger = (CELL_SIZE * Math.SQRT1_2 * height) / minCellPx;
   const viewHeight = Math.min(92, Math.max(16, Math.min(fit, finger)));
   return { viewHeight, shift: ((occludedBottom / 2) * viewHeight) / sinPitch };
