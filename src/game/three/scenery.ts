@@ -349,11 +349,16 @@ export function createParcels(avoid: ReadonlySet<string>, district: Sim["distric
   mesh.renderOrder = -1;
   return mesh;
 }
-export function createRoads(roadKeys: string[]) {
+/**
+ * Asphalt, paint and street lamps for `roadKeys`. `all` is every road on the map
+ * (defaults to `roadKeys`): markings and lamps look at neighbors, so a chunk of the
+ * network is drawn exactly as it would be as part of the whole.
+ */
+export function createRoads(roadKeys: readonly string[], all?: ReadonlySet<string>) {
   const asphalt: BoxBatch = [];
   const markings: BoxBatch = [];
   const lights: BoxBatch = [];
-  const roads = new Set(roadKeys);
+  const roads = all ?? new Set(roadKeys);
   for (const key of [...roadKeys].sort()) {
     const [c, r] = key.split(",").map(Number);
     const { x, z } = cellWorld(c!, r!);

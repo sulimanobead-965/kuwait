@@ -20,7 +20,7 @@ import {
   type Cell,
 } from "./camera.ts";
 import { lightingAt, type DayMode } from "./day-night.ts";
-import { createBuildingObject } from "./models.ts";
+import { BuildingBatch, buildingModel, modelHeight } from "./models.ts";
 import { createSiteObject, disposeSiteObject, updateSiteObject, type SiteObject } from "./construction.ts";
 import { progressOf } from "../developments.ts";
 import { CityFx, type FxCell, type FxInput } from "./fx.ts";
@@ -64,18 +64,46 @@ export type WorldDiagnostics = {
   dayMode: DayMode;
   night: number;
   lodDistribution: Record<string, number>;
+  /** Buildings off screen (beyond a margin) and not drawn at all. */
+  culledBuildings: number;
+  /** Instanced building batches in use (one per kind, level and detail). */
+  batches: number;
+  /** CPU milliseconds the last `sync()` took (simulation → scene). */
+  syncMs: number;
+  /** CPU milliseconds the last rendered frame took, `render()` included. */
+  frameMs: number;
 };
 
 type BuildingRecord = {
-  object: THREE.Group;
+  id: string;
+  /** The simulation object this record last mirrored. */
+  src: Sim["buildings"][number];
+  kind: Sim["buildings"][number]["kind"];
+  level: number;
+  c: number;
+  r: number;
+  x: number;
+  z: number;
+  born: number;
   orientation: number;
   lod: 0 | 1 | 2;
-  level: number;
-  kind: Sim["buildings"][number]["kind"];
-  born: number;
-  screen: THREE.Vector2;
+  /** Close enough to the camera target to fall inside the sun's shadow box. */
+  shadow: boolean;
+  /** Near enough to the screen (at the last re-bucket) to be drawn. */
+  visible: boolean;
+  /** Top of the current model above the ground, for fire and smoke. */
+  height: number;
+  batch: BuildingBatch<BuildingRecord> | null;
+  slot: number;
+  /** Build animation scale: across and up. */
+  spread: number;
+  rise: number;
+  /** Coin anchor above the lot (also used to pick a tapped coin). */
   position: THREE.Vector3;
+  seen: number;
 };
+
+type CarSlot = { i: number; x: number; z: number; horizontal: boolean };
 
 /** Finger travel (px) before a build tap turns into a map drag. */
 const PLACE_SLOP = 14;
@@ -117,7 +145,6 @@ export class CityWorld {
   };
   /** Top height of each building by cell key, for anchoring fire and smoke. */
   private heights = new Map<string, number>();
-  private box = new THREE.Box3();
   /** Debug-only visual overrides set through `window.__cityFx` in development. */
   private fxOverride: {
     disaster?: DisasterKind | null;
@@ -134,14 +161,54 @@ export class CityWorld {
   private sky = new THREE.Color();
   private carColor = new THREE.Color();
   private carMatrix = new THREE.Matrix4();
-  private roadMesh: THREE.Mesh | null = null;
-  private roadDetail: THREE.Mesh | null = null;
-  private roadLights: THREE.Mesh | null = null;
-  private roadSignature = "";
+  /** Road meshes per map chunk, so an edit rebuilds a chunk rather than every road. */
+  private roadChunks = new Map<number, THREE.Mesh[]>();
+  private roadSet: ReadonlySet<string> = new Set();
+  /** What the road list looked like at the last rebuild (cheap change detection). */
+  private roadsSeen: {
+    list: readonly string[] | null;
+    length: number;
+    first: string | undefined;
+    last: string | undefined;
+    district: Sim["district"];
+    at: number;
+    cost: number;
+  } = { list: null, length: 0, first: undefined, last: undefined, district: null, at: 0, cost: 0 };
+  private roadVersion = 0;
+  private buildingVersion = 0;
+  private carSlots: CarSlot[] = [];
+  private previewSim: Sim | null = null;
+  private labelsHeight = -1;
+  private aimMemo: { c: number; r: number; version: number; cell: Cell | null } = {
+    c: NaN,
+    r: NaN,
+    version: -1,
+    cell: null,
+  };
   disabled = false;
   private districtId: Sim["district"] = null;
   private districtNumbers: THREE.Group | null = null;
-  private buildings = new Map<string, BuildingRecord>();
+  /** Building records by id, by cell, and in the simulation's array order. */
+  private records = new Map<string, BuildingRecord>();
+  private cellRecords = new Map<string, BuildingRecord>();
+  private order: (BuildingRecord | undefined)[] = [];
+  private stamp = 0;
+  /** Instanced batches by model key; every building is an instance in one of them. */
+  private batches = new Map<string, BuildingBatch<BuildingRecord>>();
+  private dirtyBatches = new Set<BuildingBatch<BuildingRecord>>();
+  private buildingLayer = new THREE.Group();
+  private rising = new Set<BuildingRecord>();
+  private lodCounts: Record<string, number> = {};
+  /** The view buildings were last bucketed for (LOD and on-screen culling). */
+  private lodView = {
+    matrix: new THREE.Matrix4(),
+    pad: { x: 0, y: 0 },
+    x: 0,
+    z: 0,
+    height: 1,
+    aspect: 1,
+    at: 0,
+  };
   /** Fenced developer construction sites, by site id. */
   private sites = new Map<string, SiteObject>();
   private palms: THREE.InstancedMesh;
@@ -219,7 +286,9 @@ export class CityWorld {
       this.terrain.group,
       this.grid,
       this.placeLabels,
+      this.buildingLayer,
     );
+    this.buildingLayer.name = "buildings";
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.width < 600 ? 1024 : 2048, this.width < 600 ? 1024 : 2048);
     this.sun.shadow.camera.left = -45;
@@ -291,6 +360,10 @@ export class CityWorld {
       dayMode: "auto",
       night: 0,
       lodDistribution: {},
+      culledBuildings: 0,
+      batches: 0,
+      syncMs: 0,
+      frameMs: 0,
     };
     this.canvas.addEventListener("pointerdown", this.unlockAudio, { passive: true });
     this.canvas.addEventListener("webglcontextrestored", this.onContextRestored);
@@ -342,8 +415,8 @@ export class CityWorld {
       },
       mood: () => ({ ...this.fx.mood }),
       probe: (id: string) => {
-        const scale = this.buildings.get(id)?.object.scale;
-        return { y: scale?.y ?? -1, x: scale?.x ?? -1, ...this.fx.particleCounts() };
+        const rec = this.records.get(id);
+        return { y: rec?.rise ?? -1, x: rec?.spread ?? -1, ...this.fx.particleCounts() };
       },
       birds: () =>
         this.fx.flockCenters().map(([x, y, z]) => {
@@ -592,7 +665,7 @@ export class CityWorld {
       let best: { id: string; d: number } | null = null;
       for (const b of this.sim.buildings) {
         if (b.stored < 1) continue;
-        const record = this.buildings.get(b.id);
+        const record = this.records.get(b.id);
         if (!record) continue;
         const projected = record.position.clone().project(this.camera);
         const x = ((projected.x + 1) * this.width) / 2;
@@ -784,6 +857,12 @@ export class CityWorld {
   }
 
   sync(input: Sim, now: number, force = false) {
+    const started = performance.now();
+    this.syncScene(input, now, force);
+    this.dbg.syncMs = performance.now() - started;
+  }
+
+  private syncScene(input: Sim, now: number, force: boolean) {
     // Pointer interaction uses the same live simulation reference as drawing.
     // The preview below is visual only and must never overwrite this binding.
     this.sim = input;
@@ -804,7 +883,8 @@ export class CityWorld {
     }
     const preview =
       !input.started && !input.district && input.buildings.length === 0 && input.roads.length === 0;
-    const sim = preview ? createInitialPreview() : input;
+    // The showcase is built once: a fresh copy every frame would look like a new city.
+    const sim = preview ? (this.previewSim ??= createInitialPreview()) : input;
     // Saved cities without a neighborhood still need a portrait-usable frame.
     if (force && input.started && !input.district && input.buildings.length > 0 && this.viewHeight === 47) {
       const mean = input.buildings.reduce((a, b) => ({ c: a.c + b.c, r: a.r + b.r }), {
@@ -818,110 +898,8 @@ export class CityWorld {
       );
     }
     if (preview && force) this.focus(PREVIEW_FOCUS, 31);
-    const roadSignature = `${input.district ?? ""}#${sim.roads.join("|")}`;
-    if (roadSignature !== this.roadSignature) {
-      this.roadSignature = roadSignature;
-      this.gridSource = { roads: new Set(sim.roads), district: input.district };
-      if (this.currentTool) this.buildGrid();
-      if (this.parcels) {
-        this.scene.remove(this.parcels);
-        this.parcels.geometry.dispose();
-        (this.parcels.material as THREE.Material).dispose();
-      }
-      this.parcels = createParcels(new Set(sim.roads), input.district);
-      if (this.parcels) this.scene.add(this.parcels);
-      for (const item of [this.roadMesh, this.roadDetail, this.roadLights]) {
-        if (item) {
-          this.scene.remove(item);
-          item.geometry.dispose();
-        }
-      }
-      const roads = createRoads(sim.roads);
-      this.roadMesh = new THREE.Mesh(roads.asphalt, this.materials.opaque);
-      this.roadMesh.receiveShadow = true;
-      this.roadDetail = new THREE.Mesh(roads.markings, this.materials.opaque);
-      this.roadDetail.receiveShadow = true;
-      this.roadLights = new THREE.Mesh(roads.lights, this.materials.lamps);
-      this.scene.add(this.roadMesh, this.roadDetail, this.roadLights);
-      this.refreshPalms(sim);
-      this.dirtyShadows = true;
-    }
-    const ids = new Set<string>();
-    const distribution: Record<string, number> = {};
-    for (const b of sim.buildings) {
-      ids.add(b.id);
-      const at = cellWorld(b.c, b.r);
-      const distance = Math.hypot(this.target.x - at.x, this.target.z - at.z);
-      const lod = lodFor(this.viewHeight, distance);
-      let record = this.buildings.get(b.id);
-      const orient = this.buildingOrientation(sim, b.c, b.r);
-      if (
-        !record ||
-        record.lod !== lod ||
-        record.level !== b.level ||
-        record.kind !== b.kind ||
-        record.orientation !== orient
-      ) {
-        if (record) {
-          this.scene.remove(record.object);
-          this.hideCoin(record.object.userData.buildingId as string);
-        }
-        const detail =
-          lod === 2 && isLandmark(b.kind)
-            ? 1
-            : lod;
-        const built = createBuildingObject(b.kind, b.level, detail, this.materials);
-        built.object.position.set(at.x, LAND_HEIGHT + 0.02, at.z);
-        built.object.rotation.y = orient;
-        built.object.userData.buildingId = b.id;
-        this.scene.add(built.object);
-        record = {
-          object: built.object,
-          orientation: orient,
-          lod,
-          level: b.level,
-          kind: b.kind,
-          born: b.born,
-          screen: new THREE.Vector2(),
-          position: new THREE.Vector3(at.x, LAND_HEIGHT + 4, at.z),
-        };
-        this.buildings.set(b.id, record);
-        this.heights.set(cellKey(b.c, b.r), this.box.setFromObject(built.object).max.y - LAND_HEIGHT);
-        this.dirtyShadows = true;
-      }
-      const age = Math.max(0, now - b.born);
-      if (record.object.rotation.y !== orient) {
-        record.object.rotation.y = orient;
-        this.dirtyShadows = true;
-      }
-      if (age < BUILD_RISE) {
-        // Rise out of the ground with a small overshoot, plus a ring of dust at the base.
-        const t = age / BUILD_RISE;
-        const back = 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
-        const spread = 0.88 + 0.12 * (1 - (1 - t) ** 3);
-        record.object.scale.set(spread, Math.max(0.001, back), spread);
-        this.dirtyShadows = true;
-        const tag = `${b.id}@${b.born}`;
-        if (b.born > 0 && age < 0.35 && !this.puffed.has(tag)) {
-          this.puffed.add(tag);
-          this.fx.puff(at.x, at.z);
-        }
-      } else if (record.object.scale.y !== 1 || record.object.scale.x !== 1) {
-        record.object.scale.setScalar(1);
-        this.dirtyShadows = true;
-      }
-      distribution[record.lod] = (distribution[record.lod] ?? 0) + 1;
-    }
-    for (const sprite of this.coinSprites.values()) sprite.visible = false;
-    for (const [id, record] of this.buildings) {
-      if (ids.has(id)) continue;
-      this.hideCoin(id);
-      this.scene.remove(record.object);
-      this.buildings.delete(id);
-      const at = worldCell(record.object.position.x, record.object.position.z);
-      this.heights.delete(cellKey(at.c, at.r));
-      this.dirtyShadows = true;
-    }
+    this.syncRoads(sim, input.district);
+    this.syncBuildings(sim, now);
     if (this.puffed.size > 64) this.puffed.clear();
     this.updateFxInput(input);
     const landmarkSignature = `${sim.buildings.length}:${input.district ?? ""}`;
@@ -941,10 +919,10 @@ export class CityWorld {
       this.fx.landmarks = spots;
     }
     if (this.fxInput.disaster === "flood" || this.fx.mood.flood > 0) {
-      const waterSignature = `${this.roadSignature.length}|${sim.roads.length}|${sim.buildings.length}`;
+      const waterSignature = `${this.roadVersion}|${this.buildingVersion}`;
       if (waterSignature !== this.waterSignature) {
         this.waterSignature = waterSignature;
-        this.fx.setWater(sim.roads, new Set(sim.buildings.map((b) => cellKey(b.c, b.r))));
+        this.fx.setWater(sim.roads, new Set(this.cellRecords.keys()));
       }
     }
     this.syncSites(sim, now);
@@ -955,25 +933,463 @@ export class CityWorld {
     }
     this.dbg.buildings = sim.buildings.length;
     this.dbg.roads = sim.roads.length;
-    this.dbg.lodDistribution = distribution;
-    this.dbg.lodLevels = new Set(Object.keys(distribution)).size;
   }
 
-  private buildingOrientation(sim: Sim, c: number, r: number) {
-    if (sim.roads.includes(cellKey(c, r + 1))) return 0;
-    if (sim.roads.includes(cellKey(c + 1, r))) return Math.PI / 2;
-    if (sim.roads.includes(cellKey(c, r - 1))) return Math.PI;
-    if (sim.roads.includes(cellKey(c - 1, r))) return -Math.PI / 2;
+  /**
+   * Roads change rarely but there can be many thousands of them: detect a change from
+   * the array's identity, length and ends (never by joining every key), then rebuild
+   * only the road chunks around the cells that actually changed.
+   */
+  private syncRoads(sim: Sim, district: Sim["district"]) {
+    const roads = sim.roads;
+    const n = roads.length;
+    const same =
+      roads === this.roadsSeen.list &&
+      n === this.roadsSeen.length &&
+      district === this.roadsSeen.district &&
+      (n === 0 || (roads[0] === this.roadsSeen.first && roads[n - 1] === this.roadsSeen.last));
+    if (same) return;
+    // A burst of edits (an advisor laying a whole block) is coalesced: when the last
+    // rebuild was expensive, wait a little so the work is not repeated every frame.
+    const clock = performance.now();
+    if (
+      this.roadsSeen.list !== null &&
+      district === this.roadsSeen.district &&
+      clock - this.roadsSeen.at < Math.min(250, this.roadsSeen.cost * 6)
+    )
+      return;
+    const fresh = new Set(roads);
+    const previous = this.roadSet;
+    const rebuildAll = district !== this.roadsSeen.district || this.roadChunks.size === 0;
+    this.roadsSeen = {
+      list: roads,
+      length: n,
+      first: roads[0],
+      last: roads[n - 1],
+      district,
+      at: clock,
+      cost: this.roadsSeen.cost,
+    };
+    const changed: string[] = [];
+    if (!rebuildAll) {
+      for (const key of fresh) if (!previous.has(key)) changed.push(key);
+      for (const key of previous) if (!fresh.has(key)) changed.push(key);
+      if (!changed.length && fresh.size === previous.size) {
+        this.roadsSeen.cost = performance.now() - clock;
+        return;
+      }
+    }
+    this.roadSet = fresh;
+    this.roadVersion += 1;
+    this.gridSource = { roads: fresh, district };
+    if (this.currentTool) this.buildGrid();
+    if (this.parcels) {
+      this.scene.remove(this.parcels);
+      this.parcels.geometry.dispose();
+      (this.parcels.material as THREE.Material).dispose();
+    }
+    this.parcels = createParcels(fresh, district);
+    if (this.parcels) this.scene.add(this.parcels);
+    // Group keys by chunk once; rebuild the chunks touched by a change (markings and
+    // lamps look two cells around, so a change dirties its neighbors' chunks too).
+    const byChunk = new Map<number, string[]>();
+    for (const key of roads) {
+      const comma = key.indexOf(",");
+      const id = roadChunkId(+key.slice(0, comma), +key.slice(comma + 1));
+      let list = byChunk.get(id);
+      if (!list) byChunk.set(id, (list = []));
+      list.push(key);
+    }
+    const dirty = new Set<number>();
+    if (rebuildAll) {
+      for (const id of this.roadChunks.keys()) dirty.add(id);
+      for (const id of byChunk.keys()) dirty.add(id);
+    } else {
+      for (const key of changed) {
+        const comma = key.indexOf(",");
+        const c = +key.slice(0, comma),
+          r = +key.slice(comma + 1);
+        for (const dc of [-2, 0, 2]) for (const dr of [-2, 0, 2]) dirty.add(roadChunkId(c + dc, r + dr));
+      }
+    }
+    for (const id of dirty) {
+      const old = this.roadChunks.get(id);
+      if (old) {
+        for (const mesh of old) {
+          this.scene.remove(mesh);
+          mesh.geometry.dispose();
+        }
+        this.roadChunks.delete(id);
+      }
+      const keys = byChunk.get(id);
+      if (!keys?.length) continue;
+      const built = createRoads(keys, fresh);
+      const meshes: THREE.Mesh[] = [];
+      const asphalt = new THREE.Mesh(built.asphalt, this.materials.opaque);
+      asphalt.receiveShadow = true;
+      meshes.push(asphalt);
+      if (built.markings.getAttribute("position").count > 24) {
+        const markings = new THREE.Mesh(built.markings, this.materials.opaque);
+        markings.receiveShadow = true;
+        meshes.push(markings);
+      } else built.markings.dispose();
+      if (built.lights.getAttribute("position").count > 24)
+        meshes.push(new THREE.Mesh(built.lights, this.materials.lamps));
+      else built.lights.dispose();
+      built.details.dispose();
+      for (const mesh of meshes) {
+        mesh.matrixAutoUpdate = false;
+        mesh.name = "roads";
+        this.scene.add(mesh);
+      }
+      this.roadChunks.set(id, meshes);
+    }
+    // Buildings face the street: re-aim only those beside a changed cell.
+    if (rebuildAll) {
+      for (const rec of this.records.values()) this.reorient(rec);
+    } else {
+      for (const key of changed) {
+        const comma = key.indexOf(",");
+        const c = +key.slice(0, comma),
+          r = +key.slice(comma + 1);
+        for (const [dc, dr] of [
+          [0, 1],
+          [1, 0],
+          [0, -1],
+          [-1, 0],
+        ] as const) {
+          const rec = this.cellRecords.get(cellKey(c + dc, r + dr));
+          if (rec) this.reorient(rec);
+        }
+      }
+    }
+    this.refreshCarSlots(roads);
+    this.refreshPalms(sim);
+    this.dirtyShadows = true;
+    this.roadsSeen.cost = performance.now() - clock;
+  }
+
+  private buildingOrientation(c: number, r: number) {
+    const roads = this.roadSet;
+    if (roads.has(cellKey(c, r + 1))) return 0;
+    if (roads.has(cellKey(c + 1, r))) return Math.PI / 2;
+    if (roads.has(cellKey(c, r - 1))) return Math.PI;
+    if (roads.has(cellKey(c - 1, r))) return -Math.PI / 2;
     return 0;
+  }
+
+  private reorient(rec: BuildingRecord) {
+    const orient = this.buildingOrientation(rec.c, rec.r);
+    if (orient === rec.orientation) return;
+    rec.orientation = orient;
+    this.writeMatrix(rec);
+    this.dirtyShadows = true;
+  }
+
+  /**
+   * Reconciles the simulation's buildings with the instanced batches. The common
+   * frame (nothing added, removed or upgraded) is one pass of identity and field
+   * compares; Map lookups and batch moves only happen for what changed.
+   */
+  private syncBuildings(sim: Sim, now: number) {
+    const list = sim.buildings;
+    const order = this.order;
+    const stamp = ++this.stamp;
+    let structural = list.length !== order.length;
+    for (let i = 0; i < list.length; i += 1) {
+      const b = list[i]!;
+      let rec = order[i];
+      if (!rec || rec.src !== b) {
+        rec = this.records.get(b.id);
+        if (rec) rec.src = b;
+        else rec = this.addRecord(b, now);
+        order[i] = rec;
+        structural = true;
+      }
+      rec.seen = stamp;
+      if (rec.level !== b.level || rec.kind !== b.kind || rec.c !== b.c || rec.r !== b.r)
+        this.remodel(rec, b);
+      if (rec.born !== b.born) {
+        rec.born = b.born;
+        if (now - b.born < BUILD_RISE) this.rising.add(rec);
+      }
+    }
+    if (structural) {
+      order.length = list.length;
+      for (const rec of this.records.values()) if (rec.seen !== stamp) this.removeRecord(rec);
+      this.buildingVersion += 1;
+    }
+    if (this.rising.size) this.animateRising(now);
+    this.maybeRebucket(false);
+    for (const batch of this.dirtyBatches) batch.flush();
+    this.dirtyBatches.clear();
+    this.dbg.lodDistribution = { ...this.lodCounts };
+    this.dbg.lodLevels = Object.keys(this.lodCounts).length;
+  }
+
+  private addRecord(b: Sim["buildings"][number], now: number) {
+    const at = cellWorld(b.c, b.r);
+    const rec: BuildingRecord = {
+      id: b.id,
+      src: b,
+      kind: b.kind,
+      level: b.level,
+      c: b.c,
+      r: b.r,
+      x: at.x,
+      z: at.z,
+      born: b.born,
+      orientation: this.buildingOrientation(b.c, b.r),
+      lod: 2,
+      shadow: true,
+      visible: true,
+      height: 0,
+      batch: null,
+      slot: -1,
+      spread: 1,
+      rise: 1,
+      position: new THREE.Vector3(at.x, LAND_HEIGHT + 5.15, at.z),
+      seen: 0,
+    };
+    this.records.set(b.id, rec);
+    this.cellRecords.set(cellKey(b.c, b.r), rec);
+    rec.lod = this.lodOf(rec);
+    rec.shadow = this.castsShadow(rec);
+    this.countLod(rec.lod, 1);
+    rec.visible = this.inView(rec);
+    this.place(rec);
+    if (now - b.born < BUILD_RISE) {
+      this.rising.add(rec);
+      // Start flat so the first drawn frame is not a full-height flash.
+      rec.spread = 0.88;
+      rec.rise = 0.001;
+      this.writeMatrix(rec);
+    }
+    this.dirtyShadows = true;
+    return rec;
+  }
+
+  private remodel(rec: BuildingRecord, b: Sim["buildings"][number]) {
+    if (rec.c !== b.c || rec.r !== b.r) {
+      if (this.cellRecords.get(cellKey(rec.c, rec.r)) === rec) this.cellRecords.delete(cellKey(rec.c, rec.r));
+      this.heights.delete(cellKey(rec.c, rec.r));
+      const at = cellWorld(b.c, b.r);
+      rec.c = b.c;
+      rec.r = b.r;
+      rec.x = at.x;
+      rec.z = at.z;
+      rec.position.set(at.x, LAND_HEIGHT + 5.15, at.z);
+      rec.orientation = this.buildingOrientation(b.c, b.r);
+      this.cellRecords.set(cellKey(b.c, b.r), rec);
+    }
+    rec.kind = b.kind;
+    rec.level = b.level;
+    this.place(rec, true);
+    this.dirtyShadows = true;
+  }
+
+  private removeRecord(rec: BuildingRecord) {
+    if (rec.batch) {
+      rec.batch.remove(rec.slot);
+      this.dirtyBatches.add(rec.batch);
+    }
+    rec.batch = null;
+    this.records.delete(rec.id);
+    const key = cellKey(rec.c, rec.r);
+    if (this.cellRecords.get(key) === rec) {
+      this.cellRecords.delete(key);
+      this.heights.delete(key);
+    }
+    this.rising.delete(rec);
+    this.countLod(rec.lod, -1);
+    this.dirtyShadows = true;
+  }
+
+  private countLod(lod: number, delta: number) {
+    const next = (this.lodCounts[lod] ?? 0) + delta;
+    if (next > 0) this.lodCounts[lod] = next;
+    else delete this.lodCounts[lod];
+  }
+
+  private detailOf(rec: BuildingRecord): 0 | 1 | 2 {
+    return rec.lod === 2 && isLandmark(rec.kind) ? 1 : rec.lod;
+  }
+
+  /** Puts a record in the batch its model and visibility call for (or none). */
+  private place(rec: BuildingRecord, remodeled = false) {
+    const detail = this.detailOf(rec);
+    rec.height = modelHeight(rec.kind, rec.level, detail) + 0.02;
+    this.heights.set(cellKey(rec.c, rec.r), rec.height);
+    const batch = rec.visible ? this.batchFor(rec.kind, rec.level, detail, rec.shadow) : null;
+    if (batch === rec.batch) {
+      if (remodeled) this.writeMatrix(rec);
+      return;
+    }
+    if (rec.batch) {
+      rec.batch.remove(rec.slot);
+      this.dirtyBatches.add(rec.batch);
+    }
+    rec.batch = batch;
+    rec.slot = -1;
+    if (batch) {
+      batch.add(rec);
+      this.writeMatrix(rec);
+    }
+  }
+
+  private batchFor(
+    kind: BuildingRecord["kind"],
+    level: number,
+    detail: 0 | 1 | 2,
+    shadow: boolean,
+  ) {
+    const key = `${kind}:${level}:${detail}${shadow ? "" : ":flat"}`;
+    let batch = this.batches.get(key);
+    if (!batch) {
+      batch = new BuildingBatch<BuildingRecord>(
+        key,
+        buildingModel(kind, level, detail),
+        this.materials,
+        this.buildingLayer,
+        detail,
+      );
+      batch.setShadows(shadow);
+      this.batches.set(key, batch);
+    }
+    return batch;
+  }
+
+  private writeMatrix(rec: BuildingRecord) {
+    if (!rec.batch) return;
+    rec.batch.write(rec.slot, rec.x, LAND_HEIGHT + 0.02, rec.z, rec.orientation, rec.spread, rec.rise);
+    this.dirtyBatches.add(rec.batch);
+  }
+
+  /** Only the few buildings still rising out of the ground are touched per frame. */
+  private animateRising(now: number) {
+    // A developer finishing a whole block raises hundreds at once: dust for a few.
+    let puffs = 0;
+    for (const rec of this.rising) {
+      const age = Math.max(0, now - rec.born);
+      if (age >= BUILD_RISE) {
+        rec.spread = 1;
+        rec.rise = 1;
+        this.rising.delete(rec);
+      } else {
+        // Rise out of the ground with a small overshoot, plus a ring of dust at the base.
+        const t = age / BUILD_RISE;
+        const back = 1 + 2.70158 * (t - 1) ** 3 + 1.70158 * (t - 1) ** 2;
+        rec.spread = 0.88 + 0.12 * (1 - (1 - t) ** 3);
+        rec.rise = Math.max(0.001, back);
+        const tag = `${rec.id}@${rec.born}`;
+        if (rec.born > 0 && age < 0.35 && !this.puffed.has(tag)) {
+          this.puffed.add(tag);
+          if (puffs++ < MAX_PUFFS) this.fx.puff(rec.x, rec.z);
+        }
+      }
+      this.writeMatrix(rec);
+      this.dirtyShadows = true;
+    }
+  }
+
+  private lodOf(rec: BuildingRecord) {
+    return lodFor(this.viewHeight, Math.hypot(this.target.x - rec.x, this.target.z - rec.z));
+  }
+
+  /**
+   * The sun's shadow camera only covers the area around the target, so instances far
+   * from it go in batches that skip the shadow pass instead of being drawn into it.
+   */
+  private castsShadow(rec: BuildingRecord) {
+    return Math.hypot(this.target.x - rec.x, this.target.z - rec.z) <= SHADOW_REACH;
+  }
+
+  /**
+   * Whether a building is near enough to the screen to be drawn, using the view
+   * captured at the last re-bucket plus a generous margin, so small pans and zooms
+   * never need a pass over every building.
+   */
+  private inView(rec: BuildingRecord) {
+    const e = this.lodView.matrix.elements;
+    const y = LAND_HEIGHT;
+    const x = e[0]! * rec.x + e[4]! * y + e[8]! * rec.z + e[12]!;
+    const base = e[1]! * rec.x + e[5]! * y + e[9]! * rec.z + e[13]!;
+    const top = base + e[5]! * Math.max(rec.height, 1.5);
+    const m = VIEW_MARGIN;
+    const pad = this.lodView.pad;
+    return (
+      x > -1 - m - pad.x && x < 1 + m + pad.x && top > -1 - m - pad.y && base - pad.y < 1 + m
+    );
+  }
+
+  /**
+   * Level-of-detail and visibility are re-evaluated only when the view moved or
+   * zoomed enough to matter (throttled), not every frame.
+   */
+  private maybeRebucket(forced: boolean) {
+    const view = this.lodView;
+    const clock = performance.now();
+    if (!forced && view.at > 0) {
+      const aspect = this.width / this.height;
+      const zoom = Math.abs(Math.log(this.viewHeight / view.height));
+      const moved = Math.hypot(this.target.x - view.x, this.target.z - view.z);
+      // Where the current target lands in the captured view (orthographic, so linear).
+      const e = view.matrix.elements;
+      const nx = e[0]! * this.target.x + e[4]! * this.target.y + e[8]! * this.target.z + e[12]!;
+      const ny = e[1]! * this.target.x + e[5]! * this.target.y + e[9]! * this.target.z + e[13]!;
+      const off = Math.max(Math.abs(nx), Math.abs(ny));
+      const hard =
+        off > VIEW_MARGIN * 0.6 || this.viewHeight > view.height * (1 + VIEW_MARGIN * 0.5);
+      const soft = hard || zoom > 0.08 || moved > 6 || aspect !== view.aspect;
+      if (!soft) return;
+      if (!hard && clock - view.at < 140) return;
+    }
+    this.camera.updateMatrixWorld();
+    view.matrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    view.x = this.target.x;
+    view.z = this.target.z;
+    view.height = this.viewHeight;
+    view.aspect = this.width / this.height;
+    view.at = clock;
+    // A building's footprint, in clip units, around its base point.
+    view.pad.x = (CELL_SIZE * 2) / ((this.viewHeight * view.aspect) / 2);
+    view.pad.y = (CELL_SIZE * 2) / (this.viewHeight / 2);
+    let moves = 0;
+    for (const rec of this.records.values()) {
+      const lod = this.lodOf(rec);
+      const visible = this.inView(rec);
+      const shadow = this.castsShadow(rec);
+      if (lod === rec.lod && visible === rec.visible && shadow === rec.shadow) continue;
+      rec.shadow = shadow;
+      if (lod !== rec.lod) {
+        this.countLod(rec.lod, -1);
+        this.countLod(lod, 1);
+        rec.lod = lod;
+      }
+      rec.visible = visible;
+      this.place(rec);
+      moves += 1;
+    }
+    for (const batch of this.dirtyBatches) batch.flush();
+    this.dirtyBatches.clear();
+    let culled = 0;
+    for (const rec of this.records.values()) if (!rec.batch) culled += 1;
+    this.dbg.culledBuildings = culled;
+    this.dbg.batches = [...this.batches.values()].filter((b) => b.count > 0).length;
+    if (moves) this.dirtyShadows = true;
+    this.coinsAt = 0;
   }
 
   private refreshPalms(sim: Sim) {
     const matrix = new THREE.Matrix4();
     let index = 0;
     for (const key of sim.roads) {
-      const [c, r] = key.split(",").map(Number);
-      if ((c! * 5 + r! * 3) % 5 !== 0 || index >= 158) continue;
-      const at = cellWorld(c!, r!);
+      if (index >= 158) break;
+      const comma = key.indexOf(",");
+      const c = +key.slice(0, comma),
+        r = +key.slice(comma + 1);
+      if ((c * 5 + r * 3) % 5 !== 0) continue;
+      const at = cellWorld(c, r);
       matrix.makeTranslation(at.x + CELL_SIZE * 0.37, LAND_HEIGHT, at.z + CELL_SIZE * 0.37);
       this.palms.setMatrixAt(index++, matrix);
     }
@@ -983,7 +1399,22 @@ export class CityWorld {
     this.dirtyShadows = true;
   }
 
-  private updateCars(sim: Sim) {
+  /** Street spots cars may drive on, worked out once per road change (not per frame). */
+  private refreshCarSlots(roads: readonly string[]) {
+    const slots: CarSlot[] = [];
+    for (let i = 0; i < roads.length && slots.length < 150; i += 5) {
+      const key = roads[i]!;
+      const comma = key.indexOf(",");
+      const c = +key.slice(0, comma),
+        r = +key.slice(comma + 1);
+      const at = cellWorld(c, r);
+      const horizontal = this.roadSet.has(cellKey(c + 1, r)) || this.roadSet.has(cellKey(c - 1, r));
+      slots.push({ i, x: at.x, z: at.z, horizontal });
+    }
+    this.carSlots = slots;
+  }
+
+  private updateCars() {
     if (this.viewHeight > 55 || this.dbg.night > 0.9) {
       this.cars.count = 0;
       return;
@@ -992,18 +1423,17 @@ export class CityWorld {
     let count = 0;
     // Pandemic lockdown empties ~60% of the streets.
     const keep = 1 - 0.6 * this.fx.mood.pandemic;
-    for (let i = 0; i < sim.roads.length && count < 60; i += 5) {
+    for (const slot of this.carSlots) {
+      if (count >= 60) break;
+      const i = slot.i;
       if (keep < 1 && ((i * 0.6180339) % 1) > keep) continue;
-      const [c, r] = sim.roads[i]!.split(",").map(Number);
-      const at = cellWorld(c!, r!);
-      const horizontal =
-        sim.roads.includes(cellKey(c! + 1, r!)) || sim.roads.includes(cellKey(c! - 1, r!));
+      const horizontal = slot.horizontal;
       const move = (((this.elapsed * 0.33 + i * 0.07) % 1) - 0.5) * CELL_SIZE * 0.76;
       matrix.makeRotationY(horizontal ? Math.PI / 2 : 0);
       matrix.setPosition(
-        at.x + (horizontal ? move : CELL_SIZE * 0.09),
+        slot.x + (horizontal ? move : CELL_SIZE * 0.09),
         LAND_HEIGHT + 0.09,
-        at.z + (horizontal ? -CELL_SIZE * 0.1 : move),
+        slot.z + (horizontal ? -CELL_SIZE * 0.1 : move),
       );
       this.cars.setMatrixAt(count++, matrix);
       this.cars.setColorAt(
@@ -1081,16 +1511,22 @@ export class CityWorld {
       this.highlight.visible = false;
       return;
     }
-    const aimed =
-      current.kind === "build" && this.sim
-        ? (nearestOpenLot(this.sim, this.hover.c, this.hover.r, 1) ?? this.hover)
-        : this.hover;
+    let aimed = this.hover;
+    if (current.kind === "build") {
+      // The open-lot search scans the city; redo it only when the cell or the city changes.
+      const memo = this.aimMemo;
+      const version = this.roadVersion * 1_000_003 + this.buildingVersion;
+      if (memo.c !== this.hover.c || memo.r !== this.hover.r || memo.version !== version) {
+        memo.c = this.hover.c;
+        memo.r = this.hover.r;
+        memo.version = version;
+        memo.cell = nearestOpenLot(this.sim, this.hover.c, this.hover.r, 1) ?? this.hover;
+      }
+      aimed = memo.cell ?? this.hover;
+    }
     const { c, r } = aimed;
     const key = cellKey(c, r);
-    const blocked =
-      !isLand(c, r) ||
-      this.sim.roads.includes(key) ||
-      this.sim.buildings.some((b) => b.c === c && b.r === r);
+    const blocked = !isLand(c, r) || this.roadSet.has(key) || this.cellRecords.has(key);
     const material = this.highlight.material as THREE.MeshBasicMaterial;
     material.color.set((current.kind === "bulldoze" ? !blocked : blocked) ? "#d56845" : "#45e0d5");
     const at = cellWorld(c, r);
@@ -1099,6 +1535,7 @@ export class CityWorld {
   }
 
   private frame() {
+    const started = performance.now();
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.08);
     this.elapsed += dt;
@@ -1112,67 +1549,102 @@ export class CityWorld {
       this.updateProjection();
       this.poseCamera();
     }
-    updatePlaceLabels(this.placeLabels, this.viewHeight);
-    if (this.sim) this.updateCars(this.sim);
+    if (this.viewHeight !== this.labelsHeight) {
+      this.labelsHeight = this.viewHeight;
+      updatePlaceLabels(this.placeLabels, this.viewHeight);
+    }
+    if (this.sim) this.updateCars();
     this.updateLighting(dt);
     this.updateFx(dt);
     this.updateHover();
-    for (const b of this.sim?.buildings ?? []) {
-      if (b.stored < 1) continue;
-      const record = this.buildings.get(b.id);
-      if (record) record.position.y = LAND_HEIGHT + 5.15 + Math.sin(this.elapsed * 2 + b.c) * 0.2;
-    }
-    if (this.viewHeight < 65 && this.sim)
-      for (const b of this.sim.buildings) {
-        const record = this.buildings.get(b.id);
-        if (!record || b.stored < 1) continue;
-        const position = record.position.clone().project(this.camera);
-        if (Math.abs(position.x) < 1.1 && Math.abs(position.y) < 1.1) this.drawCoin(record);
-      }
+    this.updateCoins();
     if (this.dirtyShadows) this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     this.dbg.drawCalls = this.renderer.info.render.calls;
     this.dbg.triangles = this.renderer.info.render.triangles;
     if (this.dirtyShadows) this.dirtyShadows = false;
+    this.dbg.frameMs = performance.now() - started;
   }
 
-  private coinGroup = new THREE.Group();
-  private coinSprites = new Map<string, THREE.Sprite>();
+  /**
+   * Coins over buildings with money to collect: one instanced quad (a single draw
+   * call), only for buildings on screen, capped, and re-chosen a few times a second
+   * rather than projecting every building every frame.
+   */
+  private coins: THREE.InstancedMesh | null = null;
   private coinTexture: THREE.CanvasTexture | null = null;
-  private drawCoin(record: BuildingRecord) {
-    let sprite = this.coinSprites.get(record.object.userData.buildingId as string);
-    if (!sprite) {
-      if (!this.coinTexture) {
-        const face = mountDinarCoin(256);
-        const texture = new THREE.CanvasTexture(face.canvas);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.anisotropy = 4;
-        this.coinTexture = texture;
-        void face.ready.then(() => {
-          texture.needsUpdate = true;
-        });
-      }
-      const material = new THREE.SpriteMaterial({
-        map: this.coinTexture,
-        depthTest: false,
-        depthWrite: false,
-      });
-      sprite = new THREE.Sprite(material);
-      sprite.scale.setScalar(1.28);
-      this.coinGroup.add(sprite);
-      this.coinSprites.set(record.object.userData.buildingId as string, sprite);
-      this.scene.add(this.coinGroup);
-    }
-    sprite.position.copy(record.position);
-    sprite.visible = true;
+  private coinShown: BuildingRecord[] = [];
+  private coinsAt = 0;
+  private coinMatrix = new THREE.Matrix4();
+  private coinPoint = new THREE.Vector3();
+  private coinScale = new THREE.Vector3(1.28, 1.28, 1.28);
+
+  private coinMesh() {
+    if (this.coins) return this.coins;
+    const face = mountDinarCoin(256);
+    const texture = new THREE.CanvasTexture(face.canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    this.coinTexture = texture;
+    void face.ready.then(() => {
+      texture.needsUpdate = true;
+    });
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const coins = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), material, COIN_CAP);
+    coins.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    coins.frustumCulled = false;
+    coins.renderOrder = 10;
+    coins.count = 0;
+    coins.name = "coins";
+    this.scene.add(coins);
+    this.coins = coins;
+    return coins;
   }
 
-  private hideCoin(id: string) {
-    const coin = this.coinSprites.get(id);
-    if (!coin) return;
-    this.coinGroup.remove(coin);
-    coin.material.dispose();
-    this.coinSprites.delete(id);
+  private updateCoins() {
+    const sim = this.sim;
+    if (!sim || this.viewHeight >= 65) {
+      if (this.coins) this.coins.count = 0;
+      this.coinShown.length = 0;
+      return;
+    }
+    const clock = performance.now();
+    if (clock - this.coinsAt > 220) {
+      this.coinsAt = clock;
+      const shown = this.coinShown;
+      shown.length = 0;
+      const candidates: { rec: BuildingRecord; d: number }[] = [];
+      for (const b of sim.buildings) {
+        if (b.stored < 1) continue;
+        const rec = this.records.get(b.id);
+        if (!rec || !rec.batch) continue;
+        const p = this.coinPoint.copy(rec.position).project(this.camera);
+        if (Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1) candidates.push({ rec, d: p.x * p.x + p.y * p.y });
+      }
+      if (candidates.length > COIN_CAP) candidates.sort((a, b) => a.d - b.d);
+      for (let i = 0; i < candidates.length && i < COIN_CAP; i += 1) shown.push(candidates[i]!.rec);
+    }
+    if (!this.coinShown.length && !this.coins) return;
+    const coins = this.coinMesh();
+    let count = 0;
+    for (const rec of this.coinShown) {
+      // Collected (or demolished) since the last pick: drop it right away.
+      if (rec.src.stored < 1 || !this.records.has(rec.id)) continue;
+      this.coinPoint.set(
+        rec.x,
+        LAND_HEIGHT + 5.15 + Math.sin(this.elapsed * 2 + rec.c) * 0.2,
+        rec.z,
+      );
+      this.coinMatrix.compose(this.coinPoint, this.camera.quaternion, this.coinScale);
+      coins.setMatrixAt(count++, this.coinMatrix);
+    }
+    coins.count = count;
+    coins.instanceMatrix.needsUpdate = count > 0;
   }
 
   private syncSites(sim: Sim, now: number) {
@@ -1209,7 +1681,8 @@ export class CityWorld {
     if (this.districtNumbers) disposeDistrictNumbers(this.districtNumbers);
     this.scene.remove(this.placeLabels);
     disposePlaceLabels(this.placeLabels);
-    for (const id of [...this.coinSprites.keys()]) this.hideCoin(id);
+    for (const batch of this.batches.values()) batch.dispose();
+    this.batches.clear();
     this.coinTexture?.dispose();
     this.coinTexture = null;
     this.renderer.setAnimationLoop(null);
@@ -1242,7 +1715,8 @@ export class CityWorld {
       if (mat instanceof THREE.SpriteMaterial) mat.map?.dispose();
       mat.dispose();
     }
-    this.buildings.clear();
+    this.records.clear();
+    this.cellRecords.clear();
     this.renderer.dispose();
   }
 }
@@ -1310,5 +1784,17 @@ function createInitialPreview(): Sim {
 
 /** Seconds a new building takes to rise out of the ground. */
 const BUILD_RISE = 0.8;
+/** Extra room (in clip units, 1 = half the screen) kept around the view when culling. */
+const VIEW_MARGIN = 0.5;
+/** Buildings farther than this from the target cannot reach the sun's shadow map. */
+const SHADOW_REACH = 95;
+/** Most dust rings started in one frame. */
+const MAX_PUFFS = 8;
+/** Most coins drawn at once. */
+const COIN_CAP = 120;
+/** Road meshes are built per square chunk of this many cells. */
+const ROAD_CHUNK = 48;
+const roadChunkId = (c: number, r: number) =>
+  Math.floor(Math.max(0, c) / ROAD_CHUNK) * 1024 + Math.floor(Math.max(0, r) / ROAD_CHUNK);
 
 const VehicleColors = { gold: "#c89030", white: "#ffffff", teal: PALETTE.gulf };

@@ -1695,3 +1695,189 @@ export function modelVertices(kind: Kind, detail: 0 | 1 | 2) {
   const model = buildingModel(kind, 1, detail);
   return Object.values(model).reduce((n, g) => n + g.attributes.position!.count, 0);
 }
+
+const heights = new Map<string, number>();
+
+/** Top of a model above its base (world units), cached per kind/level/detail. */
+export function modelHeight(kind: Kind, level: number, detail: 0 | 1 | 2) {
+  const key = `${kind}:${level}:${detail}`;
+  let top = heights.get(key);
+  if (top === undefined) {
+    top = 0;
+    const model = buildingModel(kind, level, detail);
+    for (const bucket of ["opaque", "metal", "glass", "windows"] as const) {
+      const geo = model[bucket];
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      if (!geo.boundingBox!.isEmpty()) top = Math.max(top, geo.boundingBox!.max.y);
+    }
+    heights.set(key, top);
+  }
+  return top;
+}
+
+/** Anything a batch can hold: it is told which slot it occupies. */
+export type BatchItem = { slot: number };
+
+/**
+ * Every building of one model (kind, level, detail) drawn as instances: one
+ * InstancedMesh per material bucket, all sharing a single matrix buffer. Adding and
+ * removing are O(1) (swap with the last slot); only written slots are re-uploaded.
+ */
+export class BuildingBatch<T extends BatchItem> {
+  readonly meshes: THREE.InstancedMesh[] = [];
+  readonly items: T[] = [];
+  private matrices: THREE.InstancedBufferAttribute;
+  private dirtyFrom = Infinity;
+  private dirtyTo = -1;
+
+  constructor(
+    readonly key: string,
+    model: BuildingModel,
+    materials: CityMaterials,
+    parent: THREE.Object3D,
+    readonly detail: 0 | 1 | 2,
+    capacity = 8,
+  ) {
+    this.matrices = this.allocate(capacity);
+    for (const bucket of ["opaque", "metal", "glass", "windows"] as const) {
+      const geo = model[bucket];
+      if (!geo.boundingSphere) geo.computeBoundingSphere();
+      // Empty buckets are a zero-size placeholder box: never worth a draw call.
+      if (!geo.boundingSphere || geo.boundingSphere.radius === 0) continue;
+      const mesh = new THREE.InstancedMesh(geo, materials[bucket], 0);
+      mesh.instanceMatrix = this.matrices;
+      mesh.name = `buildings-${key}-${bucket}`;
+      mesh.frustumCulled = false;
+      mesh.matrixAutoUpdate = false;
+      mesh.visible = false;
+      mesh.castShadow = bucket !== "windows";
+      mesh.receiveShadow = bucket === "opaque";
+      mesh.userData.castShadow = mesh.castShadow;
+      parent.add(mesh);
+      this.meshes.push(mesh);
+    }
+  }
+
+  private allocate(capacity: number) {
+    const attribute = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    return attribute;
+  }
+
+  get count() {
+    return this.items.length;
+  }
+
+  /** Appends an item; the caller writes its matrix right after. */
+  add(item: T) {
+    const slot = this.items.length;
+    if (slot * 16 >= this.matrices.array.length) {
+      const grown = this.allocate(Math.max(16, slot * 2));
+      (grown.array as Float32Array).set(this.matrices.array as Float32Array);
+      for (const mesh of this.meshes) {
+        // Frees the old GPU buffer; the renderer re-registers the mesh on next use.
+        mesh.dispose();
+        mesh.instanceMatrix = grown;
+      }
+      this.matrices = grown;
+      this.dirtyFrom = 0;
+      this.dirtyTo = Math.max(this.dirtyTo, slot);
+    }
+    this.items.push(item);
+    item.slot = slot;
+    this.updateCount();
+  }
+
+  /** Removes the item in `slot`, moving the last item into the gap. */
+  remove(slot: number) {
+    const last = this.items.length - 1;
+    if (slot < 0 || slot > last) return;
+    if (slot !== last) {
+      const moved = this.items[last]!;
+      this.items[slot] = moved;
+      moved.slot = slot;
+      const array = this.matrices.array as Float32Array;
+      array.copyWithin(slot * 16, last * 16, last * 16 + 16);
+      this.markDirty(slot);
+    }
+    this.items.pop();
+    this.updateCount();
+  }
+
+  /** Base at (x, y, z), turned `angle` around Y, scaled `spread` across and `rise` up. */
+  write(
+    slot: number,
+    x: number,
+    y: number,
+    z: number,
+    angle: number,
+    spread: number,
+    rise: number,
+  ) {
+    const e = this.matrices.array as Float32Array;
+    const o = slot * 16;
+    const cos = Math.cos(angle) * spread;
+    const sin = Math.sin(angle) * spread;
+    e[o] = cos;
+    e[o + 1] = 0;
+    e[o + 2] = -sin;
+    e[o + 3] = 0;
+    e[o + 4] = 0;
+    e[o + 5] = rise;
+    e[o + 6] = 0;
+    e[o + 7] = 0;
+    e[o + 8] = sin;
+    e[o + 9] = 0;
+    e[o + 10] = cos;
+    e[o + 11] = 0;
+    e[o + 12] = x;
+    e[o + 13] = y;
+    e[o + 14] = z;
+    e[o + 15] = 1;
+    this.markDirty(slot);
+  }
+
+  private markDirty(slot: number) {
+    if (slot < this.dirtyFrom) this.dirtyFrom = slot;
+    if (slot > this.dirtyTo) this.dirtyTo = slot;
+  }
+
+  get dirty() {
+    return this.dirtyTo >= 0;
+  }
+
+  /** Uploads the written slots (one contiguous range) once per frame. */
+  flush() {
+    if (this.dirtyTo < 0) return;
+    const from = this.dirtyFrom;
+    const to = Math.min(this.dirtyTo, this.items.length - 1);
+    this.dirtyFrom = Infinity;
+    this.dirtyTo = -1;
+    if (to < from) return;
+    this.matrices.clearUpdateRanges();
+    this.matrices.addUpdateRange(from * 16, (to - from + 1) * 16);
+    this.matrices.needsUpdate = true;
+  }
+
+  /** Far-detail batches may skip the shadow pass when nothing they hold can reach it. */
+  setShadows(cast: boolean) {
+    for (const mesh of this.meshes) mesh.castShadow = cast && Boolean(mesh.userData.castShadow);
+  }
+
+  private updateCount() {
+    const count = this.items.length;
+    for (const mesh of this.meshes) {
+      mesh.count = count;
+      mesh.visible = count > 0;
+    }
+  }
+
+  dispose() {
+    for (const mesh of this.meshes) {
+      mesh.removeFromParent();
+      mesh.dispose();
+    }
+    this.meshes.length = 0;
+    this.items.length = 0;
+  }
+}

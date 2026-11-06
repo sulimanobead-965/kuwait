@@ -58,6 +58,10 @@ export class FallbackCityWorld {
     dayMode: "auto",
     night: 0,
     lodDistribution: {},
+    culledBuildings: 0,
+    batches: 0,
+    syncMs: 0,
+    frameMs: 0,
   };
 
   constructor(
