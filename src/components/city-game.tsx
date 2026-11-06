@@ -10,7 +10,7 @@ import type { Cell } from "@/game/three/camera";
 import type { DayMode } from "@/game/three/day-night";
 import { FallbackCityWorld } from "@/game/three/fallback";
 import { createAudio } from "@/game/audio";
-import { bootLang, dirOf, msg, t, useLang } from "@/i18n";
+import { bootLang, dirOf, msg, t, useLang, bigNum, getLang } from "@/i18n";
 import {
   setInsurance,
   buySukuk,
@@ -121,7 +121,7 @@ function flyCoins(from: { x: number; y: number }) {
 }
 
 function fmt(n: number) {
-  return Math.floor(n).toLocaleString("en-US");
+  return Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.floor(n).toLocaleString("en-US");
 }
 
 export function CityGame() {

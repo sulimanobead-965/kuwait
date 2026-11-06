@@ -3,7 +3,7 @@
  * contracts and personal loans from other players. The governor can settle any of
  * them early, in full or in part, or pay toward all of them at once.
  */
-import { t } from "../i18n/index.ts";
+import { bigNum, t } from "../i18n/index.ts";
 import { repayMurabaha } from "./finance";
 import { NPCS, repayNpc, type NpcId } from "./npcs";
 import { repayLoan, type Sim } from "./sim";
@@ -62,8 +62,8 @@ export function payObligations(s: Sim, amount?: number): Result {
       left <= 0.5
         ? t("سدّدت كل الالتزامات")
         : t("سدّدت {amount} د.ك، والباقي {left} د.ك", {
-            amount: Math.round(paid).toLocaleString("en-US"),
-            left: Math.round(left).toLocaleString("en-US"),
+            amount: bigNum(paid),
+            left: bigNum(left),
           }),
   };
 }

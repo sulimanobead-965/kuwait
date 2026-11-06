@@ -19,9 +19,9 @@ import {
 import { formatCityDate, type Sim } from "@/game/sim";
 import { CATALOG, type Kind } from "@/game/catalog";
 import { NumberField } from "@/components/hud-social";
-import { currency, dirOf, percentSign, t, tx } from "@/i18n";
+import { currency, dirOf, percentSign, t, tx, bigNum, getLang } from "@/i18n";
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n, getLang());
 
 const EFFECT_LABELS: Record<string, string> = {
   happy: "الرضا",

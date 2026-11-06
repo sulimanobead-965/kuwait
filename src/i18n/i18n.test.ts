@@ -185,3 +185,18 @@ test("NPCs understand English and chat history keeps its language", () => {
   assert.equal(s.npcs[0]!.chat.at(-1)!.text, "العفو، واجبنا. الكويت بيتنا كلنا");
   assert.doesNotMatch(s.npcs[0]!.chat[1]!.text, ARABIC);
 });
+
+test("large amounts read as billions and trillions, not thousands of millions", async () => {
+  const { bigNum, t, msg, tx } = await import("./index.ts");
+  assert.equal(bigNum(999_999_999), "999,999,999");
+  assert.equal(bigNum(1_000_000_000), "1 مليار");
+  assert.equal(bigNum(2_500_000_000), "2.5 مليار");
+  assert.equal(bigNum(1_250_000_000_000), "1.25 ترليون");
+  assert.equal(bigNum(2_500_000_000, "en"), "2.5B");
+  assert.equal(bigNum(3_400_000_000_000, "en"), "3.4T");
+  // Stored with Arabic words, shown with English suffixes in English.
+  const stored = msg("تحتاج {amount} د.ك", { amount: bigNum(7_000_000_000) });
+  assert.equal(tx(stored, "ar"), "تحتاج 7 مليار د.ك");
+  assert.equal(tx(stored, "en").includes("7B"), true);
+  assert.equal(t("تحتاج {amount} د.ك", { amount: 4_200_000_000 }, "ar"), "تحتاج 4.2 مليار د.ك");
+});

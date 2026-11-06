@@ -11,7 +11,7 @@
  * paid a monthly fee (a share of the month's income) and a yearly bonus (a share of
  * the year's profit), only while it is in charge.
  */
-import { msg, t, type Params } from "../i18n/index.ts";
+import { msg, t, type Params, bigNum } from "../i18n/index.ts";
 import { CATALOG, type Kind } from "./catalog";
 import { freeLot, runPlans } from "./builder";
 import { deposit, withdraw } from "./finance";
@@ -709,7 +709,7 @@ const note = (s: Sim, text: string) => {
   s.board.log = s.board.log.slice(0, 40);
 };
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n);
 
 /** Approve a department project: pays its cost now; it finishes after some months. */
 export function approveProject(s: Sim, key: string, by: "governor" | "board" = "governor") {

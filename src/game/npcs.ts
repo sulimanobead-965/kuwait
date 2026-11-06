@@ -5,7 +5,7 @@
  * make borrowers more likely to default; every NPC remembers how you treated them.
  */
 import type { Sim } from "./sim";
-import { msg, percentSign, t, type Params } from "../i18n/index.ts";
+import { msg, percentSign, t, type Params, bigNum } from "../i18n/index.ts";
 
 export type NpcId = "abufahad" | "umsalem" | "bukhalid" | "sara" | "meshal";
 
@@ -160,7 +160,7 @@ export function loadNpcs(raw: unknown): NpcState[] {
 
 export const npcDef = (id: NpcId) => NPCS.find((n) => n.id === id)!;
 const npcOf = (s: Sim, id: NpcId) => s.npcs.find((n) => n.id === id)!;
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n);
 const pctText = (rate: number) =>
   `${(Math.round(rate * 1000) / 10).toLocaleString("en-US")}${percentSign()}`;
 const pick = <T>(list: readonly T[], random = Math.random) =>

@@ -25,7 +25,7 @@ import {
   type Building,
   type Sim,
 } from "./sim";
-import { msg, t } from "../i18n/index.ts";
+import { msg, t, bigNum } from "../i18n/index.ts";
 
 export type BuilderState = {
   hired: boolean;
@@ -62,7 +62,7 @@ export function builderFee(s: Sim, works = 0) {
   return Math.round(300 + stats(s).residents * 0.01 + works * 0.05);
 }
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n);
 
 type Plan = { label: string; cost: number; run: () => boolean };
 

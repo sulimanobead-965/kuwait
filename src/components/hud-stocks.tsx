@@ -3,9 +3,9 @@ import { TrendingDown, TrendingUp } from "lucide-react";
 import { portfolio, stakeValue, STOCK_IDS, STOCKS, stockDown, type StockId } from "@/game/stocks";
 import type { Sim } from "@/game/sim";
 import { NumberField } from "@/components/hud-social";
-import { currency, dirOf, percentSign, t } from "@/i18n";
+import { currency, dirOf, percentSign, t, bigNum, getLang } from "@/i18n";
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n, getLang());
 const pct = (n: number) => `${Math.round(n * 1000) / 10}`;
 
 /** A tiny price line for the last two years of a share. */

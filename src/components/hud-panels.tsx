@@ -72,15 +72,16 @@ import {
   progressOf,
   type DevelopmentKind,
 } from "@/game/developments";
-import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
+import { currency, dirOf, percentSign, setLang, t, tx, useLang, bigNum, getLang } from "@/i18n";
 
 export function fmt(n: number) {
-  return Math.floor(n).toLocaleString("en-US");
+  return Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.floor(n).toLocaleString("en-US");
 }
 
 /** Short money, e.g. «1.2 مليون» / "1.2M", «250 ألف» / "250K". */
 export function money(n: number) {
   const a = Math.abs(n);
+  if (a >= 1e9) return bigNum(n, getLang());
   if (a >= 1_000_000)
     return t("{n} مليون", { n: (n / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1) });
   if (a >= 10_000) return t("{n} ألف", { n: Math.round(n / 1000) });

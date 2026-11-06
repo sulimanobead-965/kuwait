@@ -5,7 +5,7 @@
  * buys and sells stakes by percentage of the company (e.g. 5٪), and holders are paid
  * a yearly dividend (a share of the stake's value) while the company is solvent.
  */
-import { msg, t } from "../i18n/index.ts";
+import { msg, t, bigNum } from "../i18n/index.ts";
 import { COMPANIES, INSURER } from "./finance";
 import { DEVELOPERS } from "./developments";
 import type { Sim } from "./sim";
@@ -113,7 +113,7 @@ export function portfolio(s: Sim) {
   return { value, paid, gain: value - paid };
 }
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n);
 const pctText = (p: number) => `${Math.round(p * 10000) / 100}`;
 
 /** Buy `pct` percent of a company (e.g. 5 = 5٪). */

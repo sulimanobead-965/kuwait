@@ -112,7 +112,7 @@ import { Board, MegaProjects } from "@/components/hud-board";
 import { StockMarket } from "@/components/hud-stocks";
 import type { StockId } from "@/game/stocks";
 import { boardFee, projectMoney, type BoardState, type DeptId } from "@/game/board";
-import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
+import { currency, dirOf, percentSign, setLang, t, tx, useLang, bigNum, getLang } from "@/i18n";
 
 export type PayTarget =
   | { kind: "all" }
@@ -287,7 +287,7 @@ function Laws({
 }
 
 function fmt(n: number) {
-  return Math.floor(n).toLocaleString("en-US");
+  return Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.floor(n).toLocaleString("en-US");
 }
 
 export function CityHud({

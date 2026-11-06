@@ -7,7 +7,7 @@
  * Pure functions over `Sim`; `sim.ts` calls `financeMonth` once per game month.
  */
 import type { Sim } from "./sim";
-import { msg, percentSign, t } from "../i18n/index.ts";
+import { msg, percentSign, t, bigNum } from "../i18n/index.ts";
 
 export type CompanyId = "bank" | "islamic" | "developer" | "consultant";
 
@@ -219,7 +219,7 @@ export function isOpen(s: Sim, id: CompanyId) {
   return s.finance.down[id] <= s.day;
 }
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n);
 const uid = (s: Sim) => `${Math.floor(s.day)}-${Math.random().toString(36).slice(2, 7)}`;
 
 type Act = { ok: true; msg: string } | { ok: false; msg: string };

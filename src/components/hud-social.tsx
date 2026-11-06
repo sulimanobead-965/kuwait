@@ -4,9 +4,9 @@ import { stats, type Sim } from "@/game/sim";
 import { BUILDER_NAME, BUILDER_SIGN_ON, builderFee } from "@/game/builder";
 import { askRate, npcDef, NPCS, type NpcId } from "@/game/npcs";
 import { LangPicker } from "@/components/hud-panels";
-import { currency, dirOf, percentSign, t, tx, useLang } from "@/i18n";
+import { currency, dirOf, percentSign, t, tx, useLang, bigNum, getLang } from "@/i18n";
 
-const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const fmt = (n: number) => bigNum(n, getLang());
 
 // ------------------------------------------------------------------ player profile
 

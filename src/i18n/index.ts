@@ -92,9 +92,31 @@ export function useLang(): Lang {
   return useSyncExternalStore(subscribe, getLang, () => "ar" as Lang);
 }
 
-/** Western digits with thousands separators, e.g. 12,500. */
+/** Western digits with thousands separators, e.g. 12,500; billions and up in words. */
 export function num(n: number) {
-  return n.toLocaleString("en-US");
+  return Math.abs(n) >= 1e9 ? bigNum(n) : n.toLocaleString("en-US");
+}
+
+const BIG: [number, string, string][] = [
+  [1e12, "ترليون", "T"],
+  [1e9, "مليار", "B"],
+];
+
+const short = (v: number) => {
+  const a = Math.abs(v);
+  const d = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+  return String(Number(v.toFixed(d)));
+};
+
+/**
+ * Whole amounts in digits (12,500,000), and from a billion up in words:
+ * «1.25 مليار» / "1.25B", «3.4 ترليون» / "3.4T". Stored messages use the Arabic
+ * words; `t` turns them into English suffixes when shown in English.
+ */
+export function bigNum(n: number, lang: Lang = "ar") {
+  for (const [size, ar, en] of BIG)
+    if (Math.abs(n) >= size) return lang === "en" ? `${short(n / size)}${en}` : `${short(n / size)} ${ar}`;
+  return Math.round(n).toLocaleString("en-US");
 }
 
 /** The currency after an amount: «د.ك» or "KD". */
@@ -105,7 +127,10 @@ export const percentSign = () => (current === "ar" ? "٪" : "%");
 
 function param(v: Param, lang: Lang): string {
   if (Array.isArray(v)) return v.map((x) => param(x, lang)).join(lang === "ar" ? "، " : ", ");
-  if (typeof v === "number") return num(v);
+  if (typeof v === "number") return Math.abs(v) >= 1e9 ? bigNum(v, lang) : num(v);
+  // Amounts stored in words («1.2 مليار») read as "1.2B" in English.
+  if (lang === "en" && / (مليار|ترليون)$/.test(v))
+    return v.replace(/ مليار$/, "B").replace(/ ترليون$/, "T");
   if (v.startsWith(MARK)) return tx(v, lang);
   return lang === "en" ? (EN[v] ?? v) : v;
 }
