@@ -133,8 +133,9 @@ export function createTerrain() {
         continue;
       }
       const start = c;
+      const kind = LAND[r]![c];
       let shore = false;
-      while (c < COLS && LAND[r]![c]) {
+      while (c < COLS && LAND[r]![c] === kind) {
         shore ||= [
           [1, 0],
           [-1, 0],
@@ -154,7 +155,16 @@ export function createTerrain() {
         width,
         LAND_HEIGHT,
         CELL_SIZE * 0.997,
-        shore ? P.sand : (start + r) % 2 === 0 ? "#d5c298" : "#d1bd93",
+        // Land across the border is a darker, greyer desert.
+        kind === 2
+          ? (start + r) % 2 === 0
+            ? "#b3a588"
+            : "#afa184"
+          : shore
+            ? P.sand
+            : (start + r) % 2 === 0
+              ? "#d5c298"
+              : "#d1bd93",
       );
       for (let col = start; col < c; col += 1) {
         const at = cellWorld(col, r);
@@ -215,7 +225,7 @@ function gridTemplate(district: Sim["district"]) {
   const keys: string[] = [];
   for (let r = 0; r < ROWS; r += 1)
     for (let c = 0; c < COLS; c += 1)
-      if (LAND[r]![c] && !roadIsSchematic(district, `${c},${r}`)) keys.push(`${c},${r}`);
+      if (LAND[r]![c] === 1 && !roadIsSchematic(district, `${c},${r}`)) keys.push(`${c},${r}`);
   // 4 edges × 2 vertices per cell.
   const positions = new Float32Array(keys.length * 24);
   const colors = new Float32Array(keys.length * 32);
@@ -260,10 +270,21 @@ function gridTemplate(district: Sim["district"]) {
 export function createGrid(
   avoid: ReadonlySet<string> = new Set(),
   district: Sim["district"] = null,
+  /** Only cells within `radius` of this cell (the whole country is too many lines). */
+  around?: { c: number; r: number; radius: number },
 ) {
   const template = gridTemplate(district);
   const kept: number[] = [];
-  for (let i = 0; i < template.keys.length; i += 1) if (!avoid.has(template.keys[i]!)) kept.push(i);
+  for (let i = 0; i < template.keys.length; i += 1) {
+    if (around) {
+      const key = template.keys[i]!;
+      const comma = key.indexOf(",");
+      const c = +key.slice(0, comma),
+        r = +key.slice(comma + 1);
+      if (Math.abs(c - around.c) > around.radius || Math.abs(r - around.r) > around.radius) continue;
+    }
+    if (!avoid.has(template.keys[i]!)) kept.push(i);
+  }
   const positions = new Float32Array(kept.length * 24);
   const colors = new Float32Array(kept.length * 32);
   // Copy runs of consecutive kept cells in one go.
@@ -364,12 +385,12 @@ export function createRoads(roadKeys: readonly string[], all?: ReadonlySet<strin
     const { x, z } = cellWorld(c!, r!);
     // Continuous charcoal asphalt: interior paint only, never perimeter curbs/borders.
     addBox(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
-    if (LAND[r!]?.[c!] !== 1) {
+    if (LAND[r!]?.[c!] === 0) {
       // A bridge over the sea: concrete deck, piers down into the water, and railings
       // along the sides that do not continue the bridge.
       addBox(asphalt, x, LAND_HEIGHT - 0.09, z, CELL_SIZE, 0.18, CELL_SIZE, P.paleStone);
       if ((c! + r!) % 2 === 0) addBox(asphalt, x, LAND_HEIGHT / 2 - 0.35, z, 0.42, LAND_HEIGHT + 0.6, 0.42, P.paleStone);
-      const along = (dc: number, dr: number) => roads.has(`${c! + dc},${r! + dr}`) || LAND[r! + dr]?.[c! + dc] === 1;
+      const along = (dc: number, dr: number) => roads.has(`${c! + dc},${r! + dr}`) || (LAND[r! + dr]?.[c! + dc] ?? 0) !== 0;
       const rail = (dx: number, dz: number, w: number, d: number) =>
         addBox(asphalt, x + dx, LAND_HEIGHT + 0.12, z + dz, w, 0.2, d, P.white);
       const edge = CELL_SIZE / 2 - 0.05;

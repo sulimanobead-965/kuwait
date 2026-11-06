@@ -32,7 +32,7 @@ import {
   type DevelopmentKind,
   type Site,
 } from "./developments";
-import { COLS, FINE_ROW0, GRID_GEN, islandAt, ISLANDS, isIsland, LAND, ROWS } from "./land";
+import { COLS, FINE_ROW0, GRID_GEN, isForeign, OLD_COL0, islandAt, ISLANDS, isIsland, LAND, ROWS } from "./land";
 import { msg, t, tx } from "../i18n/index.ts";
 export { districtById, isDistrictLand } from "./districts";
 import {
@@ -1297,7 +1297,7 @@ export function cellTaken(s: Sim, c: number, r: number) {
 /** A road cell laid over the sea: a bridge. */
 export function isBridge(key: string) {
   const comma = key.indexOf(",");
-  return !isLand(+key.slice(0, comma), +key.slice(comma + 1));
+  return isWater(+key.slice(0, comma), +key.slice(comma + 1));
 }
 
 const linkCache = new WeakMap<Sim, { n: number; last: string; linked: ReadonlySet<number> }>();
@@ -1485,6 +1485,7 @@ function spent(b: Building) {
 export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
+  if (isForeign(c, r)) return { ok: false, msg: t("هذه أرض خارج حدود الكويت") };
   if (!isLand(c, r)) return placeBridge(s, c, r);
   if (!islandOpen(s, c, r)) return { ok: false, msg: islandLocked(c, r) };
   const fence = fenced(s, c, r);
@@ -1521,6 +1522,7 @@ export function placeBridge(s: Sim, c: number, r: number): Act {
       nr = r + dr;
     return isLand(nc, nr) || roads.has(cellKey(nc, nr));
   });
+  if (!isWater(c, r)) return { ok: false, msg: t("هذه أرض خارج حدود الكويت") };
   if (!anchored) return { ok: false, msg: t("الجسر لازم يبدأ من الشاطئ أو يكمل جسراً قائماً") };
   const cost = priceOf(BRIDGE_COST, s);
   if (cost > 0 && s.coins < cost)
@@ -1540,6 +1542,7 @@ export function placeBridge(s: Sim, c: number, r: number): Act {
 export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: number): Act {
   const fence = fenced(s, c, r);
   if (fence) return { ok: false, msg: fence };
+  if (isForeign(c, r)) return { ok: false, msg: t("هذه أرض خارج حدود الكويت") };
   if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع البناء في البحر") };
   if (!islandOpen(s, c, r)) return { ok: false, msg: islandLocked(c, r) };
   if (cellTaken(s, c, r)) {
@@ -2884,15 +2887,17 @@ export function loadSim(district?: DistrictId | null): Sim {
     // The independently owned key, not arbitrary save content, decides layout identity.
     const requestedDistrict = district ?? null;
     s.district = districtById(requestedDistrict)?.id ?? null;
-    // Grid 6 is the same map before it grew north: shift its rows into place.
-    const shift = p.grid === 6 ? FINE_ROW0 : 0;
-    if (p.grid !== GRID_GEN && p.grid !== 6) {
+    // Grids 6 and 7 are the same map before it grew to the whole country: shift
+    // their cells into place (grid 6 had no northern strip; grid 7 a shorter one).
+    const shift = p.grid === 6 ? FINE_ROW0 : p.grid === 7 ? FINE_ROW0 - 185 : 0;
+    const shiftC = p.grid === 6 || p.grid === 7 ? OLD_COL0 : 0;
+    if (p.grid !== GRID_GEN && p.grid !== 6 && p.grid !== 7) {
       if (!s.history.length) s.history.push(takeSample(s));
       return s;
     }
-    if (shift) {
-      s.sites = s.sites.map((x) => ({ ...x, r: x.r + shift }));
-      s.fx = s.fx.map((f) => ({ ...f, r: f.r + shift }));
+    if (shift || shiftC) {
+      s.sites = s.sites.map((x) => ({ ...x, c: x.c + shiftC, r: x.r + shift }));
+      s.fx = s.fx.map((f) => ({ ...f, c: f.c + shiftC, r: f.r + shift }));
     }
     const o = p.ordinances;
     if (o && typeof o === "object") {
@@ -2925,10 +2930,11 @@ export function loadSim(district?: DistrictId | null): Sim {
     const roadCells: string[] = [];
     for (const k of roads) {
       if (typeof k !== "string") continue;
-      const [c, r0] = k.split(",").map(Number);
+      const [c0, r0] = k.split(",").map(Number);
+      const c = c0! + shiftC;
       const r = r0! + shift;
       // Roads on land, and bridges over the sea.
-      if (c! >= 0 && r >= 0 && c! < COLS && r < ROWS) roadCells.push(cellKey(c!, r));
+      if (c >= 0 && r >= 0 && c < COLS && r < ROWS) roadCells.push(cellKey(c, r));
     }
     if (s.district) roadCells.push(...districtRoads(districtById(s.district)!));
     s.roads = [...new Set(roadCells)];
@@ -2938,7 +2944,7 @@ export function loadSim(district?: DistrictId | null): Sim {
       if (!rawB || typeof rawB !== "object") continue;
       const b = rawB as Partial<Building>;
       if (typeof b.kind !== "string" || !(b.kind in CATALOG)) continue;
-      const c0 = Number(b.c);
+      const c0 = Number(b.c) + shiftC;
       const r0 = Number(b.r) + shift;
       const c = c0;
       const r = r0;

@@ -430,7 +430,7 @@ test("a selected area is demolished in one go, protected cells stay", async () =
 
 test("islands are locked until a bridge links them, then they can be built on", async () => {
   const sim = await import("./sim.ts");
-  const { ISLANDS, islandAt } = await import("./land.ts");
+  const { ISLANDS, islandAt, ROWS, COLS, FINE_ROW0 } = await import("./land.ts");
   const s = town();
   s.coins = 10_000_000;
   const names = ISLANDS.map((i) => i.name);
@@ -438,8 +438,8 @@ test("islands are locked until a bridge links them, then they can be built on", 
   const bubiyan = ISLANDS.find((i) => i.name === "جزيرة بوبيان")!.id;
   // The shortest straight crossing west from Bubiyan's shore to the mainland.
   let best: { r: number; from: number; to: number } | null = null;
-  for (let r = 0; r < 388; r += 1)
-    for (let c = 1; c < 290; c += 1) {
+  for (let r = 0; r < ROWS; r += 1)
+    for (let c = 1; c < COLS; c += 1) {
       if (islandAt(c, r) !== bubiyan || sim.isLand(c - 1, r)) continue;
       let x = c - 1;
       while (x >= 0 && !sim.isLand(x, r)) x -= 1;
@@ -458,18 +458,21 @@ test("islands are locked until a bridge links them, then they can be built on", 
   // Failaka is still cut off, and a bridge cannot start in open sea.
   const failaka = ISLANDS.find((i) => i.name === "جزيرة فيلكا")!;
   assert.equal(sim.islandOpen(s, Math.round(failaka.c), Math.round(failaka.r)), false);
-  assert.equal(sim.placeRoad(s, 280, 300).ok, false);
+  assert.equal(sim.placeRoad(s, COLS - 3, FINE_ROW0 + 100).ok, false);
+  // Land across the border is never built on.
+  assert.equal(sim.placeRoad(s, 5, ROWS - 5).ok, false);
 });
 
 test("port, refinery and factories earn money for the treasury", async () => {
   const sim = await import("./sim.ts");
+  const { FINE_ROW0, OLD_COL0, ROWS, COLS } = await import("./land.ts");
   const s = town();
   s.coins = 10_000_000;
   const before = sim.monthlyIncome(s);
   // A free lot (on the shore for the port) with a road laid beside it.
   const lot = (needsCoast: boolean) => {
-    for (let r = 0; r < 202; r += 1)
-      for (let c = 0; c < 210; c += 1) {
+    for (let r = FINE_ROW0; r < ROWS - 1; r += 1)
+      for (let c = OLD_COL0; c < COLS; c += 1) {
         if (!sim.isLand(c, r) || !sim.isLand(c, r + 1)) continue;
         if (sim.cellTaken(s, c, r) || sim.cellTaken(s, c, r + 1)) continue;
         if (needsCoast !== sim.coastal(c, r)) continue;

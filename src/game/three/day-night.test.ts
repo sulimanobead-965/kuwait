@@ -49,7 +49,7 @@ test("camera and every building model are shared between generated lots", () => 
 });
 
 import { createGrid, createRoads } from "./scenery.ts";
-import { LAND } from "../land.ts";
+import { FINE_ROW0, LAND, OLD_COL0 } from "../land.ts";
 import { PALETTE } from "./palette.ts";
 import { LAND_HEIGHT } from "./camera.ts";
 
@@ -133,8 +133,8 @@ test("the villa's center is a real open courtyard", () => {
 });
 
 test("roads keep interior paint separate from charcoal asphalt, with no pale borders", () => {
-  const r = 28,
-    c = 20;
+  const r = 28 + FINE_ROW0,
+    c = 21 + OLD_COL0; // keeps (c + r) % 4 === 0, so exactly one streetlamp
   const roads = createRoads([`${c},${r}`, `${c + 1},${r}`, `${c},${r + 1}`]);
   const positions = roads.asphalt.getAttribute("position");
   const colors = roads.asphalt.getAttribute("color");
@@ -159,7 +159,7 @@ test("roads keep interior paint separate from charcoal asphalt, with no pale bor
   for (let r = 0; r < LAND.length && lot === "0,0"; r += 1) {
     const row = LAND[r] ?? [];
     for (let c = 0; c < row.length; c += 1) {
-      if (row[c]) {
+      if (row[c] === 1) {
         lot = `${c},${r}`;
         break;
       }

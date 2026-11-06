@@ -434,7 +434,7 @@ export class CityFx {
     // The gulf plane reaches ~10 cells past the map edge, so include that margin.
     for (let r = -10; r < ROWS + 10; r += 1)
       for (let c = -10; c < COLS + 10; c += 1) {
-        if (LAND[r]?.[c] === 1) continue;
+        if ((LAND[r]?.[c] ?? 0) !== 0) continue;
         let near = false;
         for (let dr = -4; dr <= 4 && !near; dr += 2)
           for (let dc = -4; dc <= 4 && !near; dc += 2) near = LAND[r + dr]?.[c + dc] === 1;

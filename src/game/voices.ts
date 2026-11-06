@@ -25,6 +25,9 @@ export type Voice = {
   day: number;
 };
 
+/** Where residents live: inhabited areas only (not the bay, islands or neighbours). */
+const HOMES = PLACES.filter((p) => !p.major && !p.name.startsWith("جزيرة"));
+
 /** Made-up residents; any resemblance to real people is coincidental. */
 export const VOICE_NAMES = [
   "أم ناصر",
@@ -169,7 +172,7 @@ export function voicesMonth(s: Sim, x: VoiceContext, random: () => number = Math
     const line = pool.splice(at, 1)[0]!;
     const text = msg(line.text);
     if (recent.has(text) && pool.length) continue;
-    const place = PLACES[1 + Math.floor(random() * (PLACES.length - 1))]!;
+    const place = HOMES[Math.floor(random() * HOMES.length)]!;
     fresh.push({
       id: `${s.day.toString(36)}-${i}-${Math.floor(random() * 1e6).toString(36)}`,
       name: VOICE_NAMES[Math.floor(random() * VOICE_NAMES.length)]!,

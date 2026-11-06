@@ -3,7 +3,7 @@ import type { HudTool } from "../../components/city-hud.tsx";
 import type { Sim } from "@/game/sim";
 import { cellKey, createInitial, isCelebrating, isLand, nearestOpenLot } from "@/game/sim";
 import type { CrisisKind, DisasterKind } from "@/game/sim";
-import { COLS, FINE_ROW0, ROWS } from "@/game/land";
+import { COLS, FINE_ROW0, OLD_COL0, ROWS } from "@/game/land";
 import { isLandmark } from "@/game/catalog";
 import { districtBounds, districtById, sectorsForZone } from "@/game/districts";
 import {
@@ -105,12 +105,14 @@ type BuildingRecord = {
 
 type CarSlot = { i: number; x: number; z: number; horizontal: boolean };
 
+/** Half-size, in cells, of the tile grid drawn around the camera while a tool is out. */
+const GRID_RADIUS = 90;
 /** Finger travel (px) before a build tap turns into a map drag. */
 const PLACE_SLOP = 14;
-/** Farthest zoom-out: a desktop sees most of the 290×388 map. */
-const MAX_VIEW = 560;
+/** Farthest zoom-out: a desktop sees most of the 616×590 map of Kuwait. */
+const MAX_VIEW = 820;
 /** Start-screen showcase sits on the real Sharq waterfront just south of Kuwait Towers (see land.ts). */
-const PREVIEW_SHIFT = { c: 114, r: 25 + FINE_ROW0 } as const;
+const PREVIEW_SHIFT = { c: 114 + OLD_COL0, r: 25 + FINE_ROW0 } as const;
 export const PREVIEW_FOCUS = { c: 26 + PREVIEW_SHIFT.c, r: 24 + PREVIEW_SHIFT.r } as const;
 
 export class CityWorld {
@@ -121,6 +123,9 @@ export class CityWorld {
   private terrain = createTerrain();
   /** Tile grid, built lazily: only a selected tool shows it, and it spans every land cell. */
   private grid = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial());
+  /** The roads and district the current grid was built from, and where around. */
+  private gridData: { roads: ReadonlySet<string>; district: Sim["district"] } | null = null;
+  private gridAt: Cell | null = null;
   private gridSource: { roads: ReadonlySet<string>; district: Sim["district"] } | null = {
     roads: new Set(),
     district: null,
@@ -276,7 +281,7 @@ export class CityWorld {
     this.renderer.shadowMap.autoUpdate = false;
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES);
     const yaw = THREE.MathUtils.degToRad(this.yaw);
-    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, CAMERA_DISTANCE + 1600);
+    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, CAMERA_DISTANCE + 3000);
     this.camera.position
       .copy(this.target)
       .add(
@@ -814,15 +819,26 @@ export class CityWorld {
     if (tool) this.buildGrid();
   }
 
-  /** Builds the pending tile grid, if any; cheap no-op once it is current. */
+  /**
+   * Builds the tile grid around the camera when it is stale (roads changed) or the
+   * camera has moved far from where it was built; a cheap no-op otherwise.
+   */
   private buildGrid() {
-    if (!this.gridSource) return;
-    const { roads, district } = this.gridSource;
-    this.gridSource = null;
+    if (this.gridSource) {
+      this.gridData = this.gridSource;
+      this.gridSource = null;
+      this.gridAt = null;
+    }
+    if (!this.gridData) return;
+    const at = worldCell(this.target.x, this.target.z);
+    if (this.gridAt && Math.abs(at.c - this.gridAt.c) < GRID_RADIUS / 2 && Math.abs(at.r - this.gridAt.r) < GRID_RADIUS / 2)
+      return;
+    this.gridAt = at;
+    const { roads, district } = this.gridData;
     this.scene.remove(this.grid);
     this.grid.geometry.dispose();
     this.grid.material.dispose();
-    this.grid = createGrid(roads, district);
+    this.grid = createGrid(roads, district, { c: at.c, r: at.r, radius: GRID_RADIUS });
     this.grid.visible = Boolean(this.currentTool);
     this.scene.add(this.grid);
   }
@@ -1678,6 +1694,7 @@ export class CityWorld {
       updatePlaceLabels(this.placeLabels, this.viewHeight, this.yaw);
     }
     this.edgeScroll(dt);
+    if (this.currentTool) this.buildGrid();
     if (this.sim) this.updateCars();
     this.updateLighting(dt);
     this.updateFx(dt);

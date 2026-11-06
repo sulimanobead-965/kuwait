@@ -134,12 +134,12 @@ function FreeDiagram() {
       let c = 0;
       const row = LAND[r] ?? [];
       while (c < COLS) {
-        if (!row[c]) {
+        if (row[c] !== 1) {
           c += 1;
           continue;
         }
         const start = c;
-        while (c < COLS && row[c]) c += 1;
+        while (c < COLS && row[c] === 1) c += 1;
         parts.push(`M${start} ${r}h${c - start}v1H${start}Z`);
       }
     }

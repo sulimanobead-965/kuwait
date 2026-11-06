@@ -1257,4 +1257,13 @@ export const EN: Record<string, string> = {
   "قرارات المجلس": "Board decisions",
   "لا قرارات بعد.": "No decisions yet.",
   "مجلس الإدارة (آلي)": "Board of Directors (auto)",
+  "هذه أرض خارج حدود الكويت": "This land is outside Kuwait's borders",
+  "العبدلي": "Abdali",
+  "الرقعي": "Ar-Ruqi",
+  "صباح الأحمد": "Sabah Al-Ahmad",
+  "الوفرة": "Al-Wafra",
+  "الخيران": "Al-Khiran",
+  "العراق": "Iraq",
+  "السعودية": "Saudi Arabia",
+  "جزيرة": "Island",
 };

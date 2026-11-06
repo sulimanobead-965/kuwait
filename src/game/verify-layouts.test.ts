@@ -11,7 +11,7 @@ import {
   sectorsForZone,
   type DistrictId,
 } from "./districts.ts";
-import { cellsFromSource, FINE_ROW0, LAND, sourceCell, SOURCE_LAND } from "./land.ts";
+import { cellsFromSource, FINE_ROW0, LAND, OLD_COL0, sourceCell, SOURCE_LAND } from "./land.ts";
 import {
   bulldoze,
   cellKey,
@@ -56,7 +56,7 @@ test("inside the original box, the playable land is five times the source mask",
   const count = (rows: readonly (readonly number[])[]) =>
     rows.reduce((sum, row) => sum + row.reduce((n, bit) => n + bit, 0), 0);
   // The map grew north and east; the source mask still covers only the original box.
-  const box = LAND.slice(FINE_ROW0).map((row) => row.slice(0, 210));
+  const box = LAND.slice(FINE_ROW0, FINE_ROW0 + 203).map((row) => row.slice(OLD_COL0, OLD_COL0 + 210));
   const ratio = count(box) / count(SOURCE_LAND);
   assert.ok(ratio > 4.6 && ratio < 5.4, String(ratio));
 });
@@ -320,9 +320,13 @@ test("a city saved before the map grew north is moved onto the same streets", ()
     payload.grid = 6;
     payload.roads = payload.roads.map((k: string) => {
       const [c, r] = k.split(",").map(Number);
-      return `${c},${r! - FINE_ROW0}`;
+      return `${c! - OLD_COL0},${r! - FINE_ROW0}`;
     });
-    payload.buildings = payload.buildings.map((b: { r: number }) => ({ ...b, r: b.r - FINE_ROW0 }));
+    payload.buildings = payload.buildings.map((b: { c: number; r: number }) => ({
+      ...b,
+      c: b.c - OLD_COL0,
+      r: b.r - FINE_ROW0,
+    }));
     store.set("omdat-kuwait-v1", JSON.stringify(payload));
     const back = loadSim();
     assert.ok(back.roads.includes(`${road.c},${road.r}`));

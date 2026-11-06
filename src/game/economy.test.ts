@@ -27,7 +27,7 @@ import {
   coastal,
 } from "./sim.ts";
 import { buyBond, deposit, financeMonth, startProject } from "./finance.ts";
-import { cellsFromSource } from "./land.ts";
+import { cellsFromSource, COLS, FINE_ROW0, OLD_COL0, ROWS } from "./land.ts";
 
 const SERVICES = [
   "school",
@@ -204,8 +204,8 @@ test("chalets need the sea, landmarks unlock by era, starter towns are seeded", 
   const inland = cellsFromSource(57, 33)[0]!;
   assert.equal(placeBuilding(s, "chalet", inland.c, inland.r, 0).ok, false);
   const shore = (() => {
-    for (let r = 0; r < 203; r += 1)
-      for (let c = 0; c < 210; c += 1) if (isLand(c, r) && coastal(c, r)) return { c, r };
+    for (let r = FINE_ROW0; r < ROWS; r += 1)
+      for (let c = OLD_COL0; c < COLS; c += 1) if (isLand(c, r) && coastal(c, r)) return { c, r };
     return null;
   })()!;
   assert.equal(placeBuilding(s, "chalet", shore.c, shore.r, 0).ok, true);
