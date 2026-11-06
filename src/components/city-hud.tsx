@@ -45,6 +45,7 @@ import {
   type ZonePick,
 } from "@/game/sim";
 import type { DayMode } from "@/game/three/day-night";
+import { districtById } from "@/game/districts";
 
 export type HudTool =
   | { kind: "road" }
@@ -95,6 +96,8 @@ export function CityHud({
   confirmReset,
   toasts,
   onStart,
+  onDistricts,
+  onFocusDistrict,
   onSpeed,
   onCategory,
   onRoad,
@@ -127,6 +130,8 @@ export function CityHud({
   confirmReset: boolean;
   toasts: { id: number; text: string }[];
   onStart: () => void;
+  onDistricts: () => void;
+  onFocusDistrict: () => void;
   onSpeed: (n: 0 | 1 | 2 | 3) => void;
   onCategory: (id: Category) => void;
   onRoad: () => void;
@@ -157,6 +162,7 @@ export function CityHud({
   const [onKeys, setOnKeys] = useState<GraphKey[]>(["pop", "approval", "unemployment"]);
   const [ticker, setTicker] = useState(0);
 
+  const hasLegacy = localStorage.getItem("omdat-kuwait-v1") !== null;
   const st = stats(snap);
   const selected = snap.buildings.find((b) => b.id === selectedId) ?? null;
   const lines = bulletin(snap, st);
@@ -168,6 +174,10 @@ export function CityHud({
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    setPanel(null);
+    setTray(false);
+  }, [snap.district]);
   function togglePanel(next: Panel) {
     setPanel((p) => (p === next ? null : next));
   }
@@ -250,6 +260,18 @@ export function CityHud({
         )}
       </div>
 
+      {snap.district && snap.started && (
+        <div className="pointer-events-none absolute bottom-48 left-1/2 z-20 -translate-x-1/2">
+          <button
+            type="button"
+            data-testid="current-district"
+            onClick={onFocusDistrict}
+            className="district-focus pointer-events-auto"
+          >
+            {districtById(snap.district)?.name} · عرض القطع
+          </button>
+        </div>
+      )}
       <div className="pointer-events-none absolute inset-0 z-20 flex flex-col">
         <div className="relative min-h-0 flex-1">
           <div className="absolute inset-x-0 top-2 flex flex-col items-center gap-1 px-16">
@@ -334,19 +356,31 @@ export function CityHud({
                 className="sc-panel pointer-events-auto safe-bottom mx-2 rounded-t-xl px-4 pt-5"
                 dir="rtl"
               >
-                <p className="text-sm font-bold text-sc-leaf">خريطة مدينة الكويت</p>
+                <p className="text-sm font-bold text-sc-leaf">
+                  ثلاثة أحياء، لكل حي مدينته المستقلة
+                </p>
                 <h2 className="mt-1 text-3xl font-extrabold leading-tight">عمدة الكويت</h2>
                 <p className="mt-2 text-base leading-relaxed">
-                  المستوى السهل فقط. البناء والطرق والترقية كلها مجانية.
+                  اختر اليرموك أو العديلية أو السرة. المعاينة لا تبدأ مدينة ولا تغيّر الحفظ.
                 </p>
                 <button
                   type="button"
-                  data-testid="start-city"
-                  onClick={onStart}
-                  className="sc-menu mt-4 w-full text-base"
+                  data-testid="choose-neighborhood"
+                  onClick={onDistricts}
+                  className="sc-menu sc-on mt-4 w-full text-base"
                 >
-                  ابدأ البناء
+                  اختر الحي وابدأ
                 </button>
+                {hasLegacy && (
+                  <button
+                    type="button"
+                    data-testid="start-city"
+                    onClick={onStart}
+                    className="mt-2 w-full py-2 text-sm underline underline-offset-4"
+                  >
+                    استئناف مدينة الكويت القديمة
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -356,7 +390,9 @@ export function CityHud({
           <footer className="sc-status pointer-events-auto safe-bottom" dir="rtl">
             {confirmReset && (
               <div className="flex items-center gap-2 px-3 py-2">
-                <p className="flex-1 text-sm text-sc-mint">تمسح المدينة وترجع من الصفر؟</p>
+                <p className="flex-1 text-sm text-sc-mint">
+                  إعادة المدينة الحالية من الصفر؟ مدن الأحياء الأخرى محفوظة.
+                </p>
                 <button type="button" onClick={onReset} className="sc-menu sc-on h-11 px-3 text-sm">
                   امسح
                 </button>
@@ -455,7 +491,7 @@ export function CityHud({
             )}
             {tool?.kind === "road" && (
               <p className="px-3 pt-2 text-xs font-bold text-sc-lime">
-                اسحب والطريق يلف مع اليابسة. التخطيط على الشارع، والأضواء تشتغل بالليل.
+                اسحب والطريق يلف مع اليابسة. الشوارع الرئيسية ثابتة في الأحياء، والجانبي بين القطع.
                 {priceOf(ROAD_COST, snap) === 0 ? " مجاني." : ` ${priceOf(ROAD_COST, snap)} د.ك.`}
               </p>
             )}
@@ -471,6 +507,14 @@ export function CityHud({
               <Round label="مدينة جديدة" onClick={onAskReset}>
                 <RotateCcw size={16} />
               </Round>
+              <button
+                type="button"
+                data-testid="change-district"
+                onClick={onDistricts}
+                className="sc-menu shrink-0 px-3 text-sm"
+              >
+                الأحياء
+              </button>
               <Menu
                 on={panel === "graphs"}
                 testid="open-graphs"

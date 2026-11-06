@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { HudTool } from "../../components/city-hud.tsx";
 import type { Sim } from "@/game/sim";
 import { cellKey } from "@/game/sim";
+import { districtById, isDistrictLand } from "@/game/districts";
 import {
   CAMERA_PITCH_DEGREES,
   CAMERA_YAW_DEGREES,
@@ -16,7 +17,15 @@ import {
 import { lightingAt, type DayMode } from "./day-night.ts";
 import { createBuildingObject } from "./models.ts";
 import { PALETTE, cityMaterials } from "./palette.ts";
-import { carGeometry, createGrid, createRoads, createTerrain, palmGeometry } from "./scenery.ts";
+import {
+  carGeometry,
+  createGrid,
+  createDistrictNumbers,
+  createRoads,
+  createTerrain,
+  disposeDistrictNumbers,
+  palmGeometry,
+} from "./scenery.ts";
 
 export type WorldCallbacks = {
   cell: (cell: Cell) => void;
@@ -65,6 +74,9 @@ export class CityWorld {
   private roadDetail: THREE.Mesh | null = null;
   private roadLights: THREE.Mesh | null = null;
   private roadSignature = "";
+  disabled = false;
+  private districtId: Sim["district"] = null;
+  private districtNumbers: THREE.Group | null = null;
   private buildings = new Map<string, BuildingRecord>();
   private palms: THREE.InstancedMesh;
   private cars: THREE.InstancedMesh;
@@ -98,7 +110,7 @@ export class CityWorld {
   private hover: Cell | null = null;
   private zone: Cell | null = null;
   private dirtyShadows = true;
-  private dbg: WorldDiagnostics;
+  private dbg!: WorldDiagnostics;
   private readonly observer: ResizeObserver;
 
   constructor(
@@ -281,6 +293,7 @@ export class CityWorld {
   }
 
   private onDown = (e: PointerEvent) => {
+    if (this.disabled) return;
     this.canvas.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size >= 2) {
@@ -300,6 +313,7 @@ export class CityWorld {
   };
 
   private onMove = (e: PointerEvent) => {
+    if (this.disabled) return;
     if (this.pointers.has(e.pointerId))
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     this.hover = this.rayCell(e);
@@ -404,6 +418,7 @@ export class CityWorld {
   };
 
   private onWheel = (e: WheelEvent) => {
+    if (this.disabled) return;
     e.preventDefault();
     this.callbacks.zoom(e.deltaY > 0 ? 1.13 : 0.86);
   };
@@ -479,7 +494,22 @@ export class CityWorld {
     // Pointer interaction uses the same live simulation reference as drawing.
     // The preview below is visual only and must never overwrite this binding.
     this.sim = input;
-    const preview = !input.started && input.buildings.length === 0 && input.roads.length === 0;
+    if (input.district !== this.districtId) {
+      this.districtId = input.district;
+      if (this.districtNumbers) {
+        this.scene.remove(this.districtNumbers);
+        disposeDistrictNumbers(this.districtNumbers);
+        this.districtNumbers = null;
+      }
+      const district = districtById(this.districtId);
+      if (district) {
+        this.districtNumbers = createDistrictNumbers(district);
+        this.scene.add(this.districtNumbers);
+      }
+      this.focus(district ? { c: 36, r: 24 } : { c: 26, r: 24 }, district ? 24 : 31);
+    }
+    const preview =
+      !input.started && !input.district && input.buildings.length === 0 && input.roads.length === 0;
     const sim = preview ? createInitialPreview() : input;
     // On the very first sync, bring a saved city into a portrait-usable frame.
     if (force && input.started && input.buildings.length > 0 && this.viewHeight === 47) {
@@ -500,7 +530,7 @@ export class CityWorld {
       this.scene.remove(this.grid);
       this.grid.geometry.dispose();
       this.grid.material.dispose();
-      this.grid = createGrid(new Set(sim.roads));
+      this.grid = createGrid(new Set(sim.roads), input.district);
       this.scene.add(this.grid);
       for (const item of [this.roadMesh, this.roadDetail, this.roadLights]) {
         if (item) {
@@ -692,6 +722,7 @@ export class CityWorld {
     }
     const { c, r } = this.hover;
     const blocked =
+      !isDistrictLand(this.sim.district ?? null, cellKey(c, r)) ||
       this.sim.roads.includes(cellKey(c, r)) ||
       this.sim.buildings.some((b) => b.c === c && b.r === r);
     const material = this.highlight.material as THREE.MeshBasicMaterial;
@@ -796,6 +827,7 @@ export class CityWorld {
   }
 
   dispose() {
+    if (this.districtNumbers) disposeDistrictNumbers(this.districtNumbers);
     for (const id of [...this.coinSprites.keys()]) this.hideCoin(id);
     this.renderer.setAnimationLoop(null);
     this.observer.disconnect();

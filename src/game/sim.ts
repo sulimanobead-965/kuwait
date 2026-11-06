@@ -1,5 +1,15 @@
 import { CATALOG, ROAD_COST, type Kind } from "./catalog";
 import { COLS, GRID_GEN, LAND, ROWS } from "./land";
+export { districtById, isDistrictLand } from "./districts";
+import {
+  districtById,
+  districtRoads,
+  districtSaveKey,
+  isDistrictLand,
+  sectorAt,
+  type DistrictId,
+} from "./districts";
+export type { DistrictId } from "./districts";
 
 export type Building = {
   id: string;
@@ -28,6 +38,8 @@ export type Sim = {
   history: Sample[];
   difficulty: Difficulty;
   luckAt: number;
+  /** Legacy v2 saves intentionally omit this optional top-level field. */
+  district?: DistrictId | null;
 };
 
 export type Difficulty = "easy" | "medium" | "hard";
@@ -184,6 +196,7 @@ export function createInitial(): Sim {
     history: [],
     difficulty: "easy",
     luckAt: 0,
+    district: null,
   };
   s.history.push(takeSample(s));
   return s;
@@ -230,8 +243,7 @@ export const QUESTS: {
     text: "وفّر كهرباء وماء",
     reward: 900,
     total: 2,
-    progress: (s) =>
-      (countKind(s, "power") > 0 ? 1 : 0) + (countKind(s, "water") > 0 ? 1 : 0),
+    progress: (s) => (countKind(s, "power") > 0 ? 1 : 0) + (countKind(s, "water") > 0 ? 1 : 0),
     done: (s) => countKind(s, "power") > 0 && countKind(s, "water") > 0,
   },
   {
@@ -384,6 +396,8 @@ export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
   if (!isLand(c, r)) return { ok: false, msg: "ما ينفع الطريق في البحر" };
+  if (s.district && isDistrictLand(s.district, cellKey(c, r)))
+    return { ok: false, msg: "المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة" };
   if (s.buildings.some((b) => b.c === c && b.r === r)) return { ok: false, msg: "في مبنى هنا" };
   const k = cellKey(c, r);
   if (s.roads.includes(k)) return { ok: true, fresh: false };
@@ -396,6 +410,8 @@ export function placeRoad(s: Sim, c: number, r: number): Act {
 
 export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: number): Act {
   if (!isLand(c, r)) return { ok: false, msg: "ما ينفع البناء في البحر" };
+  if (!isDistrictLand(s.district ?? null, cellKey(c, r)))
+    return { ok: false, msg: "اختر أرضًا داخل إحدى القطع المرقّمة" };
   if (s.roads.includes(cellKey(c, r)) || s.buildings.some((b) => b.c === c && b.r === r)) {
     return { ok: false, msg: "الأرض مشغولة" };
   }
@@ -431,16 +447,36 @@ export function planZone(
   pick: ZonePick,
   now: number,
 ): { ok: true; roads: number; built: number } | { ok: false; msg: string } {
-  const cA = Math.max(0, Math.min(c0, c1));
-  const cB = Math.min(COLS - 1, Math.max(c0, c1));
-  const rA = Math.max(0, Math.min(r0, r1));
-  const rB = Math.min(ROWS - 1, Math.max(r0, r1));
+  let cA = Math.max(0, Math.min(c0, c1));
+  let cB = Math.min(COLS - 1, Math.max(c0, c1));
+  let rA = Math.max(0, Math.min(r0, r1));
+  let rB = Math.min(ROWS - 1, Math.max(r0, r1));
   if (cB - cA < 3 || rB - rA < 3) return { ok: false, msg: "حدّد منطقة أكبر" };
   if (!pick.streets && !pick.schools && !pick.fire && !pick.landmarks && !pick.parks) {
     return { ok: false, msg: "اختر ماذا يُبنى في المنطقة" };
   }
   let roads = 0;
   let built = 0;
+  if (s.district) {
+    const number = sectorAt(s.district, cellKey(cA, rA));
+    const parcel = districtById(s.district)?.sectors.find((sector) => sector.number === number);
+    if (!parcel) return { ok: false, msg: "ابدأ التحديد على أرض داخل قطعة مرقّمة" };
+    let left: number = COLS,
+      right = 0,
+      top: number = ROWS,
+      bottom = 0;
+    for (const { c, r } of parcel.cells) {
+      left = Math.min(left, c);
+      right = Math.max(right, c);
+      top = Math.min(top, r);
+      bottom = Math.max(bottom, r);
+    }
+    cA = left;
+    cB = right;
+    rA = top;
+    rB = bottom;
+    /* The tool plans the indicated sector, never through another sector. */
+  }
   const period = 4;
   const linesBetween = (a: number, b: number) => {
     const lines = [a];
@@ -542,6 +578,7 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
     return { ok: true };
   }
   const k = cellKey(c, r);
+  if (roadIsSchematic(s.district, k)) return { ok: false, msg: "الشارع الرئيسي ثابت في مخطط الحي" };
   const ri = s.roads.indexOf(k);
   if (ri >= 0) {
     s.roads.splice(ri, 1);
@@ -619,7 +656,11 @@ export function demand(s: Sim, st = stats(s)) {
   const houses = s.buildings.filter((b) => CATALOG[b.kind].pop > 0).length;
   const shops = countKind(s, "shop") + countKind(s, "tower");
   const plants = countKind(s, "power") + countKind(s, "water");
-  const r = clamp((shops * 28 - st.pop) * 0.7 + (st.happy - 55) + (st.short ? -35 : 18) + (houses < 2 ? 20 : 0), -100, 100);
+  const r = clamp(
+    (shops * 28 - st.pop) * 0.7 + (st.happy - 55) + (st.short ? -35 : 18) + (houses < 2 ? 20 : 0),
+    -100,
+    100,
+  );
   const c = clamp((st.pop - shops * 32) * 0.85 + (st.happy > 60 ? 12 : -8), -100, 100);
   const i = clamp(st.pop / 3 - plants * 22 - (st.short ? 10 : 0), -100, 100);
   return { r, c, i };
@@ -671,7 +712,10 @@ export function advanceDays(s: Sim, days: number) {
   if (!brokeBefore && s.coins < 0) pushLog(s, "عجز: مصروف الشهر أكبر من الصندوق");
 }
 
-export function triggerDisaster(s: Sim, kind: DisasterKind): { ok: true; msg: string } | { ok: false; msg: string } {
+export function triggerDisaster(
+  s: Sim,
+  kind: DisasterKind,
+): { ok: true; msg: string } | { ok: false; msg: string } {
   if (s.disaster && s.day < s.disaster.until) {
     return { ok: false, msg: "في كارثة جارية. استنى تخلص" };
   }
@@ -746,14 +790,27 @@ export function advanceQuest(s: Sim) {
   return gained;
 }
 
-export function loadSim(): Sim {
-  if (typeof localStorage === "undefined") return createInitial();
+export function createInitialDistrict(district: DistrictId): Sim {
+  const s = createInitial();
+  s.district = district;
+  s.roads = districtRoads(districtById(district)!);
+  return s;
+}
+
+export const roadIsSchematic = (district: DistrictId | null | undefined, key: string) => {
+  const d = districtById(district);
+  return Boolean(d && districtRoads(d).includes(key));
+};
+
+export function loadSim(district?: DistrictId | null): Sim {
+  if (typeof localStorage === "undefined")
+    return district ? createInitialDistrict(district) : createInitial();
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return createInitial();
+    const raw = localStorage.getItem(district ? districtSaveKey(district) : SAVE_KEY);
+    if (!raw) return district ? createInitialDistrict(district) : createInitial();
     const p = JSON.parse(raw) as Partial<Sim> & { v?: number; grid?: number };
-    if (p.v !== 1 && p.v !== 2) return createInitial();
-    const s = createInitial();
+    if (p.v !== 1 && p.v !== 2) return district ? createInitialDistrict(district) : createInitial();
+    const s = district ? createInitialDistrict(district) : createInitial();
     s.history = [];
     s.coins = Math.max(-8000, Math.floor(Number(p.coins) || 0));
     s.quest = clamp(Number(p.quest) || 0, 0, QUESTS.length);
@@ -765,6 +822,10 @@ export function loadSim(): Sim {
     s.randomDisasters = Boolean(p.randomDisasters);
     s.difficulty = "easy";
     s.luckAt = Math.max(0, Number(p.luckAt) || 0);
+    // Old v2 saves retain the original map even if an extension added unrelated fields.
+    // The independently owned key, not arbitrary save content, decides layout identity.
+    const requestedDistrict = district ?? null;
+    s.district = districtById(requestedDistrict)?.id ?? null;
     const fine = p.grid === GRID_GEN;
     const o = p.ordinances;
     if (o && typeof o === "object") {
@@ -777,13 +838,18 @@ export function loadSim(): Sim {
       };
     }
     const d = p.disaster;
-    if (d && typeof d === "object" && (d.kind === "fire" || d.kind === "storm" || d.kind === "blackout")) {
+    if (
+      d &&
+      typeof d === "object" &&
+      (d.kind === "fire" || d.kind === "storm" || d.kind === "blackout")
+    ) {
       s.disaster = { kind: d.kind, until: Number(d.until) || 0 };
     }
     if (Array.isArray(p.log)) {
       s.log = p.log.filter((x) => typeof x === "string").slice(0, 8);
     }
-    const roads = Array.isArray(p.roads) ? p.roads : [];
+    const roads = Array.isArray(p.roads) ? [...p.roads] : [];
+
     const roadCells: string[] = [];
     for (const k of roads) {
       if (typeof k !== "string") continue;
@@ -800,6 +866,7 @@ export function loadSim(): Sim {
         }
       }
     }
+    if (s.district) roadCells.push(...districtRoads(districtById(s.district)!));
     s.roads = [...new Set(roadCells)];
     const taken = new Set(s.roads);
     const buildings = Array.isArray(p.buildings) ? p.buildings : [];
@@ -831,7 +898,12 @@ export function loadSim(): Sim {
         c = pick[0];
         r = pick[1];
       }
-      if (!isLand(c, r) || taken.has(cellKey(c, r))) continue;
+      if (
+        !isLand(c, r) ||
+        !isDistrictLand(s.district ?? null, cellKey(c, r)) ||
+        taken.has(cellKey(c, r))
+      )
+        continue;
       taken.add(cellKey(c, r));
       s.buildings.push({
         id: String(b.id ?? cellKey(c, r)),
@@ -870,7 +942,7 @@ export function loadSim(): Sim {
     if (!s.history.length) s.history.push(takeSample(s));
     return s;
   } catch {
-    return createInitial();
+    return district ? createInitialDistrict(district) : createInitial();
   }
 }
 
@@ -900,6 +972,7 @@ export function saveSim(s: Sim) {
     difficulty: s.difficulty,
     luckAt: s.luckAt,
     grid: GRID_GEN,
+    ...(s.district ? { district: s.district } : {}),
   };
-  localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  localStorage.setItem(s.district ? districtSaveKey(s.district) : SAVE_KEY, JSON.stringify(data));
 }

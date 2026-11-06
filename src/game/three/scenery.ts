@@ -3,6 +3,8 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { COLS, LAND, ROWS } from "../../game/land.ts";
 import { CELL_SIZE, LAND_HEIGHT, cellWorld } from "./camera.ts";
 import { PALETTE as P } from "./palette.ts";
+import { isDistrictLand } from "../districts.ts";
+import { roadIsSchematic, type Sim } from "../sim.ts";
 
 function tint(geo: THREE.BufferGeometry, color: string) {
   const c = new THREE.Color(color);
@@ -109,12 +111,17 @@ export function createTerrain() {
   return { group, material };
 }
 
-export function createGrid(avoid: ReadonlySet<string> = new Set()) {
+export function createGrid(
+  avoid: ReadonlySet<string> = new Set(),
+  district: Sim["district"] = null,
+) {
   const vertices: number[] = [];
   const half = CELL_SIZE / 2;
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
       if (!LAND[r]![c] || avoid.has(`${c},${r}`)) continue;
+      if (!isDistrictLand(district ?? null, `${c},${r}`) || roadIsSchematic(district, `${c},${r}`))
+        continue;
       const { x, z } = cellWorld(c, r);
       vertices.push(
         x - half,
@@ -222,4 +229,59 @@ export function carGeometry() {
     for (const z of [-0.21, 0.21]) box(parts, x, 0.07, z, 0.08, 0.13, 0.13, P.black);
   box(parts, 0, 0.16, 0.328, 0.22, 0.045, 0.02, P.gold);
   return merge(parts);
+}
+
+export function createDistrictNumbers(district: import("../districts.ts").District) {
+  const group = new THREE.Group();
+  const textures: THREE.Texture[] = [];
+  for (const sector of district.sectors) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.beginPath();
+    ctx.arc(64, 64, 47, 0, Math.PI * 2);
+    ctx.fillStyle = "#eadcbf";
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#4f735e";
+    ctx.stroke();
+    ctx.fillStyle = "#173c40";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = 'bold 64px "Noto Kufi Arabic", sans-serif';
+    ctx.fillText(
+      String(sector.number).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!),
+      64,
+      63,
+    );
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    textures.push(map);
+    const at = cellWorld(sector.x, sector.y);
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.15, 1.15),
+      new THREE.MeshBasicMaterial({
+        map,
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+      }),
+    );
+    label.rotation.x = -Math.PI / 2;
+    label.position.set(at.x, LAND_HEIGHT + 0.05, at.z);
+    group.add(label);
+  }
+  group.userData.textures = textures;
+  return group;
+}
+export function disposeDistrictNumbers(group: THREE.Group) {
+  const textures = group.userData.textures as THREE.Texture[] | undefined;
+  if (textures) for (const texture of textures) texture.dispose();
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh) {
+      node.geometry.dispose();
+      (node.material as THREE.Material).dispose();
+    }
+  });
 }

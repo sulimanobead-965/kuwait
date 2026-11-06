@@ -1,6 +1,7 @@
 import type { Cell } from "./camera";
 import { cellWorld, worldCell } from "./camera";
 import { COLS, LAND, ROWS } from "@/game/land";
+import { districtById, isDistrictLand } from "@/game/districts";
 import type { Sim } from "@/game/sim";
 import type { HudTool } from "@/components/city-hud";
 import type { DayMode } from "./day-night";
@@ -15,6 +16,8 @@ export class FallbackCityWorld {
   private tool: HudTool = null;
   private zoneBox: { c0: number; r0: number; c1: number; r1: number } | null = null;
   private sim: Sim | null = null;
+  private district: Sim["district"] = null;
+  disabled = false;
   private mode: DayMode = "auto";
   private pointers = new Map<number, { x: number; y: number }>();
   private drag: {
@@ -65,6 +68,12 @@ export class FallbackCityWorld {
     canvas.style.touchAction = "none";
   }
 
+  focus(cell: Cell, viewHeight = 24) {
+    const at = cellWorld(cell.c, cell.r);
+    this.target = { x: at.x, z: at.z };
+    this.viewHeight = this.viewHeightGoal = viewHeight;
+  }
+
   diagnostics() {
     return this.info;
   }
@@ -109,6 +118,7 @@ export class FallbackCityWorld {
   }
 
   private onDown = (e: PointerEvent) => {
+    if (this.disabled) return;
     this.canvas.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size > 1) {
@@ -131,6 +141,7 @@ export class FallbackCityWorld {
   };
 
   private onMove = (e: PointerEvent) => {
+    if (this.disabled) return;
     if (this.pointers.has(e.pointerId))
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
@@ -167,6 +178,7 @@ export class FallbackCityWorld {
   };
 
   private onUp = (e: PointerEvent) => {
+    if (this.disabled) return;
     const drag = this.drag;
     this.pointers.delete(e.pointerId);
     if (!drag || this.pointers.size > 0) return;
@@ -188,6 +200,10 @@ export class FallbackCityWorld {
 
   sync(sim: Sim) {
     this.sim = sim;
+    if (sim.district !== this.district) {
+      this.district = sim.district;
+      this.focus(sim.district ? { c: 36, r: 24 } : { c: 26, r: 24 }, sim.district ? 24 : 65);
+    }
     this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
     const ctx = this.ctx;
     if (!ctx) return;
@@ -204,7 +220,11 @@ export class FallbackCityWorld {
         const p = this.project(at.x, at.z);
         const size = (this.height / this.viewHeight) * 1.56;
         const height = size * 0.538;
-        ctx.fillStyle = sim.roads.includes(`${c},${r}`) ? "#35434a" : "#d1bd93";
+        ctx.fillStyle = sim.roads.includes(`${c},${r}`)
+          ? "#35434a"
+          : sim.district && !isDistrictLand(sim.district, `${c},${r}`)
+            ? "#d2c2a1"
+            : "#d1bd93";
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - height / 2);
         ctx.lineTo(p.x + size / 2, p.y);
@@ -213,6 +233,29 @@ export class FallbackCityWorld {
         ctx.closePath();
         ctx.fill();
       }
+    const district = districtById(sim.district);
+    if (district) {
+      const scale = this.height / this.viewHeight;
+      ctx.font = `bold ${Math.max(10, scale * 0.68)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (const sector of district.sectors) {
+        const at = cellWorld(sector.x, sector.y);
+        const point = this.project(at.x, at.z);
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, scale * 0.68, 0, Math.PI * 2);
+        ctx.fillStyle = "#eadcbf";
+        ctx.fill();
+        ctx.strokeStyle = "#4f735e";
+        ctx.stroke();
+        ctx.fillStyle = "#173c40";
+        ctx.fillText(
+          String(sector.number).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!),
+          point.x,
+          point.y,
+        );
+      }
+    }
     for (const b of [...sim.buildings].sort((a, z) => a.c + a.r - z.c - z.r)) {
       const p = this.project(cellWorld(b.c, b.r).x, cellWorld(b.c, b.r).z);
       const scale = this.height / this.viewHeight;

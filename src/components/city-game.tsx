@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool } from "@/components/city-hud";
+import { DistrictSelector } from "@/components/district-selector";
+import { districtById, type DistrictId } from "@/game/districts";
 import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
 import type { Cell } from "@/game/three/camera";
 import type { DayMode } from "@/game/three/day-night";
@@ -15,6 +17,7 @@ import {
   collectAll,
   collectOne,
   createInitial,
+  createInitialDistrict,
   loadSim,
   placeBuilding,
   placeRoad,
@@ -77,6 +80,7 @@ export function CityGame() {
   const [selected, setSelected] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [districtChooser, setDistrictChooser] = useState(false);
   const toastSeq = useRef(0);
 
   toolRef.current = tool;
@@ -145,7 +149,16 @@ export function CityGame() {
       worldRef.current = world;
       failed = true;
     }
-    simRef.current = loadSim();
+    const savedDistrict = localStorage.getItem("omdat-kuwait-selected-district");
+    simRef.current = loadSim(
+      savedDistrict === "yarmouk" || savedDistrict === "adailiya" || savedDistrict === "surra"
+        ? savedDistrict
+        : null,
+    );
+    if (simRef.current.district) {
+      simRef.current.started = true;
+      simRef.current.speed = 0;
+    }
     setSnap(cloneSim(simRef.current));
     world.sync(simRef.current, timeRef.current, true);
     window.__city3d = {
@@ -311,6 +324,10 @@ export function CityGame() {
   }, []);
 
   useEffect(() => {
+    if (worldRef.current) worldRef.current.disabled = districtChooser;
+  }, [districtChooser]);
+
+  useEffect(() => {
     worldRef.current?.setTool(tool);
     worldRef.current?.setZone(zone);
     if (tool?.kind !== "road") lastRoadCell.current = null;
@@ -337,8 +354,50 @@ export function CityGame() {
     };
   }, []);
 
+  const hasLegacy = () => localStorage.getItem("omdat-kuwait-v1") !== null;
   const stored = totalStored(snap);
   const selectedB = snap.buildings.find((b) => b.id === selected) ?? null;
+
+  function chooseDistrict(id: DistrictId) {
+    if (simRef.current.started) saveSim(simRef.current);
+    const next = loadSim(id);
+    if (!next.started && next.buildings.length === 0) simRef.current = createInitialDistrict(id);
+    else simRef.current = next;
+    simRef.current.speed = 0;
+    simRef.current.started = true;
+    localStorage.setItem("omdat-kuwait-selected-district", id);
+    setDistrictChooser(false);
+    setConfirmReset(false);
+    setSelected(null);
+    setTool(null);
+    setZone(null);
+    zoneRectRef.current = null;
+    worldRef.current?.sync(simRef.current, timeRef.current, true);
+    sync();
+    pushToast(`${districtById(id)!.name}: حُفظ تقدّمك، ويمكنك التبديل من زر الأحياء`);
+  }
+
+  function resumeLegacy() {
+    if (simRef.current.started) saveSim(simRef.current);
+    simRef.current = loadSim();
+    simRef.current.speed = 0;
+    localStorage.removeItem("omdat-kuwait-selected-district");
+    setDistrictChooser(false);
+    setTool(null);
+    setZone(null);
+    setSelected(null);
+    setConfirmReset(false);
+    setSnap(cloneSim(simRef.current));
+    worldRef.current?.sync(simRef.current, timeRef.current, true);
+    pushToast("استعدت مدينة الكويت القديمة دون تغيير حفظها");
+  }
+
+  function stopAndSave() {
+    simRef.current.speed = 0;
+    if (simRef.current.started) saveSim(simRef.current);
+    // Merely opening or browsing the selector never writes an unstarted city.
+    setSnap(cloneSim(simRef.current));
+  }
 
   function start() {
     simRef.current.started = true;
@@ -348,7 +407,8 @@ export function CityGame() {
   }
 
   function reset() {
-    simRef.current = createInitial();
+    const district = simRef.current.district ?? null;
+    simRef.current = district ? createInitialDistrict(district) : createInitial();
     simRef.current.started = true;
     simRef.current.speed = 1;
     setTool(null);
@@ -495,6 +555,13 @@ export function CityGame() {
         confirmReset={confirmReset}
         toasts={toasts}
         onStart={start}
+        onDistricts={() => {
+          stopAndSave();
+          setDistrictChooser(true);
+        }}
+        onFocusDistrict={() => {
+          if (simRef.current.district) worldRef.current?.focus({ c: 36, r: 24 }, 24);
+        }}
         onSpeed={onSpeed}
         onCategory={onCategory}
         onRoad={onRoad}
@@ -519,6 +586,17 @@ export function CityGame() {
         zone={zone}
         onZoneApply={onZoneApply}
         onZoneCancel={onZoneCancel}
+      />
+      <DistrictSelector
+        open={districtChooser}
+        current={simRef.current.district ?? null}
+        onClose={() => {
+          if (districtChooser && simRef.current.started) simRef.current.speed = 0;
+          setDistrictChooser(false);
+        }}
+        onChoose={chooseDistrict}
+        onResumeLegacy={resumeLegacy}
+        onHasLegacy={hasLegacy}
       />
     </main>
   );
