@@ -26,6 +26,16 @@ import {
 } from "lucide-react";
 import { CATALOG, kindsIn, maxLevelOf, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
+  BuilderCard,
+  NumberField,
+  People,
+  PeopleButton,
+  type Player,
+} from "@/components/hud-social";
+import { murabahaInstallment, type BondOrder, type ProjectOrder } from "@/game/finance";
+import type { NpcId } from "@/game/npcs";
+import { unreadCount } from "@/game/npcs";
+import {
   Achievements,
   CelebrationCard,
   Companies,
@@ -58,8 +68,8 @@ import {
   EVENTS,
   feeRevenue,
   loanInstallment,
-  LOAN_LIMIT,
-  LOAN_RATE,
+  loanLimit,
+  minLoanRate,
   MODEL_AREAS,
   RANKS,
   rankOf,
@@ -98,7 +108,8 @@ type Panel =
   | "projects"
   | "companies"
   | "report"
-  | "achievements";
+  | "achievements"
+  | "people";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -155,6 +166,10 @@ export function CityHud({
   onBond,
   onProject,
   onConsult,
+  onMudaraba,
+  onMudarabaWithdraw,
+  onSukuk,
+  onMurabaha,
   onCrisis,
   onPhoto,
   onMusic,
@@ -165,6 +180,16 @@ export function CityHud({
   celebration,
   onCelebrationClose,
   onLoan,
+  player,
+  onEditPlayer,
+  onBuilderHire,
+  onBuilderFire,
+  onBuilderShare,
+  onNpcOpen,
+  onChat,
+  onLend,
+  onBorrow,
+  onNpcRepay,
   onRepay,
   onEvent,
   onModel,
@@ -204,11 +229,25 @@ export function CityHud({
   onTax: (n: number) => void;
   onCost: (key: CostKey, value: number) => void;
   onAutoRaise: (pct: number) => void;
-  onDeposit: (amount: number) => void;
+  onDeposit: (amount: number, rate: number) => void;
   onWithdraw: (amount: number) => void;
-  onBond: (index: number) => void;
-  onProject: (index: number) => void;
+  onBond: (order: number | BondOrder) => void;
+  onProject: (order: number | ProjectOrder) => void;
+  player: Player;
+  onEditPlayer: () => void;
+  onBuilderHire: () => void;
+  onBuilderFire: () => void;
+  onBuilderShare: (pct: number) => void;
+  onNpcOpen: (id: NpcId) => void;
+  onChat: (id: NpcId, text: string) => void;
+  onLend: (id: NpcId, amount: number, rate: number, months: number) => void;
+  onBorrow: (id: NpcId, amount: number, rate: number, months: number) => void;
+  onNpcRepay: (id: NpcId) => void;
   onConsult: () => void;
+  onMudaraba: (amount: number, expected: number) => void;
+  onMudarabaWithdraw: () => void;
+  onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
+  onMurabaha: (amount: number, profit: number, months: number) => void;
   onCrisis: (kind: CrisisKind) => void;
   onPhoto: () => void;
   onMusic: () => void;
@@ -218,7 +257,7 @@ export function CityHud({
   onPanel: (panel: string | null) => void;
   celebration: Celebration | null;
   onCelebrationClose: () => void;
-  onLoan: (amount: number) => void;
+  onLoan: (amount: number, rate: number) => void;
   onRepay: (amount: number) => void;
   onEvent: (kind: EventKind) => void;
   onModel: (kind: ModelKind) => void;
@@ -289,7 +328,7 @@ export function CityHud({
       <div className="pointer-events-none absolute inset-0 z-10">
         {snap.started && <WeatherOverlay snap={snap} />}
         {snap.started && (
-          <div className="safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
+          <div className="hud-tools safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
             <Round
               label="سكن وتجارة"
               tut="tool-homes"
@@ -329,11 +368,17 @@ export function CityHud({
             type="button"
             data-testid="rank"
             onClick={() => togglePanel("advisors")}
-            className="safe-top pointer-events-auto absolute left-2 top-0 mt-2 flex flex-col items-start rounded-md bg-sc-ink/85 px-2 py-1 text-right text-sc-mint"
+            className="hud-badge pointer-events-auto absolute left-2 top-0 mt-2 flex flex-col items-start rounded-md bg-sc-ink/85 px-2 py-1 text-right text-sc-mint"
             dir="rtl"
           >
-            <span className="flex items-center gap-1 text-sm font-extrabold">
-              <Trophy size={14} /> {RANKS[rankOf(st.residents)]!.title}
+            <span className="flex items-center gap-1.5 text-sm font-extrabold">
+              <span className="text-2xl leading-none">{player.avatar}</span>
+              <span className="flex flex-col leading-tight">
+                <span data-testid="player-label">{player.name}</span>
+                <span className="flex items-center gap-1 text-xs text-sc-gold">
+                  <Trophy size={12} /> {RANKS[rankOf(st.residents)]!.title}
+                </span>
+              </span>
             </span>
             <span className={`text-xs font-bold ${st.happy < 40 ? "text-coral" : "text-sc-lime"}`}>
               رضا الناس {st.happy}%
@@ -341,7 +386,8 @@ export function CityHud({
           </button>
         )}
         {snap.started && (
-          <div className="pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
+          <div className="hud-left pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
+            <PeopleButton unread={unreadCount(snap)} onClick={() => togglePanel("people")} />
             <Round label="تقريب" onClick={() => onZoom(1.28)}>
               <Plus size={18} />
             </Round>
@@ -394,7 +440,7 @@ export function CityHud({
           </div>
           {zone && <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />}
           {panel && snap.started && (
-            <section className="sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md">
+            <section className="hud-panel sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md">
               <div className="sc-title m-2">
                 <button
                   type="button"
@@ -414,6 +460,7 @@ export function CityHud({
                   {panel === "companies" && "الشركات والاستثمار"}
                   {panel === "report" && "التقرير السنوي"}
                   {panel === "achievements" && "الحقب والإنجازات"}
+                  {panel === "people" && "اللاعبون والمحادثات"}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -436,6 +483,7 @@ export function CityHud({
                     onTax={onTax}
                     onCost={onCost}
                     onAutoRaise={onAutoRaise}
+                    onMurabaha={onMurabaha}
                     onLoan={onLoan}
                     onRepay={onRepay}
                   />
@@ -448,10 +496,34 @@ export function CityHud({
                     onBond={onBond}
                     onProject={onProject}
                     onConsult={onConsult}
+                    onMudaraba={onMudaraba}
+                    onMudarabaWithdraw={onMudarabaWithdraw}
+                    onSukuk={onSukuk}
                   />
                 )}
                 {panel === "report" && <YearReport snap={snap} />}
                 {panel === "achievements" && <Achievements snap={snap} />}
+                {panel === "people" && (
+                  <People
+                    snap={snap}
+                    player={player}
+                    onOpen={onNpcOpen}
+                    onChat={onChat}
+                    onLend={onLend}
+                    onBorrow={onBorrow}
+                    onRepay={onNpcRepay}
+                  />
+                )}
+                {panel === "projects" && (
+                  <div className="mb-3">
+                    <BuilderCard
+                      snap={snap}
+                      onHire={onBuilderHire}
+                      onFire={onBuilderFire}
+                      onShare={onBuilderShare}
+                    />
+                  </div>
+                )}
                 {panel === "projects" && (
                   <Projects
                     snap={snap}
@@ -688,6 +760,7 @@ export function CityHud({
                   else if (action === "music") onMusic();
                   else if (action === "mute") onMute();
                   else if (action === "reset") onAskReset();
+                  else if (action === "profile") onEditPlayer();
                   else setPanel(action);
                 }}
               />
@@ -726,7 +799,7 @@ export function CityHud({
                 ☰ المزيد
               </Menu>
             </div>
-            <div className="flex items-center gap-1 overflow-x-auto px-2 pb-2" dir="ltr">
+            <div className="hud-status flex items-center gap-1 overflow-x-auto px-2 pb-2" dir="ltr">
               <Round label="إيقاف" on={snap.speed === 0} onClick={() => onSpeed(0)}>
                 <Pause size={16} />
               </Round>
@@ -739,7 +812,7 @@ export function CityHud({
               <Round label="أسرع" on={snap.speed === 3} onClick={() => onSpeed(3)}>
                 <ChevronsRight size={16} />
               </Round>
-              <span className="sc-lcd shrink-0 text-sm" dir="ltr">
+              <span className="sc-lcd shrink-0 text-sm" dir="ltr" data-hud="date">
                 {formatCityDate(snap.day)}
               </span>
               <span
@@ -755,7 +828,7 @@ export function CityHud({
                 <span dir="ltr">{money(st.residents)}</span>
               </span>
             </div>
-            <p className="sc-ticker flex items-center px-3 text-sm" dir="rtl">
+            <p className="hud-ticker sc-ticker flex items-center px-3 text-sm" dir="rtl">
               <span className="truncate">{line}</span>
             </p>
           </footer>
@@ -947,6 +1020,7 @@ function Budget({
   onTax,
   onCost,
   onAutoRaise,
+  onMurabaha,
   onLoan,
   onRepay,
 }: {
@@ -954,14 +1028,18 @@ function Budget({
   onTax: (n: number) => void;
   onCost: (key: CostKey, value: number) => void;
   onAutoRaise: (pct: number) => void;
-  onLoan: (amount: number) => void;
+  onMurabaha: (amount: number, profit: number, months: number) => void;
+  onLoan: (amount: number, rate: number) => void;
   onRepay: (amount: number) => void;
 }) {
   const st = stats(snap);
   const income = monthlyIncome(snap) + feeRevenue(snap, st);
   const due = loanInstallment(snap);
   const cost = monthlyUpkeep(snap) + due;
-  const room = Math.max(0, LOAN_LIMIT - snap.loan);
+  const limit = loanLimit(snap, st);
+  const floor = minLoanRate(snap, st);
+  const [loanAmount, setLoanAmount] = useState(10_000);
+  const [loanRate, setLoanRate] = useState(Math.ceil(floor * 1000) / 10);
   return (
     <div className="space-y-3" dir="rtl">
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
@@ -997,36 +1075,34 @@ function Budget({
         />
       </label>
       <CostSliders snap={snap} onCost={onCost} onAutoRaise={onAutoRaise} />
+      <Murabaha snap={snap} onMurabaha={onMurabaha} />
       <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
         <p className="flex items-center gap-1 text-sm font-extrabold">
           <Bank size={16} /> قرض البنك
         </p>
         <p className="mt-1 text-xs leading-relaxed">
-          الفائدة {Math.round(LOAN_RATE * 100)}٪. القسط ينخصم كل شهر تلقائياً
+          اختر المبلغ والفائدة بنفسك. أقل فائدة يقبلها البنك الآن {Math.ceil(floor * 1000) / 10}٪، وأي
+          نسبة أعلى مقبولة. القسط ينخصم كل شهر تلقائياً
           {snap.loan > 0 ? ` (${fmt(due)} د.ك)` : ""}. الدين الحالي{" "}
-          <b dir="ltr">{fmt(snap.loan)}</b> د.ك من حد {fmt(LOAN_LIMIT)}.
+          <b dir="ltr">{fmt(snap.loan)}</b> د.ك من حد {fmt(limit)}.
         </p>
         {snap.coins < 0 && (
           <p className="mt-1 text-xs font-extrabold text-coral">
             الرصيد بالسالب: خذ قرضاً لتغطية العجز.
           </p>
         )}
-        <div className="mt-2 grid grid-cols-3 gap-1">
-          {[2000, 10000, Math.max(20000, Math.round(st.residents / 1000) * 1000)]
-            .filter((v, i, a) => a.indexOf(v) === i)
-            .map((amount) => (
-            <button
-              key={amount}
-              type="button"
-              data-testid={`loan-${amount}`}
-              disabled={amount * (1 + LOAN_RATE) > room}
-              onClick={() => onLoan(amount)}
-              className="sc-menu text-xs disabled:opacity-40"
-            >
-              +{fmt(amount)}
-            </button>
-          ))}
+        <div className="mt-2 grid grid-cols-2 gap-1">
+          <NumberField label="المبلغ" value={loanAmount} onChange={setLoanAmount} suffix="د.ك" testid="loan-amount" />
+          <NumberField label="الفائدة" value={loanRate} onChange={setLoanRate} suffix="٪" testid="loan-rate" />
         </div>
+        <button
+          type="button"
+          data-testid="loan-take"
+          onClick={() => onLoan(loanAmount, loanRate / 100)}
+          className="sc-menu sc-on mt-1 w-full text-xs"
+        >
+          اقترض {fmt(loanAmount)} د.ك بفائدة {loanRate}٪
+        </button>
         {snap.loan > 0 && (
           <button
             type="button"
@@ -1038,6 +1114,49 @@ function Budget({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function Murabaha({
+  snap,
+  onMurabaha,
+}: {
+  snap: Sim;
+  onMurabaha: (amount: number, profit: number, months: number) => void;
+}) {
+  const [amount, setAmount] = useState(50_000);
+  const [profit, setProfit] = useState(8);
+  const [months, setMonths] = useState(24);
+  const owed = snap.finance.murabaha.reduce((t, m) => t + m.left, 0);
+  return (
+    <div className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="murabaha-card">
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <Bank size={16} /> تمويل إسلامي (مرابحة)
+      </p>
+      <p className="mt-1 text-xs leading-relaxed">
+        بديل القرض: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية،
+        وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف فوائد، فقط تبرع خيري بسيط. تقدر تأخذ التمويل
+        والقرض معاً.
+      </p>
+      {owed > 0 && (
+        <p className="mt-1 text-xs font-extrabold">
+          عليك للمصرف {fmt(owed)} د.ك · القسط {fmt(murabahaInstallment(snap))} شهرياً
+        </p>
+      )}
+      <div className="mt-1 grid grid-cols-3 gap-1">
+        <NumberField label="المبلغ" value={amount} onChange={setAmount} suffix="د.ك" testid="murabaha-amount" />
+        <NumberField label="ربح المصرف" value={profit} onChange={setProfit} suffix="٪" testid="murabaha-profit" />
+        <NumberField label="الأشهر" value={months} onChange={(v) => setMonths(Math.max(1, Math.round(v)))} />
+      </div>
+      <button
+        type="button"
+        data-testid="murabaha-take"
+        onClick={() => onMurabaha(amount, profit / 100, months)}
+        className="sc-menu sc-on mt-1 w-full text-xs"
+      >
+        خذ تمويل {fmt(amount)} د.ك بربح {profit}٪
+      </button>
     </div>
   );
 }

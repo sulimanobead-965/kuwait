@@ -1,5 +1,7 @@
 import { CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
 import { consulting, emptyFinance, financeMonth, loadFinance, type FinanceState } from "./finance";
+import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
+import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import { COLS, GRID_GEN, LAND, ROWS } from "./land";
 export { districtById, isDistrictLand } from "./districts";
 import {
@@ -66,6 +68,10 @@ export type Sim = {
   crisis: Crisis | null;
   /** Bank, developer and consultancy dealings. */
   finance: FinanceState;
+  /** The construction advisor who builds and upgrades with a share of the budget. */
+  builder: BuilderState;
+  /** Virtual players: chats and loans in both directions. */
+  npcs: NpcState[];
   /** One-off story markers (event held, loan repaid, crisis survived…). */
   flags: string[];
   achievements: string[];
@@ -188,6 +194,9 @@ export function priceOf(base: number, _s: Sim) {
   return prepaid ? 0 : Math.round(base);
 }
 
+/** Lowest share of homes still lived in, however bad things get. */
+export const OCCUPANCY_MIN = 0.1;
+
 /** People per housing unit: the grid counts households, the HUD counts residents. */
 export const RESIDENTS_PER_UNIT = 15;
 
@@ -294,11 +303,33 @@ export function startEvent(s: Sim, kind: EventKind): Act {
 export const LOAN_RATE = 0.12;
 export const LOAN_LIMIT = 40000;
 
-export function takeLoan(s: Sim, amount: number): Act {
-  if (amount <= 0) return { ok: false, msg: "مبلغ غير صحيح" };
-  const debt = Math.round(amount * (1 + LOAN_RATE));
-  if (s.loan + debt > LOAN_LIMIT)
-    return { ok: false, msg: "البنك رفض: الديون وصلت الحد" };
+/** The bank lends more to bigger cities. */
+export function loanLimit(s: Sim, st = stats(s)) {
+  return Math.max(LOAN_LIMIT, Math.round(st.residents * 4 + Math.max(0, s.coins) * 0.5));
+}
+
+/**
+ * The lowest yearly rate the bank accepts right now: dearer when you already owe a
+ * lot, during an economic crisis or a war.
+ */
+export function minLoanRate(s: Sim, st = stats(s)) {
+  const load = s.loan / Math.max(1, loanLimit(s, st));
+  const crisis = crisisOf(s);
+  return 0.05 + load * 0.15 + (crisis === "economic" ? 0.08 : crisis === "war" ? 0.05 : 0);
+}
+
+export function takeLoan(s: Sim, amount: number, rate = LOAN_RATE): Act {
+  if (!(amount > 0)) return { ok: false, msg: "مبلغ غير صحيح" };
+  if (!s.finance || s.finance.down.bank > s.day) return { ok: false, msg: "البنك مغلق بعد إفلاسه" };
+  const st = stats(s);
+  const floor = minLoanRate(s, st);
+  if (rate < floor)
+    return {
+      ok: false,
+      msg: `البنك يرفض: أقل فائدة يقبلها الآن ${Math.ceil(floor * 1000) / 10}٪`,
+    };
+  const debt = Math.round(amount * (1 + rate));
+  if (s.loan + debt > loanLimit(s, st)) return { ok: false, msg: "البنك رفض: الديون وصلت الحد" };
   s.coins += amount;
   s.loan += debt;
   pushLog(s, `قرض ${amount.toLocaleString("en-US")} د.ك من البنك`);
@@ -381,11 +412,24 @@ export function costRevenue(s: Sim, st = stats(s)) {
   const rows = {} as Record<CostKey, number>;
   let total = 0;
   for (const k of COST_KEYS) {
-    const v = Math.round(st.residents * COST_ITEMS[k].perResident * (s.costs[k] / 100));
+    const v = Math.round(st.residents * COST_ITEMS[k].perResident * collectedShare(s.costs[k]));
     rows[k] = v;
     total += v;
   }
   return { rows, total };
+}
+
+/** Highest cost setting, in percent of the normal tariff. */
+export const COST_MAX = 100_000;
+
+/**
+ * What a price setting actually brings in, as a multiple of the normal tariff.
+ * People pay more as prices rise, but past ~400% they stop paying, cheat or leave,
+ * so 10,000% brings in almost nothing (a Laffer curve).
+ */
+export function collectedShare(percent: number) {
+  const p = Math.max(0, percent) / 100;
+  return p <= 1 ? p : p * Math.exp(-(p - 1) / 4);
 }
 
 /** Monthly revenue from living costs paid by residents. */
@@ -709,6 +753,8 @@ export function createInitial(): Sim {
     fx: [],
     crisis: null,
     finance: emptyFinance(),
+    builder: emptyBuilder(),
+    npcs: emptyNpcs(),
     flags: [],
     achievements: [],
     collected: 0,
@@ -734,6 +780,13 @@ export function cloneSim(s: Sim): Sim {
     years: [...s.years],
     flags: [...s.flags],
     achievements: [...s.achievements],
+    builder: { ...s.builder },
+    npcs: s.npcs.map((n) => ({
+      ...n,
+      owesMe: n.owesMe.map((l) => ({ ...l })),
+      iOwe: n.iOwe.map((l) => ({ ...l })),
+      chat: [...n.chat],
+    })),
     finance: {
       ...s.finance,
       bonds: s.finance.bonds.map((b) => ({ ...b })),
@@ -909,7 +962,7 @@ export function stats(s: Sim): CityStats {
     if (b.kind === "police") police += 1;
   }
   const capacity = pop;
-  pop = Math.round(capacity * clamp(s.occupancy ?? 1, 0.25, 1));
+  pop = Math.round(capacity * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1));
   const blackout = s.disaster?.kind === "blackout" && s.day < s.disaster.until;
   if (blackout) powerGive = 0;
   const grace = pop < 20;
@@ -933,7 +986,7 @@ export function stats(s: Sim): CityStats {
   const weight = clamp((capacity - 60) / 400, 0, 1) * 9;
   for (const v of Object.values(cover)) happy -= Math.round((1 - v) * weight);
   // Living costs above the normal tariff anger people; below it pleases them.
-  happy -= Math.round((costIndex(s) - 100) / 6);
+  happy -= Math.round(Math.min(120, (costIndex(s) - 100) / 6));
   const crisis = crisisOf(s);
   if (crisis) {
     let hit2 = CRISES[crisis].happy;
@@ -996,7 +1049,7 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
   v *= neighborEffect(s, b).mult;
   if (calendarMood(s).ramadan && ["shop", "avenues", "mubarakiya"].includes(b.kind)) v *= 1.1;
   if (d.needsPop > 0 && st.pop < d.needsPop) v *= 0.35;
-  if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, 0.25, 1);
+  if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1);
   if (d.coastBoost && coastal(b.c, b.r)) v *= 1.15;
   if (s.ordinances.smokeBan && (b.kind === "shop" || b.kind === "tower")) v *= 0.9;
   const tax = 0.55 + (clamp(s.tax, 0, 300) / 100) * 1.2;
@@ -1702,16 +1755,24 @@ export function advanceDays(s: Sim, days: number) {
       war: crisis === "war",
       random: Math.random,
     });
+    const works = builderMonth(s);
+    if (works) pushLog(s, `مستشار البناء: ${works}`);
+    for (const line of npcMonth(s)) pushLog(s, line);
     s.coins = Math.max(-5_000_000, s.coins);
     // People move in when they are happy and served, and leave when they are not.
     const ev = activeEvent(s);
     const target = clamp(
-      0.35 + (st.happy / 100) * 0.75 + (ev?.draw ?? 0) - (crisis ? CRISES[crisis].leave : 0),
-      0.25,
+      0.35 +
+        (st.happy / 100) * 0.75 +
+        (ev?.draw ?? 0) -
+        (crisis ? CRISES[crisis].leave : 0) -
+        // Extreme living costs empty the city no matter how happy it was.
+        Math.min(0.45, Math.max(0, costIndex(s) - 300) / 2000),
+      OCCUPANCY_MIN,
       1,
     );
     const before2 = s.occupancy;
-    s.occupancy = clamp(s.occupancy + (target - s.occupancy) * 0.35, 0.25, 1);
+    s.occupancy = clamp(s.occupancy + (target - s.occupancy) * 0.35, OCCUPANCY_MIN, 1);
     if (st.capacity >= 60 && before2 - s.occupancy > 0.04)
       pushLog(s, "ناس تطلع من المنطقة: الرضا نازل");
     s.history.push(takeSample(s));
@@ -1756,7 +1817,8 @@ function closeYear(s: Sim) {
   if (s.years.length > 60) s.years.splice(0, s.years.length - 60);
   s.ytd = { income: 0, spend: 0, residents0: st.residents };
   if (s.autoRaise > 0)
-    for (const k of COST_KEYS) s.costs[k] = clamp(Math.round(s.costs[k] * (1 + s.autoRaise / 100)), 50, 250);
+    for (const k of COST_KEYS)
+      s.costs[k] = clamp(Math.round(s.costs[k] * (1 + s.autoRaise / 100)), 0, COST_MAX);
   pushLog(s, `التقرير السنوي ${year} جاهز`);
 }
 
@@ -1963,8 +2025,8 @@ export function loadSim(district?: DistrictId | null): Sim {
     const legacyFees = (p as { fees?: number }).fees;
     const rawCosts = (p.costs ?? {}) as Partial<Costs>;
     for (const k of COST_KEYS)
-      s.costs[k] = clamp(Number(rawCosts[k] ?? legacyFees ?? 100), 50, 250);
-    s.autoRaise = clamp(Number(p.autoRaise) || 0, 0, 10);
+      s.costs[k] = clamp(Number(rawCosts[k] ?? legacyFees ?? 100), 0, COST_MAX);
+    s.autoRaise = clamp(Number(p.autoRaise) || 0, 0, COST_MAX);
     if (Array.isArray(p.years)) s.years = p.years.filter((y) => y && typeof y === "object").slice(-60);
     if (p.ytd && typeof p.ytd === "object")
       s.ytd = {
@@ -1973,6 +2035,8 @@ export function loadSim(district?: DistrictId | null): Sim {
         residents0: Number(p.ytd.residents0) || 0,
       };
     s.finance = loadFinance(p.finance);
+    s.builder = loadBuilder(p.builder);
+    s.npcs = loadNpcs(p.npcs);
     s.flags = Array.isArray(p.flags) ? p.flags.filter((x) => typeof x === "string") : [];
     s.achievements = Array.isArray(p.achievements)
       ? p.achievements.filter((x) => typeof x === "string")
@@ -1988,7 +2052,7 @@ export function loadSim(district?: DistrictId | null): Sim {
       s.fx = p.fx
         .filter((f) => f && typeof f === "object" && (f.kind === "fire" || f.kind === "smoke"))
         .map((f) => ({ kind: f.kind, c: Number(f.c) || 0, r: Number(f.r) || 0, until: Number(f.until) || 0 }));
-    s.occupancy = clamp(Number(p.occupancy ?? 0.85), 0.25, 1);
+    s.occupancy = clamp(Number(p.occupancy ?? 0.85), OCCUPANCY_MIN, 1);
     s.loan = Math.max(0, Number(p.loan) || 0);
     s.fame = clamp(Number(p.fame) || 0, 0, 12);
     s.rank = clamp(Number(p.rank) || 0, 0, RANKS.length - 1);
@@ -2117,6 +2181,8 @@ export function saveSim(s: Sim) {
     years: s.years,
     ytd: s.ytd,
     finance: s.finance,
+    builder: s.builder,
+    npcs: s.npcs,
     flags: s.flags,
     achievements: s.achievements,
     collected: s.collected,

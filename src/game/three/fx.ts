@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { COLS, LAND, ROWS } from "../land.ts";
 import type { CrisisKind, DisasterKind } from "../sim.ts";
 import {
+  CAMERA_DISTANCE,
   CAMERA_PITCH_DEGREES,
   CAMERA_YAW_DEGREES,
   CELL_SIZE,
@@ -1055,8 +1056,9 @@ export class CityFx {
     this.haze.visible = hazeAlpha > 0.004;
     this.hazeMaterial.uniforms.color!.value.copy(haze);
     this.hazeMaterial.uniforms.opacity!.value = Math.min(0.6, hazeAlpha);
-    fog.near = Math.max(20, near);
-    fog.far = Math.max(fog.near + 60, far);
+    // Tuned for a camera 100 units from its target; keep the same depths in front of it.
+    fog.near = Math.max(20, near) + CAMERA_DISTANCE - 100;
+    fog.far = Math.max(fog.near + 60, far + CAMERA_DISTANCE - 100);
   }
 
   dispose() {

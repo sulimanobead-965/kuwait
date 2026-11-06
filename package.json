@@ -19,7 +19,7 @@
     "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test:game": "node --import tsx --test src/game/sim.integration.test.ts src/game/economy.test.ts src/game/verify-layouts.test.ts src/game/three/day-night.test.ts src/game/three/raycasting.test.ts"
+    "test:game": "node --import tsx --test src/game/sim.integration.test.ts src/game/economy.test.ts src/game/advisors.test.ts src/game/verify-layouts.test.ts src/game/three/day-night.test.ts src/game/three/raycasting.test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

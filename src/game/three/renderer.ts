@@ -7,6 +7,7 @@ import { COLS, ROWS } from "@/game/land";
 import { isLandmark } from "@/game/catalog";
 import { districtBounds, districtById, sectorsForZone } from "@/game/districts";
 import {
+  CAMERA_DISTANCE,
   CAMERA_PITCH_DEGREES,
   CAMERA_YAW_DEGREES,
   CELL_SIZE,
@@ -29,9 +30,12 @@ import {
   createParcels,
   createDistrictNumbers,
   createRoads,
+  createPlaceLabels,
   createTerrain,
   disposeDistrictNumbers,
+  disposePlaceLabels,
   palmGeometry,
+  updatePlaceLabels,
 } from "./scenery.ts";
 
 export type WorldCallbacks = {
@@ -72,10 +76,10 @@ type BuildingRecord = {
 
 /** Finger travel (px) before a build tap turns into a map drag. */
 const PLACE_SLOP = 14;
-/** Farthest zoom-out: lets a phone see a whole neighborhood (or much of the free zone). */
-const MAX_VIEW = 150;
-/** Start-screen showcase sits on the real Sharq waterfront (see land.ts). */
-const PREVIEW_SHIFT = { c: 20, r: -7 } as const;
+/** Farthest zoom-out: a desktop sees the whole 150×134 map, a phone its full height. */
+const MAX_VIEW = 280;
+/** Start-screen showcase sits on the real Sharq waterfront just south of Kuwait Towers (see land.ts). */
+const PREVIEW_SHIFT = { c: 66, r: 10 } as const;
 export const PREVIEW_FOCUS = { c: 26 + PREVIEW_SHIFT.c, r: 24 + PREVIEW_SHIFT.r } as const;
 
 export class CityWorld {
@@ -84,7 +88,13 @@ export class CityWorld {
   camera: THREE.OrthographicCamera;
   private materials = cityMaterials();
   private terrain = createTerrain();
-  private grid = createGrid();
+  /** Tile grid, built lazily: only a selected tool shows it, and it spans every land cell. */
+  private grid = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial());
+  private gridSource: { roads: ReadonlySet<string>; district: Sim["district"] } | null = {
+    roads: new Set(),
+    district: null,
+  };
+  private placeLabels = createPlaceLabels();
   private parcels: THREE.Mesh | null = null;
   private fx = new CityFx();
   private fxInput: FxInput = {
@@ -182,17 +192,18 @@ export class CityWorld {
     this.renderer.shadowMap.autoUpdate = false;
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES);
     const yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
-    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, 900);
+    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, CAMERA_DISTANCE + 800);
     this.camera.position
       .copy(this.target)
       .add(
         new THREE.Vector3(
-          Math.sin(yaw) * Math.cos(pitch) * 100,
-          Math.sin(pitch) * 100,
-          Math.cos(yaw) * Math.cos(pitch) * 100,
+          Math.sin(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
+          Math.sin(pitch) * CAMERA_DISTANCE,
+          Math.cos(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
         ),
       );
     this.camera.lookAt(this.target);
+    this.grid.visible = false;
     this.scene.add(
       this.camera,
       this.hemi,
@@ -200,6 +211,7 @@ export class CityWorld {
       this.sun.target,
       this.terrain.group,
       this.grid,
+      this.placeLabels,
     );
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.width < 600 ? 1024 : 2048, this.width < 600 ? 1024 : 2048);
@@ -212,7 +224,7 @@ export class CityWorld {
     this.sun.shadow.normalBias = 0.025;
     this.sun.shadow.bias = -0.00018;
     this.sun.shadow.radius = 2;
-    this.scene.fog = new THREE.Fog("#a5cbd2", 220, 720);
+    this.scene.fog = new THREE.Fog("#a5cbd2", CAMERA_DISTANCE + 120, CAMERA_DISTANCE + 620);
     this.scene.background = new THREE.Color("#a5cbd2");
     const water = new THREE.Mesh(
       new THREE.BoxGeometry(COLS * CELL_SIZE + 48, 0.3, ROWS * CELL_SIZE + 48),
@@ -514,9 +526,9 @@ export class CityWorld {
       .copy(this.target)
       .add(
         new THREE.Vector3(
-          Math.sin(yaw) * Math.cos(pitch) * 100,
-          Math.sin(pitch) * 100,
-          Math.cos(yaw) * Math.cos(pitch) * 100,
+          Math.sin(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
+          Math.sin(pitch) * CAMERA_DISTANCE,
+          Math.cos(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
         ),
       );
     this.camera.lookAt(this.target);
@@ -652,6 +664,20 @@ export class CityWorld {
   setTool(tool: HudTool) {
     this.currentTool = tool;
     this.grid.visible = Boolean(tool);
+    if (tool) this.buildGrid();
+  }
+
+  /** Builds the pending tile grid, if any; cheap no-op once it is current. */
+  private buildGrid() {
+    if (!this.gridSource) return;
+    const { roads, district } = this.gridSource;
+    this.gridSource = null;
+    this.scene.remove(this.grid);
+    this.grid.geometry.dispose();
+    this.grid.material.dispose();
+    this.grid = createGrid(roads, district);
+    this.grid.visible = Boolean(this.currentTool);
+    this.scene.add(this.grid);
   }
 
   setDayMode(mode: DayMode) {
@@ -676,9 +702,9 @@ export class CityWorld {
       .copy(this.target)
       .add(
         new THREE.Vector3(
-          Math.sin(yaw) * Math.cos(pitch) * 100,
-          Math.sin(pitch) * 100,
-          Math.cos(yaw) * Math.cos(pitch) * 100,
+          Math.sin(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
+          Math.sin(pitch) * CAMERA_DISTANCE,
+          Math.cos(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
         ),
       );
     this.camera.lookAt(this.target);
@@ -711,9 +737,9 @@ export class CityWorld {
       yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
     this.camera.position.copy(this.target).add(
       new THREE.Vector3(
-        Math.sin(yaw) * Math.cos(pitch) * 100,
-        Math.sin(pitch) * 100,
-        Math.cos(yaw) * Math.cos(pitch) * 100,
+        Math.sin(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
+        Math.sin(pitch) * CAMERA_DISTANCE,
+        Math.cos(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
       ),
     );
     this.camera.lookAt(this.target);
@@ -769,12 +795,8 @@ export class CityWorld {
     const roadSignature = `${input.district ?? ""}#${sim.roads.join("|")}`;
     if (roadSignature !== this.roadSignature) {
       this.roadSignature = roadSignature;
-      this.scene.remove(this.grid);
-      this.grid.geometry.dispose();
-      this.grid.material.dispose();
-      this.grid = createGrid(new Set(sim.roads), input.district);
-      this.grid.visible = Boolean(this.currentTool);
-      this.scene.add(this.grid);
+      this.gridSource = { roads: new Set(sim.roads), district: input.district };
+      if (this.currentTool) this.buildGrid();
       if (this.parcels) {
         this.scene.remove(this.parcels);
         this.parcels.geometry.dispose();
@@ -1063,6 +1085,7 @@ export class CityWorld {
       this.updateProjection();
       this.poseCamera();
     }
+    updatePlaceLabels(this.placeLabels, this.viewHeight);
     if (this.sim) this.updateCars(this.sim);
     this.updateLighting(dt);
     this.updateFx(dt);
@@ -1131,6 +1154,8 @@ export class CityWorld {
     const w = window as unknown as { __cityFx?: unknown };
     delete w.__cityFx;
     if (this.districtNumbers) disposeDistrictNumbers(this.districtNumbers);
+    this.scene.remove(this.placeLabels);
+    disposePlaceLabels(this.placeLabels);
     for (const id of [...this.coinSprites.keys()]) this.hideCoin(id);
     this.coinTexture?.dispose();
     this.coinTexture = null;

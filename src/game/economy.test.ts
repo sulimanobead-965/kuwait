@@ -49,15 +49,15 @@ function town(houses = 12, served = true) {
   s.randomDisasters = false;
   s.occupancy = 1;
   let placed = 0;
-  for (let c = 14; c < 40 && placed < houses; c += 1) {
-    const road = cellsFromSource(c, 23)[0]!;
-    const lot = cellsFromSource(c, 24)[0]!;
+  for (let c = 30; c < 56 && placed < houses; c += 1) {
+    const road = cellsFromSource(c, 24)[0]!;
+    const lot = cellsFromSource(c, 25)[0]!;
     placeRoad(s, road.c, road.r);
     if (placeBuilding(s, "apartments", lot.c, lot.r, 0).ok) placed += 1;
   }
   const kinds = served ? SERVICES : ["power", "water", "power", "water"];
   kinds.forEach((kind, i) => {
-    const at = cellsFromSource(14 + i, 22)[0]!;
+    const at = cellsFromSource(30 + i, 23)[0]!;
     placeBuilding(s, kind as never, at.c, at.r, 0);
   });
   return s;
@@ -201,15 +201,15 @@ test("global crises hurt and end; companies pay interest and can go bankrupt", (
 test("chalets need the sea, landmarks unlock by era, starter towns are seeded", () => {
   const s = createInitial();
   s.coins = 1e6;
-  const inland = cellsFromSource(20, 26)[0]!;
+  const inland = cellsFromSource(36, 27)[0]!;
   assert.equal(placeBuilding(s, "chalet", inland.c, inland.r, 0).ok, false);
   const shore = (() => {
-    for (let r = 0; r < 72; r += 1)
-      for (let c = 0; c < 107; c += 1) if (isLand(c, r) && coastal(c, r)) return { c, r };
+    for (let r = 0; r < 134; r += 1)
+      for (let c = 0; c < 150; c += 1) if (isLand(c, r) && coastal(c, r)) return { c, r };
     return null;
   })()!;
   assert.equal(placeBuilding(s, "chalet", shore.c, shore.r, 0).ok, true);
-  const lot = cellsFromSource(30, 26)[0]!;
+  const lot = cellsFromSource(46, 27)[0]!;
   assert.equal(placeBuilding(s, "hamra", lot.c, lot.r, 0).ok, false, "era-locked");
   s.quest = QUESTS.length;
   assert.equal(placeBuilding(s, "hamra", lot.c, lot.r, 0).ok, true);

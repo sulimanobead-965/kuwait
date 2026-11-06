@@ -25,6 +25,7 @@ import {
   calendarMood,
   COST_ITEMS,
   COST_KEYS,
+  COST_MAX,
   costIndex,
   costRevenue,
   CRISES,
@@ -43,12 +44,15 @@ import {
   CONSULT_COST,
   CONSULT_MONTHS,
   consulting,
-  DEPOSIT_RATE,
   exposure,
   financeIncome,
   isOpen,
   PROJECT_OFFERS,
+  pct,
+  type BondOrder,
+  type ProjectOrder,
 } from "@/game/finance";
+import { NumberField } from "@/components/hud-social";
 
 export function fmt(n: number) {
   return Math.floor(n).toLocaleString("en-US");
@@ -76,7 +80,9 @@ export type MoreAction =
   | "luck"
   | "music"
   | "mute"
-  | "reset";
+  | "reset"
+  | "profile"
+  | "people";
 
 export function MoreSheet({
   snap,
@@ -105,6 +111,8 @@ export function MoreSheet({
       label: snap.mute ? "تشغيل الأصوات" : "كتم الأصوات",
       icon: snap.mute ? <VolumeX size={20} /> : <Volume2 size={20} />,
     },
+    { id: "people", label: "اللاعبون", icon: <Users size={20} /> },
+    { id: "profile", label: "ملفي", icon: <Award size={20} /> },
     { id: "reset", label: "مدينة جديدة", icon: <RotateCcw size={20} /> },
   ];
   return (
@@ -159,33 +167,45 @@ export function CostSliders({
         <span className={index > 115 ? "text-coral" : ""}>مؤشر الغلاء {index}</span>
       </p>
       <p className="text-xs leading-relaxed opacity-80">
-        ما يدفعه الساكن شهرياً. رفعها يزيد دخل الصندوق، لكن الرضا ينزل والناس تطلع. خفضها يجذب
-        السكان.
+        ما يدفعه الساكن شهرياً، بأي نسبة تريدها (حتى {fmt(COST_MAX)}٪). الرفع المعقول يزيد دخل
+        الصندوق، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.
       </p>
-      {COST_KEYS.map((key) => (
-        <label key={key} className="block text-xs font-extrabold">
-          <span className="flex justify-between">
-            <span>
-              {COST_ITEMS[key].name} {snap.costs[key]}%
+      {COST_KEYS.map((key) => {
+        const v = snap.costs[key];
+        const set = (n: number) => onCost(key, Math.max(0, Math.min(COST_MAX, Math.round(n))));
+        return (
+          <div key={key} className="text-xs font-extrabold">
+            <span className="flex justify-between">
+              <span>{COST_ITEMS[key].name}</span>
+              <span dir="ltr">+{fmt(rev.rows[key])}/شهر</span>
             </span>
-            <span dir="ltr">+{fmt(rev.rows[key])}/شهر</span>
-          </span>
-          <input
-            type="range"
-            min={50}
-            max={250}
-            step={5}
-            value={snap.costs[key]}
-            aria-label={COST_ITEMS[key].name}
-            data-testid={`cost-${key}`}
-            onChange={(e) => onCost(key, Number(e.target.value))}
-            className="h-9 w-full accent-sc-leaf"
-          />
-        </label>
-      ))}
+            <span className="mt-0.5 flex items-center gap-1" dir="ltr">
+              <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v / 2)}>
+                ÷2
+              </button>
+              <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v - 10)}>
+                −10
+              </button>
+              <NumberField
+                label=""
+                value={v}
+                suffix="٪"
+                testid={`cost-${key}`}
+                onChange={(n) => set(n)}
+              />
+              <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v + 10)}>
+                +10
+              </button>
+              <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v * 10)}>
+                ×10
+              </button>
+            </span>
+          </div>
+        );
+      })}
       <div className="flex items-center gap-1 text-xs font-extrabold">
         <span className="flex-1">زيادة سنوية تلقائية</span>
-        {[0, 2, 5, 10].map((pct) => (
+        {[0, 5, 10, 50, 100].map((pct) => (
           <button
             key={pct}
             type="button"
@@ -210,16 +230,35 @@ export function Companies({
   onBond,
   onProject,
   onConsult,
+  onMudaraba,
+  onMudarabaWithdraw,
+  onSukuk,
 }: {
   snap: Sim;
-  onDeposit: (amount: number) => void;
+  onDeposit: (amount: number, rate: number) => void;
   onWithdraw: (amount: number) => void;
-  onBond: (index: number) => void;
-  onProject: (index: number) => void;
+  onBond: (order: number | BondOrder) => void;
+  onProject: (order: number | ProjectOrder) => void;
   onConsult: () => void;
+  onMudaraba: (amount: number, expected: number) => void;
+  onMudarabaWithdraw: () => void;
+  onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
 }) {
   const f = snap.finance;
-  const closed = (id: "bank" | "developer" | "consultant") =>
+  const [mudAmount, setMudAmount] = useState(100_000);
+  const [mudRate, setMudRate] = useState(8);
+  const [sukAmount, setSukAmount] = useState(1_000_000);
+  const [sukRate, setSukRate] = useState(7);
+  const [sukYears, setSukYears] = useState(3);
+  const [depAmount, setDepAmount] = useState(100_000);
+  const [depRate, setDepRate] = useState(10);
+  const [bondAmount, setBondAmount] = useState(1_000_000);
+  const [bondRate, setBondRate] = useState(8);
+  const [bondYears, setBondYears] = useState(3);
+  const [projAmount, setProjAmount] = useState(250_000);
+  const [projReturn, setProjReturn] = useState(40);
+  const [projMonths, setProjMonths] = useState(24);
+  const closed = (id: "bank" | "islamic" | "developer" | "consultant") =>
     !isOpen(snap, id) ? (
       <p className="text-xs font-extrabold text-coral">
         مفلسة ومغلقة لين {formatCityDate(f.down[id])}
@@ -250,13 +289,104 @@ export function Companies({
       )}
 
       <Company
+        title={COMPANIES.islamic.name}
+        blurb={COMPANIES.islamic.blurb}
+        icon={<Landmark size={16} />}
+      >
+        {closed("islamic")}
+        <p className="text-xs font-extrabold">وديعة مضاربة (بدل الفائدة)</p>
+        <p className="text-xs">
+          رصيدك <b dir="ltr">{fmt(f.mudaraba)}</b> د.ك بربح متوقع {pct(f.mudarabaRate)}. الربح الفعلي
+          يتغير كل شهر حسب أداء استثمارات المصرف، وقد يكون خسارة في الأزمات.
+        </p>
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          <NumberField label="المبلغ" value={mudAmount} onChange={setMudAmount} suffix="د.ك" />
+          <NumberField
+            label="الربح المتوقع"
+            value={mudRate}
+            onChange={setMudRate}
+            suffix="٪"
+            testid="mudaraba-rate"
+          />
+        </div>
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            data-testid="mudaraba-deposit"
+            disabled={!isOpen(snap, "islamic") || snap.coins < mudAmount}
+            onClick={() => onMudaraba(mudAmount, mudRate / 100)}
+            className="sc-menu sc-on text-xs disabled:opacity-40"
+          >
+            أودع {money(mudAmount)}
+          </button>
+          <button
+            type="button"
+            disabled={!isOpen(snap, "islamic") || f.mudaraba <= 0}
+            onClick={onMudarabaWithdraw}
+            className="sc-menu text-xs disabled:opacity-40"
+          >
+            اسحب الوديعة
+          </button>
+        </div>
+        <p className="mt-2 text-xs font-extrabold">صكوك (بدل السندات)</p>
+        <p className="text-xs">
+          صكوك مدعومة بأصول حقيقية: الربح حصة من دخل الأصل ويتغير قليلاً، وعند التعثر يرجع لك جزء
+          أكبر من السندات.
+        </p>
+        <div className="mt-1 flex gap-1">
+          {[1_000_000, 2_000_000].map((a) => (
+            <button
+              key={a}
+              type="button"
+              onClick={() => setSukAmount(a)}
+              className={`sc-menu flex-1 px-1 text-xs ${sukAmount === a ? "sc-on" : ""}`}
+            >
+              {money(a)}
+            </button>
+          ))}
+        </div>
+        <div className="mt-1 grid grid-cols-3 gap-1">
+          <NumberField label="القيمة" value={sukAmount} onChange={setSukAmount} />
+          <NumberField label="الربح المتوقع" value={sukRate} onChange={setSukRate} suffix="٪" />
+          <NumberField
+            label="السنوات"
+            value={sukYears}
+            onChange={(v) => setSukYears(Math.max(1, Math.round(v)))}
+          />
+        </div>
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            data-testid="sukuk-islamic"
+            disabled={!isOpen(snap, "islamic") || snap.coins < sukAmount}
+            onClick={() => onSukuk("islamic", sukAmount, sukRate / 100, sukYears)}
+            className="sc-menu text-xs disabled:opacity-40"
+          >
+            صكوك المصرف
+          </button>
+          <button
+            type="button"
+            data-testid="sukuk-developer"
+            disabled={!isOpen(snap, "developer") || snap.coins < sukAmount}
+            onClick={() => onSukuk("developer", sukAmount, sukRate / 100, sukYears)}
+            className="sc-menu text-xs disabled:opacity-40"
+          >
+            صكوك المرسى العقارية
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] opacity-80">
+          تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب القرض.
+        </p>
+      </Company>
+
+      <Company
         title={COMPANIES.bank.name}
         blurb={COMPANIES.bank.blurb}
         icon={<Landmark size={16} />}
       >
         {closed("bank")}
         <p className="text-xs">
-          وديعتك <b dir="ltr">{fmt(f.deposit)}</b> د.ك بفائدة {Math.round(DEPOSIT_RATE * 100)}٪
+          وديعتك <b dir="ltr">{fmt(f.deposit)}</b> د.ك بفائدة {pct(f.depositRate)}
           سنوياً تُضاف شهرياً.
         </p>
         <div className="mt-1 grid grid-cols-4 gap-1">
@@ -266,7 +396,7 @@ export function Companies({
               type="button"
               data-testid={`deposit-${a}`}
               disabled={!isOpen(snap, "bank") || snap.coins < a}
-              onClick={() => onDeposit(a)}
+              onClick={() => onDeposit(a, depRate / 100)}
               className="sc-menu px-1 text-xs disabled:opacity-40"
             >
               أودع {money(a)}
@@ -281,6 +411,28 @@ export function Companies({
             اسحب الكل
           </button>
         </div>
+        <div className="mt-2 grid grid-cols-2 gap-1">
+          <NumberField label="مبلغ الإيداع" value={depAmount} onChange={setDepAmount} suffix="د.ك" />
+          <NumberField
+            label="الفائدة التي تطلبها"
+            value={depRate}
+            onChange={setDepRate}
+            suffix="٪"
+            testid="deposit-rate"
+          />
+        </div>
+        <button
+          type="button"
+          data-testid="deposit-custom"
+          disabled={!isOpen(snap, "bank") || snap.coins < depAmount}
+          onClick={() => onDeposit(depAmount, depRate / 100)}
+          className="sc-menu sc-on mt-1 w-full text-xs disabled:opacity-40"
+        >
+          أودع {money(depAmount)} بفائدة {depRate}٪
+        </button>
+        <p className="mt-1 text-[11px] leading-relaxed opacity-80">
+          الفائدة حرة. فوق ١٢٪ تقريباً يغامر البنك بأموالك ويزيد خطر إفلاسه، وبنسب خيالية يفلس فوراً.
+        </p>
         <p className="mt-2 text-xs font-extrabold">سندات</p>
         <ul className="mt-1 space-y-1">
           {BOND_OFFERS.map((b, i) =>
@@ -299,6 +451,27 @@ export function Companies({
             ),
           )}
         </ul>
+        <p className="mt-2 text-xs font-extrabold">سند بشروطك</p>
+        <div className="grid grid-cols-3 gap-1">
+          <NumberField label="القيمة" value={bondAmount} onChange={setBondAmount} />
+          <NumberField label="الفائدة" value={bondRate} onChange={setBondRate} suffix="٪" />
+          <NumberField
+            label="السنوات"
+            value={bondYears}
+            onChange={(v) => setBondYears(Math.max(1, Math.round(v)))}
+          />
+        </div>
+        <button
+          type="button"
+          data-testid="bond-custom"
+          disabled={!isOpen(snap, "bank") || snap.coins < bondAmount}
+          onClick={() =>
+            onBond({ issuer: "bank", amount: bondAmount, rate: bondRate / 100, years: bondYears })
+          }
+          className="sc-menu mt-1 w-full text-xs disabled:opacity-40"
+        >
+          اشترِ سند {money(bondAmount)} بفائدة {bondRate}٪
+        </button>
       </Company>
 
       <Company
@@ -338,6 +511,33 @@ export function Companies({
             ),
           )}
         </ul>
+        <p className="mt-2 text-xs font-extrabold">استثمار بشروطك</p>
+        <div className="grid grid-cols-3 gap-1">
+          <NumberField label="المبلغ" value={projAmount} onChange={setProjAmount} />
+          <NumberField label="العائد" value={projReturn} onChange={setProjReturn} suffix="٪" />
+          <NumberField
+            label="الأشهر"
+            value={projMonths}
+            onChange={(v) => setProjMonths(Math.max(1, Math.round(v)))}
+          />
+        </div>
+        <button
+          type="button"
+          data-testid="project-custom"
+          disabled={!isOpen(snap, "developer") || snap.coins < projAmount}
+          onClick={() =>
+            onProject({
+              name: "استثمار خاص",
+              amount: projAmount,
+              payback: 1 + projReturn / 100,
+              months: projMonths,
+              handover: false,
+            })
+          }
+          className="sc-menu mt-1 w-full text-xs disabled:opacity-40"
+        >
+          استثمر {money(projAmount)} بعائد {projReturn}٪
+        </button>
         {f.projects.length > 0 && (
           <ul className="mt-1 text-xs">
             {f.projects.map((p) => (
@@ -377,7 +577,7 @@ export function Companies({
           <p className="font-extrabold">سنداتك</p>
           {f.bonds.map((b) => (
             <p key={b.id}>
-              • {b.issuer === "bank" ? COMPANIES.bank.name : COMPANIES.developer.name}{" "}
+              • {b.sukuk ? "صكوك" : "سندات"} {COMPANIES[b.issuer].name}{" "}
               {money(b.amount)} حتى {formatCityDate(b.matures)}
             </p>
           ))}

@@ -197,7 +197,7 @@ test("every one of the fourteen sectors is buildable and planning stays within o
     );
   }
   // Open land east of Yarmouk on the real map.
-  const far = cellsFromSource(32, 22)[0]!;
+  const far = cellsFromSource(48, 23)[0]!;
   const open = rich(createInitialDistrict("yarmouk", false));
   const outsideZone = planZone(
     open,
@@ -214,16 +214,16 @@ test("every one of the fourteen sectors is buildable and planning stays within o
   assert.ok(snapped);
   assert.equal(isDistrictLand("yarmouk", cellKey(snapped.c, snapped.r)), true);
   const legacy = rich(createInitial());
-  const legacyLot = cellsFromSource(34, 21)[0]!;
-  const legacyRoad = cellsFromSource(33, 21)[0]!;
+  const legacyLot = cellsFromSource(50, 22)[0]!;
+  const legacyRoad = cellsFromSource(49, 22)[0]!;
   assert.equal(placeRoad(legacy, legacyRoad.c, legacyRoad.r).ok, true);
   assert.equal(placeBuilding(legacy, "villa", legacyLot.c, legacyLot.r, 0).ok, true);
   const free = rich(createInitialDistrict("free", false));
   assert.ok(free.roads.length > 100, "free zone starts with the ring roads");
   const freeLot = nearestOpenLot(
     free,
-    cellsFromSource(20, 24)[0]!.c,
-    cellsFromSource(20, 24)[0]!.r,
+    cellsFromSource(36, 25)[0]!.c,
+    cellsFromSource(36, 25)[0]!.r,
     3,
   )!;
   assert.equal(placeBuilding(free, "villa", freeLot.c, freeLot.r, 1).ok, true);
@@ -253,8 +253,8 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
   };
   try {
     const legacy = rich(createInitial());
-    const legacyRoad = cellsFromSource(17, 23)[0]!;
-    const legacyHome = cellsFromSource(18, 23)[0]!;
+    const legacyRoad = cellsFromSource(33, 24)[0]!;
+    const legacyHome = cellsFromSource(34, 24)[0]!;
     placeRoad(legacy, legacyRoad.c, legacyRoad.r);
     placeBuilding(legacy, "boubyan", legacyHome.c, legacyHome.r, 0);
     saveSim(legacy);

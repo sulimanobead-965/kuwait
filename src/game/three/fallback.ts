@@ -239,7 +239,7 @@ export class FallbackCityWorld {
     if (sim.district !== this.district) {
       this.district = sim.district;
       if (sim.district) this.frameDistrict();
-      else this.focus({ c: 46, r: 17 }, 65);
+      else this.focus({ c: 92, r: 34 }, 65); // Sharq, south of Kuwait Towers
     }
     this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
     const ctx = this.ctx;
@@ -250,14 +250,18 @@ export class FallbackCityWorld {
     ctx.setTransform(this.canvas.width / this.width, 0, 0, this.canvas.height / this.height, 0, 0);
     ctx.fillStyle = this.mode === "night" ? "#15354c" : "#217f87";
     ctx.fillRect(0, 0, this.width, this.height);
+    const roads = new Set(sim.roads);
+    const size = (this.height / this.viewHeight) * 1.56;
+    const height = size * 0.538;
     for (let r = 0; r < ROWS; r += 1)
       for (let c = 0; c < COLS; c += 1) {
         if (!LAND[r]![c]) continue;
         const at = cellWorld(c, r);
         const p = this.project(at.x, at.z);
-        const size = (this.height / this.viewHeight) * 1.56;
-        const height = size * 0.538;
-        ctx.fillStyle = sim.roads.includes(`${c},${r}`)
+        // Skip off-screen tiles: the real map has ~13.5k land cells.
+        if (p.x < -size || p.y < -size || p.x > this.width + size || p.y > this.height + size)
+          continue;
+        ctx.fillStyle = roads.has(`${c},${r}`)
           ? "#35434a"
           : sim.district && !isDistrictLand(sim.district, `${c},${r}`)
             ? "#d2c2a1"

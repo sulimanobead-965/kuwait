@@ -8,6 +8,10 @@ import type { DayMode } from "@/game/three/day-night";
 import { FallbackCityWorld } from "@/game/three/fallback";
 import { createAudio } from "@/game/audio";
 import {
+  buySukuk,
+  depositMudaraba,
+  takeMurabaha,
+  withdrawMudaraba,
   buyBond,
   deposit as depositMoney,
   hireConsultant,
@@ -15,6 +19,9 @@ import {
   withdraw as withdrawMoney,
 } from "@/game/finance";
 import { TUTORIAL, WelcomeBack, type Celebration } from "@/components/hud-panels";
+import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/hud-social";
+import { fireBuilder, hireBuilder } from "@/game/builder";
+import { borrowFrom, chat, greet, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
 import { CATALOG, type Category, type Kind } from "@/game/catalog";
 import {
   advanceDays,
@@ -23,6 +30,7 @@ import {
   buyModelArea,
   checkPromotion,
   checkAchievements,
+  COST_MAX,
   eraOf,
   ERAS,
   RANKS,
@@ -131,6 +139,10 @@ export function CityGame() {
   const celebrateQueue = useRef<Celebration[]>([]);
   const [welcome, setWelcome] = useState<ReturnType<typeof welcomeBack> | null>(null);
   const [music, setMusic] = useState(false);
+  const [player, setPlayer] = useState<Player | null>(() =>
+    typeof localStorage === "undefined" ? null : loadPlayer(),
+  );
+  const [editPlayer, setEditPlayer] = useState(false);
   const audioRef = useRef<ReturnType<typeof createAudio> | null>(null);
   const [tutorial, setTutorial] = useState<number>(() => {
     if (typeof localStorage === "undefined") return -1;
@@ -606,7 +618,7 @@ export function CityGame() {
   }
 
   function onCost(key: CostKey, value: number) {
-    simRef.current.costs = { ...simRef.current.costs, [key]: Math.max(50, Math.min(250, value)) };
+    simRef.current.costs = { ...simRef.current.costs, [key]: Math.max(0, Math.min(COST_MAX, value)) };
     sync();
   }
 
@@ -684,8 +696,8 @@ export function CityGame() {
     }
   }
 
-  function onLoan(amount: number) {
-    const act = takeLoan(simRef.current, amount);
+  function onLoan(amount: number, rate: number) {
+    const act = takeLoan(simRef.current, amount, rate);
     pushToast(act.ok ? `دخل حسابك ${fmt(amount)} د.ك من البنك` : act.msg);
     sync();
   }
@@ -842,11 +854,42 @@ export function CityGame() {
         onTax={onTax}
         onCost={onCost}
         onAutoRaise={onAutoRaise}
-        onDeposit={(a) => finance(depositMoney(simRef.current, a))}
+        onDeposit={(a, rate) => finance(depositMoney(simRef.current, a, rate))}
         onWithdraw={(a) => finance(withdrawMoney(simRef.current, a))}
         onBond={(i) => finance(buyBond(simRef.current, i))}
         onProject={(i) => finance(startProject(simRef.current, i))}
         onConsult={() => finance(hireConsultant(simRef.current))}
+        onMudaraba={(a, r) => finance(depositMudaraba(simRef.current, a, r))}
+        onMudarabaWithdraw={() => finance(withdrawMudaraba(simRef.current))}
+        onSukuk={(issuer, a, r, y) => finance(buySukuk(simRef.current, issuer, a, r, y))}
+        onMurabaha={(a, p, m) => finance(takeMurabaha(simRef.current, a, p, m))}
+        player={player ?? { name: "المحافظ", avatar: "🧔🏽" }}
+        onEditPlayer={() => setEditPlayer(true)}
+        onBuilderHire={() => finance(hireBuilder(simRef.current))}
+        onBuilderFire={() => finance(fireBuilder(simRef.current))}
+        onBuilderShare={(pct) => {
+          simRef.current.builder.share = Math.max(1, Math.min(100, Math.round(pct)));
+          sync();
+        }}
+        onNpcOpen={(id: NpcId) => {
+          greet(simRef.current, id);
+          markRead(simRef.current, id);
+          sync();
+        }}
+        onChat={(id, text) => {
+          chat(simRef.current, id, text);
+          markRead(simRef.current, id);
+          sync();
+        }}
+        onLend={(id, amount, rate, months) => {
+          finance(lendTo(simRef.current, id, amount, rate, months));
+          markRead(simRef.current, id);
+        }}
+        onBorrow={(id, amount, rate, months) => {
+          finance(borrowFrom(simRef.current, id, amount, rate, months));
+          markRead(simRef.current, id);
+        }}
+        onNpcRepay={(id) => finance(repayNpc(simRef.current, id))}
         onCrisis={onCrisis}
         onPhoto={onPhoto}
         onMusic={onMusic}
@@ -883,6 +926,17 @@ export function CityGame() {
         onZoneApply={onZoneApply}
         onZoneCancel={onZoneCancel}
       />
+      {snap.started && (editPlayer || !player) && (
+        <PlayerSetup
+          initial={player}
+          onSave={(p) => {
+            savePlayer(p);
+            setPlayer(p);
+            setEditPlayer(false);
+            pushToast(`أهلاً ${p.name}!`);
+          }}
+        />
+      )}
       {welcome && (
         <WelcomeBack
           daily={welcome.daily}

@@ -3,7 +3,7 @@
  * drawn on a 15×13 template and then moved (dc, dr source cells) onto the real spot of
  * the neighborhood on the Kuwait City map in `land.ts`.
  */
-import { cellsFromSource, LAND, SOURCE_COLS, SOURCE_LAND, SOURCE_ROWS } from "./land";
+import { cellsFromSource, LAND, MAP_BOUNDS, SOURCE_COLS, SOURCE_LAND, SOURCE_ROWS } from "./land";
 const srcIsLand = (c: number, r: number) =>
   c >= 0 && r >= 0 && c < SOURCE_COLS && r < SOURCE_ROWS && SOURCE_LAND[r]?.[c] === 1;
 
@@ -38,7 +38,7 @@ const definitions: readonly Definition[] = [
     description: "شارع رئيسي مستقيم وتقاطع أفقي يفصل قطعتَي ٢/٣ عن ١/٤.",
     main: () => [36, 37],
     // 47.966° E, 29.311° N
-    dc: -20,
+    dc: 3,
     dr: 1,
     blocks: [
       [2, "l", 19, 26],
@@ -52,9 +52,10 @@ const definitions: readonly Definition[] = [
     name: "العديلية",
     description: "شارع رئيسي طولي وتقاطع أفقي: ٣/٢ أعلى المخطط، و٤/١ أسفله.",
     main: () => [36, 37],
-    // 47.987° E, 29.329° N
-    dc: -15,
-    dr: -4,
+    // 47.987° E, 29.329° N (one source row south of the exact spot, so the
+    // template's northern edge stays clear of the Shuwaikh/Sharq shoreline)
+    dc: 6,
+    dr: 0,
     blocks: [
       [3, "l", 19, 26],
       [2, "r", 19, 26],
@@ -68,8 +69,8 @@ const definitions: readonly Definition[] = [
     description: "شارع رئيسي مستقيم بين عمودين، وتقاطعان أفقيان يفصلان القطع الست.",
     main: () => [36, 37],
     // 48.003° E, 29.307° N
-    dc: -11,
-    dr: 1,
+    dc: 8,
+    dr: 2,
     blocks: [
       [1, "l", 19, 22],
       [2, "r", 19, 22],
@@ -204,12 +205,14 @@ for (const district of sourceDistricts) {
 land.set("free", new Set());
 
 /**
- * Approximate Kuwait City ring roads (1st–5th) and three radials, drawn on the
- * real-coastline grid (land.ts: 181 m × 185 m cells, row 0 = 29.405° N, col 0 =
- * 47.90° E). The rings are arcs around Sharq (≈47.975° E, 29.385° N) whose radii
- * match where each ring crosses ~47.98° E: 29.362°, 29.350°, 29.335°, 29.318° and
- * 29.300° N. Radials: Jahra Road west, Airport Road south, Fahaheel Road south-east.
- * A playable sketch, not survey geometry.
+ * Approximate Kuwait highways, drawn on the real-coastline grid (land.ts: ≈300 m
+ * cells, MAP_BOUNDS lon 47.70°–48.16° E, lat 29.10°–29.46° N). Ring roads 1st–6th
+ * are circular arcs around Sharq (≈47.975° E, 29.385° N) sized to cross ~47.98° E
+ * at 29.362°, 29.350°, 29.335°, 29.318°, 29.300° and 29.275° N. Radials are
+ * polylines through rough lon/lat waypoints: Road 80 (Jahra Road) west along the
+ * south shore of the Sulaibikhat inlet, Road 30 (King Fahd / Fahaheel expressway)
+ * south-east, Road 40 inland parallel to it and Airport Road 55 south. Everything
+ * is clipped to land and kept 4-connected. A playable sketch, not survey geometry.
  */
 export function highwayCells(): string[] {
   const rows = LAND.length;
@@ -218,8 +221,14 @@ export function highwayCells(): string[] {
   const put = (c: number, r: number) => {
     if (r >= 0 && c >= 0 && r < rows && c < cols && LAND[r]?.[c] === 1) out.add(`${c},${r}`);
   };
-  const center = { c: 40, r: 12 };
-  for (const radius of [14, 21, 30, 40, 51]) {
+  const toCell = (lon: number, lat: number) => ({
+    c: ((lon - MAP_BOUNDS.west) / (MAP_BOUNDS.east - MAP_BOUNDS.west)) * cols - 0.5,
+    r: ((MAP_BOUNDS.north - lat) / (MAP_BOUNDS.north - MAP_BOUNDS.south)) * rows - 0.5,
+  });
+  const center = toCell(47.975, 29.385);
+  const crossing = toCell(47.98, 29.385).c;
+  for (const lat of [29.362, 29.35, 29.335, 29.318, 29.3, 29.275]) {
+    const radius = Math.hypot(crossing - center.c, toCell(47.98, lat).r - center.r);
     // 4-connected arc on the southern side of the centre.
     let last: { c: number; r: number } | null = null;
     for (let a = 0; a <= Math.PI; a += 0.5 / radius) {
@@ -231,7 +240,7 @@ export function highwayCells(): string[] {
     }
   }
   const line = (c0: number, r0: number, c1: number, r1: number) => {
-    const n = Math.max(Math.abs(c1 - c0), Math.abs(r1 - r0));
+    const n = Math.max(1, Math.abs(c1 - c0), Math.abs(r1 - r0));
     let last: { c: number; r: number } | null = null;
     for (let i = 0; i <= n; i += 1) {
       const c = Math.round(c0 + ((c1 - c0) * i) / n);
@@ -241,10 +250,62 @@ export function highwayCells(): string[] {
       last = { c, r };
     }
   };
-  line(center.c, center.r + 14, 0, 30); // Jahra Road
-  line(45, center.r + 13, 45, rows - 1); // Airport Road
-  line(center.c + 10, center.r + 10, 92, rows - 1); // Fahaheel Road
-  return [...out];
+  const road = (points: readonly (readonly [number, number])[]) => {
+    for (let i = 1; i < points.length; i += 1) {
+      const a = toCell(...points[i - 1]!),
+        b = toCell(...points[i]!);
+      line(
+        Math.round(a.c),
+        Math.min(rows - 1, Math.round(a.r)),
+        Math.round(b.c),
+        Math.min(rows - 1, Math.round(b.r)),
+      );
+    }
+  };
+  // Road 80, Jahra Road: skirts the south shore of the Sulaibikhat inlet.
+  road([
+    [47.95, 29.36],
+    [47.905, 29.32],
+    [47.85, 29.318],
+    [47.78, 29.33],
+    [47.7, 29.345],
+  ]);
+  // Road 30, King Fahd bin Abdulaziz / Fahaheel expressway.
+  road([
+    [47.99, 29.36],
+    [48.05, 29.25],
+    [48.1, 29.1],
+  ]);
+  // Road 40, inland and roughly parallel to Road 30.
+  road([
+    [47.98, 29.33],
+    [48.02, 29.2],
+    [48.06, 29.1],
+  ]);
+  // Road 55, Airport Road.
+  road([
+    [47.98, 29.35],
+    [47.97, 29.2],
+  ]);
+  // Drop arc ends the coastline cut into tiny islands.
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const start of out) {
+    if (seen.has(start)) continue;
+    const part = [start];
+    seen.add(start);
+    for (let i = 0; i < part.length; i += 1) {
+      const [c, r] = part[i]!.split(",").map(Number);
+      for (const key of [`${c! + 1},${r}`, `${c! - 1},${r}`, `${c},${r! + 1}`, `${c},${r! - 1}`]) {
+        if (out.has(key) && !seen.has(key)) {
+          seen.add(key);
+          part.push(key);
+        }
+      }
+    }
+    if (part.length >= 6) kept.push(...part);
+  }
+  return kept;
 }
 
 export const isDistrictId = (value: unknown): value is DistrictId =>

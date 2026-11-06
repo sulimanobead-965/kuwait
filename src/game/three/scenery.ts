@@ -6,6 +6,7 @@ import { PALETTE as P } from "./palette.ts";
 import { roadIsSchematic, type Sim } from "../sim.ts";
 import { roadMarkingsAt } from "./road-markings.ts";
 import { districtById, sectorAt } from "../districts.ts";
+import { lonLatToCell, PLACES, type Place } from "../places.ts";
 
 function tint(geo: THREE.BufferGeometry, color: string) {
   const c = new THREE.Color(color);
@@ -133,10 +134,11 @@ export function createGrid(
   const y = LAND_HEIGHT + 0.015;
   const base = new THREE.Color(P.dark);
   const edge = new THREE.Color();
+  const drawn = (c: number, r: number) =>
+    LAND[r]?.[c] === 1 && !avoid.has(`${c},${r}`) && !roadIsSchematic(district, `${c},${r}`);
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
-      if (!LAND[r]![c] || avoid.has(`${c},${r}`) || roadIsSchematic(district, `${c},${r}`))
-        continue;
+      if (!drawn(c, r)) continue;
       const { x, z } = cellWorld(c, r);
       const own = sectorAt(district ?? null, `${c},${r}`);
       if (own !== undefined) edge.set(parcelTint(own)).multiplyScalar(0.45);
@@ -357,6 +359,101 @@ export function disposeDistrictNumbers(group: THREE.Group) {
     if (node instanceof THREE.Mesh) {
       node.geometry.dispose();
       (node.material as THREE.Material).dispose();
+    }
+  });
+}
+
+/** View height where area names start to appear, and where they are fully opaque. */
+const PLACE_FADE_START = 52;
+const PLACE_FADE_END = 78;
+
+/**
+ * Arabic area names (places.ts) as camera-facing sprites over the terrain. They keep a
+ * constant on-screen size and fade in only when the camera is zoomed out far enough to
+ * read the map as a whole; `updatePlaceLabels` drives both every frame.
+ */
+export function createPlaceLabels() {
+  const group = new THREE.Group();
+  group.name = "place-labels";
+  const items: { sprite: THREE.Sprite; material: THREE.SpriteMaterial; size: number }[] = [];
+  const draw = (canvas: HTMLCanvasElement, place: Place) => {
+    const px = place.major ? 64 : 48;
+    const font = `bold ${px}px "Noto Kufi Arabic", "Noto Sans Arabic", sans-serif`;
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = font;
+    const width = Math.ceil(ctx.measureText(place.name).width + px * 0.9);
+    canvas.width = Math.min(1024, width);
+    canvas.height = Math.ceil(px * 1.9);
+    ctx.font = font;
+    ctx.direction = "rtl";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = px * 0.22;
+    const water = place.name === "جون الكويت";
+    ctx.strokeStyle = water ? "rgba(18, 74, 86, 0.75)" : "rgba(250, 243, 226, 0.92)";
+    ctx.fillStyle = water ? "#eaf6f4" : "#173c40";
+    ctx.strokeText(place.name, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(place.name, canvas.width / 2, canvas.height / 2);
+  };
+  const canvases: [HTMLCanvasElement, Place, THREE.CanvasTexture, THREE.Sprite][] = [];
+  for (const place of PLACES) {
+    const canvas = document.createElement("canvas");
+    draw(canvas, place);
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.SpriteMaterial({
+      map,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      fog: false,
+      opacity: 0,
+    });
+    const sprite = new THREE.Sprite(material);
+    const cell = lonLatToCell(place.lon, place.lat);
+    const at = cellWorld(cell.c, cell.r);
+    sprite.position.set(at.x, LAND_HEIGHT + 3, at.z);
+    sprite.renderOrder = 20;
+    sprite.userData.aspect = canvas.width / canvas.height;
+    group.add(sprite);
+    items.push({ sprite, material, size: place.major ? 0.05 : 0.036 });
+    canvases.push([canvas, place, map, sprite]);
+  }
+  // Redraw once the Arabic web font is ready, so the first frame's fallback face is replaced.
+  void document.fonts?.ready.then(() => {
+    for (const [canvas, place, map, sprite] of canvases) {
+      draw(canvas, place);
+      map.needsUpdate = true;
+      sprite.userData.aspect = canvas.width / canvas.height;
+    }
+  });
+  group.userData.items = items;
+  group.visible = false;
+  return group;
+}
+
+export function updatePlaceLabels(group: THREE.Group, viewHeight: number) {
+  const t = THREE.MathUtils.smoothstep(viewHeight, PLACE_FADE_START, PLACE_FADE_END);
+  group.visible = t > 0.01;
+  if (!group.visible) return;
+  const items = group.userData.items as {
+    sprite: THREE.Sprite;
+    material: THREE.SpriteMaterial;
+    size: number;
+  }[];
+  for (const { sprite, material, size } of items) {
+    material.opacity = t;
+    const height = viewHeight * size;
+    sprite.scale.set(height * (sprite.userData.aspect as number), height, 1);
+  }
+}
+
+export function disposePlaceLabels(group: THREE.Group) {
+  group.traverse((node) => {
+    if (node instanceof THREE.Sprite) {
+      node.material.map?.dispose();
+      node.material.dispose();
     }
   });
 }

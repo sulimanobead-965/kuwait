@@ -11,8 +11,6 @@ import { LAND, COLS, ROWS } from "@/game/land";
 import { roadMarkingsAt } from "@/game/three/road-markings";
 
 const arabicNumber = (n: number) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!);
-const point = (c: number, r: number) => `${(c - 27) * 6},${(r - 17) * 6}`;
-
 export function DistrictDiagram({
   district,
   labeled = true,
@@ -21,20 +19,51 @@ export function DistrictDiagram({
   labeled?: boolean;
 }) {
   const roads = useMemo(() => new Set(districtRoads(district)), [district]);
+  // Frame the parcels and their streets wherever the district sits on the real map.
+  const box = useMemo(() => {
+    let c0 = Infinity,
+      r0 = Infinity,
+      c1 = -Infinity,
+      r1 = -Infinity;
+    const grow = (c: number, r: number) => {
+      c0 = Math.min(c0, c);
+      r0 = Math.min(r0, r);
+      c1 = Math.max(c1, c);
+      r1 = Math.max(r1, r);
+    };
+    for (const sector of district.sectors) for (const { c, r } of sector.cells) grow(c, r);
+    for (const key of roads) {
+      const [c, r] = key.split(",").map(Number);
+      grow(c!, r!);
+    }
+    if (!Number.isFinite(c0)) return { c0: 0, r0: 0, w: 1, h: 1 };
+    return { c0, r0, w: c1 - c0 + 1, h: r1 - r0 + 1 };
+  }, [district, roads]);
+  const font = Math.max(box.w, box.h) / (labeled ? 7 : 5.5);
   return (
     <svg
-      viewBox="-1 -1 110 92"
+      viewBox={`${box.c0 - 0.5} ${box.r0 - 0.5} ${box.w + 1} ${box.h + 1}`}
       className="district-preview"
       role="img"
       aria-label={`مخطط ${district.name} التخطيطي`}
     >
-      <rect width="108" height="90" rx="9" fill="#e1d2b1" />
+      <rect
+        x={box.c0 - 0.5}
+        y={box.r0 - 0.5}
+        width={box.w + 1}
+        height={box.h + 1}
+        rx={box.w / 12}
+        fill="#e1d2b1"
+      />
       {district.sectors.map((sector) => (
         <g key={sector.number}>
           {sector.cells.map(({ c, r }) => (
-            <path
+            <rect
               key={sector.number + ":" + c + ":" + r}
-              d={`M ${point(c, r)} h 6 v 6 h -6 Z`}
+              x={c}
+              y={r}
+              width={1.02}
+              height={1.02}
               fill={sector.number % 2 ? "#b2bd8e" : "#c0c699"}
             />
           ))}
@@ -42,34 +71,55 @@ export function DistrictDiagram({
       ))}
       {[...roads].map((key) => {
         const [c, r] = key.split(",").map(Number);
-        return <path key={key} d={`M ${point(c!, r!)} h 6 v 6 h -6 Z`} fill="#3c494b" />;
+        return <rect key={key} x={c} y={r} width={1.02} height={1.02} fill="#3c494b" />;
       })}
-      {[...roads].flatMap((key) => {
-        const [c, r] = key.split(",").map(Number);
-        return roadMarkingsAt(roads, c!, r!).map((mark, index) => {
-          const x = (c! - 27) * 6 + 3, y = (r! - 17) * 6 + 3;
-          if (!labeled) return null; // Small HUD maps remain clean; game asphalt keeps paint.
-          const length = mark.type === "dash" ? 1.62 : 1.86;
-          const dx = mark.axis === "x" ? length / 2 : 0.2, dy = mark.axis === "z" ? length / 2 : 0.2;
-          return <line key={`mark:${key}:${index}`} x1={x + (mark.type === "stop" ? mark.dc * 2.1 : 0) - dx} y1={y + (mark.type === "stop" ? mark.dr * 2.1 : 0) - dy} x2={x + (mark.type === "stop" ? mark.dc * 2.1 : 0) + dx} y2={y + (mark.type === "stop" ? mark.dr * 2.1 : 0) + dy} stroke="#e3d8ba" strokeWidth="0.4" strokeLinecap="butt" />;
+      {labeled &&
+        [...roads].flatMap((key) => {
+          const [c, r] = key.split(",").map(Number);
+          return roadMarkingsAt(roads, c!, r!).map((mark, index) => {
+            const x = c! + 0.5,
+              y = r! + 0.5;
+            const length = mark.type === "dash" ? 0.27 : 0.31;
+            const dx = mark.axis === "x" ? length / 2 : 0.03,
+              dy = mark.axis === "z" ? length / 2 : 0.03;
+            const ox = mark.type === "stop" ? mark.dc * 0.35 : 0,
+              oy = mark.type === "stop" ? mark.dr * 0.35 : 0;
+            return (
+              <line
+                key={`mark:${key}:${index}`}
+                x1={x + ox - dx}
+                y1={y + oy - dy}
+                x2={x + ox + dx}
+                y2={y + oy + dy}
+                stroke="#e3d8ba"
+                strokeWidth={0.07}
+              />
+            );
+          });
+        })}
+      {district.sectors.map((sector) => {
+        const mid = sector.cells.reduce((a, cell) => ({ c: a.c + cell.c, r: a.r + cell.r }), {
+          c: 0,
+          r: 0,
         });
+        const n = Math.max(1, sector.cells.length);
+        return (
+          <text
+            key={sector.number}
+            x={mid.c / n + 0.5}
+            y={mid.r / n + 0.5 + font / 3}
+            textAnchor="middle"
+            fontSize={font}
+            fontWeight="800"
+            fill="#173f41"
+            stroke="#e1d2b1"
+            strokeWidth={font / 10}
+            paintOrder="stroke"
+          >
+            {arabicNumber(sector.number)}
+          </text>
+        );
       })}
-      {district.sectors.map((sector) => (
-        <text
-          key={sector.number}
-          x={(sector.x - 27) * 6 + 3}
-          y={(sector.y - 17) * 6 + 4}
-          textAnchor="middle"
-          fontSize={labeled ? 12 : 16}
-          fontWeight="800"
-          fill="#173f41"
-          stroke="#e1d2b1"
-          strokeWidth="1.1"
-          paintOrder="stroke"
-        >
-          {arabicNumber(sector.number)}
-        </text>
-      ))}
     </svg>
   );
 }
@@ -145,8 +195,9 @@ export function DistrictSelector({
         event.preventDefault();
         const index = DISTRICTS.findIndex((item) => item.id === selectedRef.current);
         const next =
-          DISTRICTS[(index + (event.key === "ArrowLeft" ? 1 : DISTRICTS.length - 1)) % DISTRICTS.length]!
-            .id;
+          DISTRICTS[
+            (index + (event.key === "ArrowLeft" ? 1 : DISTRICTS.length - 1)) % DISTRICTS.length
+          ]!.id;
         setSelected(next);
         dialogRef.current?.querySelector<HTMLButtonElement>(`[data-district="${next}"]`)?.focus();
         return;
@@ -201,8 +252,8 @@ export function DistrictSelector({
           </button>
         </header>
         <p className="district-intro">
-          المدينة صارت بخمسة أضعاف المساحة. داخل الحي تقدر تبني خارج القطع المرقّمة، والمنطقة الحرة هي كل
-          اليابسة بلا أرقام. الاستعراض هنا لا يغيّر مدينتك.
+          المدينة صارت بخمسة أضعاف المساحة. داخل الحي تقدر تبني خارج القطع المرقّمة، والمنطقة الحرة
+          هي كل اليابسة بلا أرقام. الاستعراض هنا لا يغيّر مدينتك.
         </p>
         <div className="district-options" role="radiogroup" aria-label="الأحياء المتاحة">
           {DISTRICTS.map((item) => (
