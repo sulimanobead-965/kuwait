@@ -9,8 +9,11 @@ import {
 } from "@/game/districts";
 import { LAND, COLS, ROWS } from "@/game/land";
 import { roadMarkingsAt } from "@/game/three/road-markings";
+import { dirOf, getLang, t, useLang } from "@/i18n";
 
-const arabicNumber = (n: number) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!);
+/** Arabic-Indic digits in Arabic, Western digits in English. */
+const localNumber = (n: number) =>
+  getLang() === "ar" ? String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!) : String(n);
 export function DistrictDiagram({
   district,
   labeled = true,
@@ -45,7 +48,7 @@ export function DistrictDiagram({
       viewBox={`${box.c0 - 0.5} ${box.r0 - 0.5} ${box.w + 1} ${box.h + 1}`}
       className="district-preview"
       role="img"
-      aria-label={`مخطط ${district.name} التخطيطي`}
+      aria-label={t("مخطط {name} التخطيطي", { name: district.name })}
     >
       <rect
         x={box.c0 - 0.5}
@@ -116,7 +119,7 @@ export function DistrictDiagram({
             strokeWidth={font / 10}
             paintOrder="stroke"
           >
-            {arabicNumber(sector.number)}
+            {localNumber(sector.number)}
           </text>
         );
       })}
@@ -147,7 +150,7 @@ function FreeDiagram() {
       viewBox={`0 0 ${COLS} ${ROWS}`}
       className="district-preview"
       role="img"
-      aria-label="مخطط المنطقة الحرة"
+      aria-label={t("مخطط المنطقة الحرة")}
     >
       <rect width={COLS} height={ROWS} fill="#7eb8c4" />
       <path d={land} fill="#cbb98a" />
@@ -171,6 +174,7 @@ export function DistrictSelector({
   onResumeLegacy,
   onHasLegacy,
 }: Props) {
+  const lang = useLang();
   const active = districtById(current);
   const [selected, setSelected] = useState<DistrictId>(current ?? "yarmouk");
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -187,17 +191,17 @@ export function DistrictSelector({
       if (event.key === "Escape") {
         event.preventDefault();
         dialogRef.current
-          ?.querySelector<HTMLButtonElement>('button[aria-label="إغلاق اختيار الحي"]')
+          ?.querySelector<HTMLButtonElement>("button[data-close-districts]")
           ?.click();
         return;
       }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         const index = DISTRICTS.findIndex((item) => item.id === selectedRef.current);
+        // The list reads right-to-left in Arabic and left-to-right in English.
+        const forward = event.key === (getLang() === "ar" ? "ArrowLeft" : "ArrowRight");
         const next =
-          DISTRICTS[
-            (index + (event.key === "ArrowLeft" ? 1 : DISTRICTS.length - 1)) % DISTRICTS.length
-          ]!.id;
+          DISTRICTS[(index + (forward ? 1 : DISTRICTS.length - 1)) % DISTRICTS.length]!.id;
         setSelected(next);
         dialogRef.current?.querySelector<HTMLButtonElement>(`[data-district="${next}"]`)?.focus();
         return;
@@ -228,7 +232,7 @@ export function DistrictSelector({
   return (
     <div
       className="district-backdrop"
-      dir="rtl"
+      dir={dirOf(lang)}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -243,19 +247,26 @@ export function DistrictSelector({
         <header className="district-header">
           <div>
             <span className="district-eyebrow">
-              <Map size={15} /> المحافظ
+              <Map size={15} /> {t("المحافظ")}
             </span>
-            <h2 id="district-title">اختر الحي أو المنطقة الحرة</h2>
+            <h2 id="district-title">{t("اختر الحي أو المنطقة الحرة")}</h2>
           </div>
-          <button type="button" className="sc-x" onClick={onClose} aria-label="إغلاق اختيار الحي">
+          <button
+            type="button"
+            className="sc-x"
+            onClick={onClose}
+            aria-label={t("إغلاق اختيار الحي")}
+            data-close-districts
+          >
             <X size={18} />
           </button>
         </header>
         <p className="district-intro">
-          المدينة صارت بخمسة أضعاف المساحة. داخل الحي تقدر تبني خارج القطع المرقّمة، والمنطقة الحرة
-          هي كل اليابسة بلا أرقام. الاستعراض هنا لا يغيّر مدينتك.
+          {t(
+            "المدينة صارت بخمسة أضعاف المساحة. داخل الحي تقدر تبني خارج القطع المرقّمة، والمنطقة الحرة هي كل اليابسة بلا أرقام. الاستعراض هنا لا يغيّر مدينتك.",
+          )}
         </p>
-        <div className="district-options" role="radiogroup" aria-label="الأحياء المتاحة">
+        <div className="district-options" role="radiogroup" aria-label={t("الأحياء المتاحة")}>
           {DISTRICTS.map((item) => (
             <button
               key={item.id}
@@ -269,22 +280,22 @@ export function DistrictSelector({
               {item.id === "free" ? <FreeDiagram /> : <DistrictDiagram district={item} />}
               <span className="district-option-title">
                 <MapPin size={16} />
-                {item.name}
+                {t(item.name)}
               </span>
               <span>
                 {item.id === "free"
-                  ? "كل المدينة · خمسة أضعاف"
-                  : `${arabicNumber(item.sectors.length)} قطع · والبناء خارجها مسموح`}
+                  ? t("كل المدينة · خمسة أضعاف")
+                  : t("{n} قطع · والبناء خارجها مسموح", { n: localNumber(item.sectors.length) })}
               </span>
             </button>
           ))}
         </div>
         <div className="district-choice">
           <div>
-            <h3>{district.name}</h3>
-            <p>{district.description}</p>
+            <h3>{t(district.name)}</h3>
+            <p>{t(district.description)}</p>
             <p className="district-save-note">
-              يُحفظ كل حي على حدة. لا يترحّل أي مبنى ولا يُستبدل الحفظ القديم.
+              {t("يُحفظ كل حي على حدة. لا يترحّل أي مبنى ولا يُستبدل الحفظ القديم.")}
             </p>
           </div>
           <button
@@ -294,7 +305,7 @@ export function DistrictSelector({
             onClick={() => onChoose(district.id)}
           >
             <Play size={18} />
-            {current === district.id ? `استئناف ${district.name}` : `دخول ${district.name}`}
+            {t(current === district.id ? "استئناف {name}" : "دخول {name}", { name: district.name })}
           </button>
         </div>
         {onHasLegacy() && (
@@ -305,12 +316,14 @@ export function DistrictSelector({
             onClick={onResumeLegacy}
           >
             <RotateCcw size={15} />
-            عودة آمنة إلى مدينة الكويت القديمة
+            {t("عودة آمنة إلى مدينة الكويت القديمة")}
           </button>
         )}
         <button type="button" className="district-return" onClick={onClose}>
           <RotateCcw size={15} />
-          {active ? `العودة إلى ${active.name} دون تغيير` : "العودة إلى مدينة الكويت دون تغيير"}
+          {active
+            ? t("العودة إلى {name} دون تغيير", { name: active.name })
+            : t("العودة إلى مدينة الكويت دون تغيير")}
         </button>
       </div>
     </div>

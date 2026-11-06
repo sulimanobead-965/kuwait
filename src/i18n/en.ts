@@ -1,0 +1,836 @@
+/**
+ * English translations, keyed by the Arabic source text. Keep `{placeholders}`
+ * identical to the Arabic key (i18n.test.ts checks this). Kuwaiti dialect lines from
+ * the virtual players become natural English with a light Gulf flavour.
+ */
+export const EN: Record<string, string> = {
+  // ------------------------------------------------------------ title, ranks, eras
+  المحافظ: "The Governor",
+  "مساعد المختار": "Assistant Mukhtar",
+  "مختار المنطقة": "Area Mukhtar",
+  "ترقية: صرت {title}": "Promotion: you are now {title}",
+  "الاستقلال ١٩٦١": "Independence 1961",
+  "طفرة النفط": "Oil Boom",
+  "الكويت الحديثة": "Modern Kuwait",
+  "مدينة المليون": "Million City",
+  الكويت: "Kuwait",
+
+  // ------------------------------------------------------------ buildings (catalog)
+  فيلا: "Villa",
+  "بيت كويتي بفناء": "Kuwaiti house with a courtyard",
+  "فيلا حديثة": "Modern Villa",
+  "بيت بواجهة مضيئة": "House with a lit facade",
+  عمارة: "Apartment Block",
+  "سكن أكثف للحي": "Denser housing for the area",
+  "محل السوق": "Market Shop",
+  "تجارة، وتبي سكان": "Trade; needs residents",
+  "برج مكاتب": "Office Tower",
+  "إيراد عالٍ بعد ما تكبر": "High revenue once the city grows",
+  "محطة كهرباء": "Power Plant",
+  "تغذي البيوت والمكاتب": "Powers homes and offices",
+  "محطة تحلية": "Desalination Plant",
+  "ماء عذب للمدينة": "Fresh water for the city",
+  "مركز شرطة": "Police Station",
+  "أمان يرفع السعادة": "Safety lifts happiness",
+  مستوصف: "Clinic",
+  "صحة الحي": "Neighbourhood health",
+  مدرسة: "School",
+  "تعليم الحي": "Neighbourhood education",
+  "مركز إطفاء": "Fire Station",
+  "حماية الشوارع": "Keeps the streets safe",
+  حديقة: "Park",
+  "نخيل وظل على الكورنيش": "Palms and shade on the Corniche",
+  "أبراج الكويت": "Kuwait Towers",
+  "معلم البلد والسياح": "The country's icon, loved by tourists",
+  "المسجد الكبير": "Grand Mosque",
+  "قلب المدينة": "The heart of the city",
+  "برج التحرير": "Liberation Tower",
+  "برج الاتصالات": "The telecom tower",
+  "قصر السيف": "Seif Palace",
+  "قصر الإمارة على الساحل": "The Emir's palace on the shore",
+  "برج بوبيان": "Boubyan Tower",
+  "برج زجاجي على الشارع": "A glass tower on the avenue",
+  "شاليه بحري": "Beach Chalet",
+  "شاليه على البحر بمسبح وجلسة": "Seaside chalet with a pool and terrace",
+  "برج الحمراء": "Al Hamra Tower",
+  "أطول برج في الكويت بواجهته المنحوتة": "Kuwait's tallest tower, with its sculpted facade",
+  "مجمع الأفنيوز": "The Avenues Mall",
+  "أكبر مجمع تسوق: دخل ووظائف كثيرة": "The biggest mall: lots of income and jobs",
+  "مركز جابر الثقافي": "Jaber Cultural Centre",
+  "دار الأوبرا والمسارح": "Opera house and theatres",
+  "سوق المباركية": "Souq Al-Mubarakiya",
+  "السوق التراثي والمطاعم الشعبية": "The heritage souq and its old-style eateries",
+  "استاد جابر الدولي": "Jaber International Stadium",
+  "يضاعف أثر بطولات كرة القدم": "Doubles the effect of football tournaments",
+  سكن: "Housing",
+  تجارة: "Commerce",
+  خدمات: "Services",
+  معالم: "Landmarks",
+  "د.ك": "KD",
+
+  // ------------------------------------------------------------ developments
+  "أبراج سكنية فاخرة": "Luxury Residential Towers",
+  "تسعة أبراج سكنية شاهقة حول ساحة خضراء.":
+    "Nine soaring residential towers around a green square.",
+  "مجمع سكني متكامل": "Residential Compound",
+  "عمارات عالية ومدرسة ومستوصف وسوق وحدائق بشارع داخلي.":
+    "Tall apartment blocks, a school, a clinic, shops and parks along an inner street.",
+  "حي المال والأعمال": "Business District",
+  "ناطحات مكاتب وأبراج تجارية حول شارع رئيسي، وظائف ودخل ضخم.":
+    "Office skyscrapers and commercial towers on a main avenue: jobs and big income.",
+  "واجهة بحرية": "Waterfront",
+  "شاليهات وأبراج سكنية على البحر مع ممشى وحدائق.":
+    "Chalets and residential towers by the sea, with a promenade and parks.",
+  "مدينة ذكية": "Smart City",
+  "مدينة كاملة: عشرات الأبراج السكنية ومراكز أعمال وخدمات وحدائق بشبكة شوارع.":
+    "A whole city: dozens of residential towers, business centres, services and parks on a street grid.",
+
+  // ------------------------------------------------------------ districts
+  اليرموك: "Yarmouk",
+  "شارع رئيسي مستقيم وتقاطع أفقي يفصل قطعتَي ٢/٣ عن ١/٤.":
+    "A straight main road and a cross street split blocks 2/3 from 1/4.",
+  العديلية: "Adailiya",
+  "شارع رئيسي طولي وتقاطع أفقي: ٣/٢ أعلى المخطط، و٤/١ أسفله.":
+    "A long main road and a cross street: 3/2 at the top of the plan, 4/1 below.",
+  السرة: "Surra",
+  "شارع رئيسي مستقيم بين عمودين، وتقاطعان أفقيان يفصلان القطع الست.":
+    "A straight main road between two columns, with two cross streets dividing the six blocks.",
+  "منطقة حرة": "Free Zone",
+  "كل اليابسة مع الطرق الدائرية والسريعة بشكل تقريبي. ابنِ حيث شئت وارصف شوارعك.":
+    "All the land, with rough ring roads and highways. Build anywhere and lay your own streets.",
+
+  // ------------------------------------------------------------ map places
+  "جون الكويت": "Kuwait Bay",
+  "مدينة الكويت": "Sharq / Kuwait City",
+  الشويخ: "Shuwaikh",
+  الدوحة: "Doha",
+  الجهراء: "Jahra",
+  السالمية: "Salmiya",
+  حولي: "Hawalli",
+  الرميثية: "Rumaithiya",
+  مشرف: "Mishref",
+  الخالدية: "Khaldiya",
+  الفروانية: "Farwaniya",
+  المطار: "Airport",
+  الظهر: "Daher",
+  الأحمدي: "Ahmadi",
+  الفحيحيل: "Fahaheel",
+
+  // ------------------------------------------------------------ companies & finance
+  "مصرف الأمان الإسلامي": "Al Aman Islamic Bank",
+  "تمويل مرابحة بربح متفق عليه بدل الفائدة، ووديعة مضاربة تشاركك الربح والخسارة، وصكوك مدعومة بأصول.":
+    "Murabaha financing at an agreed markup instead of interest, a Mudaraba deposit that shares profit and loss with you, and asset-backed Sukuk.",
+  "بنك الديرة": "Al Deera Bank",
+  "ودائع بفائدة ١٠٪ سنوياً، وسندات، وقروض. البنوك تفلس في الأزمات.":
+    "Deposits at 10% a year, bonds and loans. Banks fail in a crisis.",
+  "شركة المرسى العقارية": "Al Marsa Real Estate",
+  "مشاريع سكنية تعيد رأس المال بربح وتسلّمك بيوتاً جاهزة. مخاطرة أعلى.":
+    "Housing projects that return your capital with profit and hand over ready homes. Higher risk.",
+  "دار الرأي للاستشارات": "Dar Al Ra'i Consulting",
+  "عقد سنوي يخفّض المصاريف ١٥٪ ويرفع الرضا، وينذرك قبل الأزمات فتقل خسائرك.":
+    "A yearly contract that cuts costs by 15%, lifts approval and warns you before a crisis so you lose less.",
+  "عمارات سكنية": "Apartment Blocks",
+  "ضاحية متكاملة": "Complete Suburb",
+  "مدينة ذكية على الواجهة البحرية": "Smart Waterfront City",
+  مشروع: "Project",
+  "استثمار خاص": "Private Investment",
+  "البنك مغلق بعد إفلاسه": "The bank is closed after going bankrupt",
+  "الرصيد ما يكفي للإيداع": "Not enough funds to deposit",
+  "نسبة غير صحيحة": "Invalid rate",
+  "أودعت {amount} د.ك في {company} بفائدة {rate}": "Deposited {amount} KD at {company} at {rate}",
+  "ما عندك وديعة": "You have no deposit",
+  "سحبت {amount} د.ك": "Withdrew {amount} KD",
+  "عرض غير موجود": "Offer not found",
+  "الشركة مغلقة بعد إفلاسها": "The company is closed after going bankrupt",
+  "أرقام السند غير صحيحة": "Invalid bond terms",
+  "تحتاج {amount} د.ك": "You need {amount} KD",
+  "اشتريت سندات بقيمة {amount} د.ك بفائدة {rate}": "Bought {amount} KD of bonds at {rate}",
+  "أرقام المشروع غير صحيحة": "Invalid project terms",
+  "بدأ مشروع {name} مع {company}": "{name} started with {company}",
+  "المصرف الإسلامي مغلق": "The Islamic bank is closed",
+  "أرقام التمويل غير صحيحة": "Invalid financing terms",
+  "المصرف رفض: تجاوزت حد التمويل": "Declined: you are over the financing limit",
+  "أقل ربح يقبله المصرف لهذه المدة {rate}":
+    "The lowest markup the bank accepts for this term is {rate}",
+  "تمويل مرابحة {amount} د.ك بربح {rate}": "Murabaha financing: {amount} KD at a {rate} markup",
+  "الرصيد ما يكفي": "Not enough funds",
+  "أودعت {amount} د.ك وديعة مضاربة بربح متوقع {rate}":
+    "Placed {amount} KD in a Mudaraba deposit, expected profit {rate}",
+  "ما عندك وديعة مضاربة": "You have no Mudaraba deposit",
+  "الجهة المصدرة مغلقة": "The issuer is closed",
+  "أرقام الصك غير صحيحة": "Invalid Sukuk terms",
+  "اشتريت صكوكاً بقيمة {amount} د.ك بربح متوقع {rate}":
+    "Bought {amount} KD of Sukuk, expected profit {rate}",
+  "العقد ساري": "The contract is still running",
+  "وقّعت عقداً مع {company}": "Signed a contract with {company}",
+  "تعثّر {company}! خسرت {lost} د.ك واسترجعت {back} من الأصول":
+    "{company} defaulted! You lost {lost} KD and recovered {back} from the assets",
+  "إفلاس {company}! خسرت {lost} د.ك واسترجعت {back}":
+    "{company} went bankrupt! You lost {lost} KD and recovered {back}",
+  "إفلاس {company}! ضاع {lost} د.ك من استثماراتك":
+    "{company} went bankrupt! {lost} KD of your investments is gone",
+  "إفلاس {company} وانتهى عقدك": "{company} went bankrupt and your contract ended",
+  "سدّدت تمويل المرابحة كاملاً": "Murabaha financing fully repaid",
+  "تأخر قسط المرابحة: تبرع خيري {amount} د.ك بلا فوائد إضافية":
+    "Late Murabaha installment: {amount} KD charity fee, no extra interest",
+  "استُحقت الصكوك {amount} د.ك ورجع المبلغ": "Sukuk of {amount} KD matured and were repaid",
+  "استُحقت السندات {amount} د.ك ورجع المبلغ": "Bonds of {amount} KD matured and were repaid",
+  "اكتمل {name}: رجع {amount} د.ك وتسلّمت {homes} مبنى":
+    "{name} completed: {amount} KD returned and {homes} buildings handed over",
+  "اكتمل {name}: رجع {amount} د.ك": "{name} completed: {amount} KD returned",
+
+  // ------------------------------------------------------------ construction advisor
+  "م. عبدالله المقاول": "Eng. Abdullah the Contractor",
+  "عمارة بدل فيلا": "Apartments replacing a villa",
+  "ناطحة سكنية": "Residential skyscraper",
+  "دور إضافي لعمارة": "Extra floor on apartments",
+  "ناطحة تجارية": "Commercial skyscraper",
+  "ترقية تجارية": "Commercial upgrade",
+  "ترقية {name}": "{name} upgrade",
+  "{n} {label}": "{label} ×{n}",
+  "{works} · {spent} د.ك + أتعاب {fee} · +{gained} ساكن":
+    "{works} · {spent} KD + {fee} fee · +{gained} residents",
+  "{works} · {spent} د.ك + أتعاب {fee}": "{works} · {spent} KD + {fee} fee",
+  "ما كفت الميزانية ({budget} د.ك) لأي عمل · أتعاب {fee}":
+    "The budget ({budget} KD) covered no work · {fee} fee",
+  "المستشار يعمل عندك": "The advisor already works for you",
+  "تحتاج {amount} د.ك للتعاقد": "You need {amount} KD to sign",
+  "تعاقدت مع {name}": "Hired {name}",
+  "أنهيت عقد مستشار البناء": "Construction advisor's contract ended",
+  "مستشار البناء": "Construction advisor",
+  "مستشار البناء: {works}": "Construction advisor: {works}",
+
+  // ------------------------------------------------------------ virtual players
+  "أبو فهد": "Abu Fahad",
+  "محافظ الجهراء": "Governor of Jahra",
+  "حيّاك الله يا جار": "Welcome, neighbour!",
+  "هلا والله بالمحافظ": "Ahlan, Governor!",
+  "مساء الخير، شلونك وشلون أهلك؟": "Good evening! How are you and the family?",
+  "أم سالم": "Um Salem",
+  "مختارة الفحيحيل": "Mukhtar of Fahaheel",
+  "أهلين يا ولدي": "Ahlan, my son!",
+  "هلا بك، شخبارك؟": "Hala! What's new?",
+  "يا هلا، عسى أمورك طيبة": "Ya hala, I hope all is well.",
+  "بو خالد": "Bu Khalid",
+  "تاجر في المباركية": "Merchant in Mubarakiya",
+  "هلا هلا، عندي لك صفقة": "Hala hala, I've got a deal for you!",
+  "يا مرحبا، السوق اليوم حامي": "Marhaba! The market's hot today.",
+  "أهلاً يا محافظ، شنو عندك؟": "Ahlan, Governor. What have you got?",
+  سارة: "Sara",
+  "مستثمرة شابة في السالمية": "Young investor in Salmiya",
+  "هاي! عندي فكرة مشروع": "Hi! I've got a project idea.",
+  "أهلاً، شفت أرقام السوق اليوم؟": "Hey, did you see the market today?",
+  "مرحبا! خلنا نسوي شي كبير": "Hi! Let's do something big.",
+  مشعل: "Meshal",
+  "مقاول في الأحمدي": "Contractor in Ahmadi",
+  "السلام عليكم يا طويل العمر": "Salam alaikum, sir!",
+  "هلا بالمحافظ، عندك شغل؟": "Hala, Governor. Got work for me?",
+  "يا هلا، المعدات جاهزة": "Ya hala, the equipment's ready.",
+  "أرقام غير صحيحة": "Invalid numbers",
+  "رصيدك ما يكفي": "You don't have enough funds",
+  "أقرضك {amount} د.ك لمدة {months} شهر بفائدة {rate} سنوياً؟":
+    "Shall I lend you {amount} KD for {months} months at {rate} a year?",
+  "لا والله، الفائدة واجد. خلها لغيري":
+    "No, wallah, that's too much interest. Offer it to someone else",
+  "مشكور، بس هالنسبة ما تمشي معي": "Thanks, but that rate doesn't work for me",
+  "تبي تذبحني بالفوايد؟ لا شكراً": "You want to kill me with interest? No thanks",
+  "{name} رفض العرض": "{name} turned the offer down",
+  "قرض حسن؟ الله يجزاك خير ويجعلها في ميزان حسناتك. ما أنساها لك":
+    "A Qard Hasan? May God reward you for it. I won't forget this",
+  "أقرضت {name} قرضاً حسناً": "You gave {name} a Qard Hasan",
+  "الله يجزاك خير، ما تقصر. بيوصلك القسط كل شهر":
+    "God bless you, you're too kind. The installment will reach you every month",
+  "ماشي، اتفقنا. الفايدة ثقيلة بس بحاول ألتزم":
+    "Fine, deal. The interest is heavy, but I'll try to keep up",
+  "أقرضت {name} {amount} د.ك": "You lent {name} {amount} KD",
+  "تقدر تقرضني {amount} د.ك لمدة {months} شهر بفائدة {rate}؟":
+    "Could you lend me {amount} KD for {months} months at {rate}?",
+  "والله ما عندي هالمبلغ، أقصى شي {amount} د.ك":
+    "Wallah, I don't have that much. {amount} KD at most",
+  "{name} ما عنده المبلغ": "{name} doesn't have that much",
+  "أقل شي أقدر عليه {rate} سنوياً": "The lowest I can do is {rate} a year",
+  "{name} يطلب {rate}": "{name} asks for {rate}",
+  "سامحني، ما عاد أثق أقرضك بعد اللي صار":
+    "Sorry, after what happened I can't trust you with a loan",
+  "{name} ما يثق فيك": "{name} doesn't trust you",
+  "تفضل، والله يوفقك. لا تتأخر بالقسط":
+    "Here you go, good luck. Don't be late with the installments",
+  "حلالك، بس الوعد وعد": "It's yours, but a promise is a promise",
+  "ولا يهمك، بيننا ثقة": "No worries, we trust each other",
+  "اقترضت {amount} د.ك من {name}": "Borrowed {amount} KD from {name}",
+  "ما عليك له شي": "You don't owe him anything",
+  "وصلت، الله يبارك لك. رجال وكفو": "Got it, God bless you. A man of your word",
+  "سدّدت دينك كاملاً": "Debt fully repaid",
+  "إذا تبي قرض أقدر أعطيك لين {amount} د.ك بفائدة {rate}. وإذا تبي تقرضني قول النسبة":
+    "If you want a loan I can give you up to {amount} KD at {rate}. And if you want to lend me, name your rate",
+  "السوق اليوم يمشي على {rate} سنوياً. أي شي فوق ٣٠٪ مخاطرة كبيرة على الطرفين":
+    "The market's going at {rate} a year today. Anything above 30% is a big risk for both sides",
+  "الله يعدّيها على خير. لا تحط كل فلوسك بمكان واحد، البنوك تطيح بهالأيام":
+    "May God get us through it. Don't keep all your money in one place, banks are falling these days",
+  "الحمد لله الوضع هادي، بس خلك مستعد. الأزمات تجي فجأة":
+    "Alhamdulillah, things are calm, but be ready. Crises come out of nowhere",
+  "الناس تبي سكن رخيص ومدارس ومستوصفات قريبة. لا ترفع الإيجارات واجد":
+    "People want cheap housing and schools and clinics nearby. Don't push the rents too high",
+  "العمارات بدل الفلل تضاعف السكان. ومستشار البناء يوفر عليك وقت":
+    "Apartments instead of villas multiply your population. And the construction advisor saves you time",
+  "العفو، واجبنا. الكويت بيتنا كلنا": "You're welcome, it's our duty. Kuwait is home to us all",
+  "ما نسيت دينك علي ({amount} د.ك)، القسط واصلك كل شهر إن شاء الله":
+    "I haven't forgotten what I owe you ({amount} KD). The installment reaches you every month, inshallah",
+  "كلامك على عيني وراسي": "Your word is my command",
+  "إن شاء الله خير، نتعاون فيها": "Inshallah it'll be good, we'll work on it together",
+  "الله يحفظك يا ولدي": "God keep you, my son",
+  "تدري إن الفحيحيل تحبك؟": "Did you know Fahaheel loves you?",
+  "الكلام ما يأكل عيش، خلنا نتكلم أرقام": "Talk doesn't put bread on the table. Let's talk numbers",
+  "السوق يبي جرأة": "The market rewards the bold",
+  "فكرة حلوة! خلنا نشتغل عليها": "Nice idea! Let's work on it",
+  "ترند هالأيام الشاليهات البحرية": "Beach chalets are the trend these days",
+  "عطني الأرض وأنا أبني لك": "Give me the land and I'll build for you",
+  "الحديد غالي بس نتفاهم": "Steel is pricey, but we'll work something out",
+  "{greet}. أنا {name}، {role}.": "{greet} I'm {name}, {role}.",
+  "{name} أعلن عجزه عن السداد! ضاع {amount} د.ك": "{name} defaulted on the loan! {amount} KD lost",
+  "سامحني يا محافظ، خسرت كل شي وما أقدر أسدد":
+    "Forgive me, Governor. I lost everything and can't pay you back",
+  "خلصت أقساطك كلها، مشكور على وقفتك":
+    "That's the last installment paid. Thanks for standing by me",
+  "وصلني آخر قسط. كفو والله": "Got the last installment. Well done, wallah",
+  "القسط ما وصل! لا تخليني أتكلم مع الناس عنك":
+    "The installment didn't arrive! Don't make me tell people about you",
+  "تأخرت عن قسط {name}": "You missed an installment to {name}",
+  "عندي مشروع يحتاج {amount} د.ك، تقرضني؟ أرجعها بفائدة {rate}":
+    "I have a project that needs {amount} KD. Will you lend it? I'll pay it back at {rate}",
+  "عندي سيولة، إذا تبي قرض بفائدة {rate} كلمني":
+    "I have cash on hand. If you want a loan at {rate}, talk to me",
+  "تقدر تساعدنا بـ {amount} د.ك؟ نرجعها مع فايدة":
+    "Could you help us out with {amount} KD? We'll pay it back with interest",
+
+  // ------------------------------------------------------------ events
+  "بطولة كرة قدم": "Football Tournament",
+  "جماهير وفنادق ومطاعم: دخل أعلى وناس تنتقل للمنطقة.":
+    "Crowds, hotels and restaurants: more income and people moving in.",
+  "ماراثون الكورنيش": "Corniche Marathon",
+  "رياضة وصحة على شارع الخليج. رخيص ويرفع الرضا.":
+    "Sport and health on Gulf Road. Cheap, and it lifts approval.",
+  "مهرجان هلا فبراير": "Hala February Festival",
+  "تسوّق وفعاليات عائلية: التجارة تنتعش.": "Shopping and family events: business booms.",
+  "حفلة وطنية": "National Concert",
+  "ليلة واحدة ترفع الرضا كثيراً.": "One night that lifts approval a lot.",
+  "في فعالية شغّالة. استنى تخلص": "An event is already running. Wait for it to end",
+  "الوباء يمنع التجمعات الآن": "The pandemic bans gatherings right now",
+  "تحتاج ٦٠٠ ساكن على الأقل لتنظيم فعالية": "You need at least 600 residents to hold an event",
+  "انطلقت: {name}": "Started: {name}",
+  "انتهت {name}. سمعة المنطقة ارتفعت": "{name} is over. The area's reputation grew",
+  "فعالية جارية: {name}": "Event running: {name}",
+
+  // ------------------------------------------------------------ loans & treasury
+  "مبلغ غير صحيح": "Invalid amount",
+  "البنك يرفض: أقل فائدة يقبلها الآن {rate}٪":
+    "The bank refuses: its lowest rate right now is {rate}%",
+  "البنك رفض: الديون وصلت الحد": "The bank refused: your debt is at the limit",
+  "قرض {amount} د.ك من البنك": "Bank loan of {amount} KD",
+  "ما عليك دين": "You have no debt",
+  "الرصيد ما يكفي للسداد": "Not enough funds to repay",
+  "سدّدت القرض كاملاً": "Loan fully repaid",
+  "دين البنك {amount} د.ك": "Bank debt: {amount} KD",
+  "عجز: مصروف الشهر أكبر من الصندوق": "Deficit: this month's costs exceed the treasury",
+
+  // ------------------------------------------------------------ services & costs
+  مدارس: "Schools",
+  مستوصفات: "Clinics",
+  شرطة: "Police",
+  إطفاء: "Fire",
+  حدائق: "Parks",
+  "السكن والإيجارات": "Housing & rent",
+  "أكبر بند في ميزانية الأسرة": "The biggest item in a family budget",
+  التعليم: "Education",
+  "رسوم المدارس والكتب": "School fees and books",
+  الصحة: "Health",
+  "المستوصفات والأدوية": "Clinics and medicine",
+  "الكهرباء والماء": "Power & water",
+  "فواتير البيت": "Household bills",
+  "النقل والمواصلات": "Transport",
+  "الباصات والبنزين": "Buses and fuel",
+
+  // ------------------------------------------------------------ crises & disasters
+  "أزمة اقتصادية عالمية": "Global Economic Crisis",
+  "الدخل ينزل، والبنوك والشركات معرضة للإفلاس.":
+    "Income falls, and banks and companies risk bankruptcy.",
+  "وباء عالمي": "Global Pandemic",
+  "الناس تطلع والفعاليات ممنوعة. المستوصفات تخفف الأثر.":
+    "People leave and events are banned. Clinics soften the blow.",
+  "حرب إقليمية": "Regional War",
+  "خوف ونزوح ومصاريف دفاع مدني كل شهر.":
+    "Fear, people fleeing, and civil-defence costs every month.",
+  "في أزمة جارية": "A crisis is already under way",
+  "{name}! {blurb}": "{name}! {blurb}",
+  "انتهت {name}. الحمد لله على السلامة": "{name} is over. Thank God we made it through",
+  "{name} لين {date}": "{name} until {date}",
+  "انتهت الكارثة. المدينة تلمّ جراحها": "The disaster is over. The city is healing",
+  "في كارثة جارية. استنى تخلص": "A disaster is already under way. Wait for it to end",
+  "ما في مبنى يطاله الحريق": "There's no building for a fire to hit",
+  "حريق ضرب {name} · خسارة {amount} د.ك": "Fire hit: {name} · {amount} KD lost",
+  "عاصفة رملية تغطي الكويت · تنظيف {amount} د.ك":
+    "A sandstorm covers Kuwait · {amount} KD clean-up",
+  "أمطار وسيول تغرق الشوارع · تصريف {amount} د.ك": "Rain floods the streets · {amount} KD drainage",
+  "انقطاع كهرباء على الأحياء · إصلاح {amount} د.ك":
+    "Blackout across the districts · {amount} KD repairs",
+  حريق: "Fire",
+  "عاصفة رملية": "Sandstorm",
+  "انقطاع كهرباء": "Blackout",
+  "أمطار وسيول": "Floods",
+
+  // ------------------------------------------------------------ neighbours & blocks
+  "بجانب حديقة +{n}٪": "Next to a park +{n}%",
+  "قريب من السوق +{n}٪": "Near shops +{n}%",
+  "بجانب محطة −{n}٪": "Next to a plant −{n}%",
+  "زبائن من البيوت حوله +{n}٪": "Customers from nearby homes +{n}%",
+  "ارصف طريقاً بجانبه عشان ينتج": "Pave a road next to it so it can produce",
+  "الكهرباء أو الماء ناقص": "Power or water is short",
+  "يحتاج {n} ساكن": "Needs {n} residents",
+
+  // ------------------------------------------------------------ achievements
+  "أول حجر": "First Stone",
+  "ابنِ أول مبنى": "Build your first building",
+  "فريج صغير": "Little Fareej",
+  "١٠ مبانٍ": "10 buildings",
+  "منطقة كاملة": "A Whole Area",
+  "١٠٠ مبنى": "100 buildings",
+  "على البحر": "By the Sea",
+  "ابنِ شاليهاً": "Build a chalet",
+  "ناطحة سحاب": "Skyscraper",
+  "رقِّ مبنى تجارياً أو سكنياً للمستوى ٥": "Upgrade a shop, tower or apartment block to level 5",
+  "معالم الكويت": "Kuwait's Landmarks",
+  "ابنِ كل المعالم": "Build every landmark",
+  "١٠ آلاف ساكن": "10,000 Residents",
+  "١٠٠ ألف ساكن": "100,000 Residents",
+  "مليون ساكن": "1 million residents",
+  "شعب سعيد": "Happy People",
+  "رضا ٩٠٪": "90% approval",
+  "خزينة عامرة": "Full Treasury",
+  "مليون د.ك في الصندوق": "1 million KD in the treasury",
+  مستثمر: "Investor",
+  "اشترِ سندات": "Buy bonds",
+  "بلا ديون": "Debt-Free",
+  "سدّد قرضاً كاملاً": "Repay a loan in full",
+  "عاصمة الفعاليات": "Events Capital",
+  "نظّم ٣ فعاليات": "Hold 3 events",
+  صامد: "Steadfast",
+  "اعبر أزمة عالمية": "Survive a global crisis",
+  "عشر سنوات": "A Decade",
+  "احكم ١٠ سنوات": "Govern for 10 years",
+
+  // ------------------------------------------------------------ quests
+  "ارصف ١٦ طرق": "Pave 16 roads",
+  "ابنِ ٣ فلل": "Build 3 villas",
+  "وفّر كهرباء وماء": "Provide power and water",
+  "ارفع معلماً كويتياً": "Raise a Kuwaiti landmark",
+  "أوصل السكان إلى ٣٬٠٠٠": "Reach 3,000 residents",
+  "طفرة النفط: افتح ٥ محلات": "Oil Boom: open 5 shops",
+  "ابنِ سوق المباركية": "Build Souq Al-Mubarakiya",
+  "رقِّ برج مكاتب للمستوى ٣": "Upgrade an office tower to level 3",
+  "أوصل السكان إلى ١٥٬٠٠٠": "Reach 15,000 residents",
+  "الكويت الحديثة: ابنِ ٣ شاليهات": "Modern Kuwait: build 3 chalets",
+  "ارفع برج الحمراء": "Raise Al Hamra Tower",
+  "افتتح مجمع الأفنيوز": "Open The Avenues Mall",
+  "حوّل مبنى إلى ناطحة سحاب (مستوى ٥)": "Turn a building into a skyscraper (level 5)",
+  "أوصل السكان إلى ١٠٠٬٠٠٠": "Reach 100,000 residents",
+  "مدينة المليون: ٥٠٠٬٠٠٠ ساكن": "Million City: 500,000 residents",
+  "مليون ساكن في الكويت": "A million residents in Kuwait",
+  "مهمة: {quest}": "Quest: {quest}",
+  "المهمة: {quest}": "Quest: {quest}",
+  "تمت المهمة +{amount} د.ك": "Quest complete +{amount} KD",
+
+  // ------------------------------------------------------------ building & roads
+  "ما ينفع الطريق في البحر": "You can't build a road in the sea",
+  "المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة":
+    "The plan keeps blocks separate; pave side streets along the block edge",
+  "في مبنى هنا": "There's a building here",
+  "الرصيد ما يكفي للطريق": "Not enough funds for the road",
+  "ما ينفع البناء في البحر": "You can't build in the sea",
+  "الأرض مشغولة": "This lot is taken",
+  "الشاليه لازم يكون على البحر مباشرة": "A chalet has to sit right on the sea",
+  "يُفتح في حقبة {era}": "Unlocks in the {era} era",
+  "ما لقيت أرض فاضية في المنطقة": "No free land in that area",
+  "اختر ماذا يُبنى في المنطقة": "Choose what to build in the area",
+  "حدّد منطقة أكبر": "Select a bigger area",
+  "الشارع الرئيسي ثابت في مخطط الحي": "Main roads are fixed in the neighbourhood plan",
+  "ما في شيء تهدّه هنا": "Nothing to demolish here",
+  "المبنى مو موجود": "That building doesn't exist",
+  "وصل آخر مستوى": "Already at the top level",
+  "الرصيد ما يكفي للترقية": "Not enough funds to upgrade",
+
+  // ------------------------------------------------------------ model areas
+  "ضاحية سكنية نموذجية": "Model Suburb",
+  "شوارع جاهزة وفلل ومدرسة ومستوصف وجمعية وحدائق.":
+    "Ready streets, villas, a school, a clinic, a co-op and parks.",
+  "مجمع تجاري نموذجي": "Model Business Park",
+  "محلات وبرج مكاتب ومواقف: وظائف ودخل أعلى.":
+    "Shops, an office tower and parking: jobs and more income.",
+  "مركز خدمات متكامل": "Full Services Centre",
+  "مدرسة ومستوصف وشرطة وإطفاء وحدائق ومحطتا كهرباء وماء.":
+    "School, clinic, police, fire station, parks, and power and water plants.",
+  "ما في أرض فاضية تكفي المشروع": "There's no free land big enough for this project",
+  "افتتاح {name}": "{name} opened",
+
+  // ------------------------------------------------------------ city log & ticker
+  "ناس تطلع من المنطقة: الرضا نازل": "People are leaving: approval is falling",
+  "التقرير السنوي {year} جاهز": "The {year} annual report is ready",
+  "الزمن واقف. اضغط تشغيل": "Time is paused. Press play",
+  "شيء في الهواء: التلوث متوسط": "Something in the air: moderate pollution",
+  "الهواء على الكورنيش صافٍ": "The air on the Corniche is clear",
+  "مستشار الكهرباء: الإنتاج ما يغطي": "Power advisor: production can't keep up",
+  "التحلية ناقصة والأحياء تعطش": "Desalination is short and districts are thirsty",
+  "الجريمة ترتفع. ابنِ مركز شرطة": "Crime is rising. Build a police station",
+  "البطالة عالية. افتح محلات وأبراج": "Unemployment is high. Open shops and towers",
+  "الرضا عالٍ. أهل الكويت مبسوطين": "Approval is high. Kuwait's people are happy",
+  "الضريبة عالية والناس تتذمر": "Taxes are high and people are grumbling",
+  "صندوق البلدية في عجز. خذ قرضاً من الميزانية":
+    "The treasury is in deficit. Take a loan in Budget",
+  "الخدمات ناقصة والناس متضايقة": "Services are short and people are upset",
+  "غلاء المعيشة: السكن والتعليم غالية والناس تشتكي":
+    "Cost of living: housing and schooling are pricey and people complain",
+  "العيد الوطني وعيد التحرير: الأعلام في كل مكان": "National & Liberation Day: flags everywhere",
+  "رمضان كريم: إفطار جماعي في المسجد الكبير": "Ramadan Kareem: community iftar at the Grand Mosque",
+  "رمضان كريم: ابنِ المسجد الكبير للإفطار الجماعي":
+    "Ramadan Kareem: build the Grand Mosque for a community iftar",
+  "عيدكم مبارك": "Eid Mubarak",
+  "مدينة الكويت تنتظر قرارك": "Kuwait City awaits your decision",
+  "الحظ يرجع بعد {n} ث": "Luck returns in {n}s",
+  "حظك +{amount} د.ك": "Lucky you! +{amount} KD",
+  "العيد الوطني وعيد التحرير": "National & Liberation Day",
+  "رمضان كريم": "Ramadan Kareem",
+
+  // ------------------------------------------------------------ toasts & celebrations
+  "مكافأة {amount} د.ك. صرت المحافظ! الهدف القادم: مليون ساكن.":
+    "{amount} KD bonus. You're the Governor! Next goal: a million residents.",
+  "مكافأة {amount} د.ك. الترقية القادمة: {title}": "{amount} KD bonus. Next promotion: {title}",
+  "انفتحت مبانٍ ومعالم جديدة في قائمة البناء.":
+    "New buildings and landmarks are open in the build menu.",
+  "🏆 إنجاز: {name}": "🏆 Achievement: {name}",
+  "+{amount} د.ك": "+{amount} KD",
+  "على الكورنيش +١٥٪": "On the Corniche +15%",
+  "{name}: حُفظ تقدّمك، ويمكنك التبديل من زر الأحياء":
+    "{name}: progress saved. Switch any time from Districts",
+  "استعدت مدينة الكويت القديمة دون تغيير حفظها":
+    "Restored the old Kuwait City without touching its save",
+  "مدينة جديدة على خريطة الكويت": "A new city on the map of Kuwait",
+  "المحافظ · {name}": "The Governor · {name}",
+  "{residents} ساكن · رضا {happy}%": "{residents} residents · {happy}% approval",
+  "مدينتي في المحافظ": "My city in The Governor",
+  "تم حفظ صورة المدينة": "City photo saved",
+  "ما قدرت ألتقط الصورة": "Couldn't take the photo",
+  "دخل حسابك {amount} د.ك من البنك": "{amount} KD from the bank is in your account",
+  "تم السداد": "Repaid",
+  "تم البناء: {n} مبنى": "Built: {n} buildings",
+  "امتلأت القطع: {n} مبنى": "Blocks filled: {n} buildings",
+  "تم التنظيم: {roads} طريق، {n} مبنى": "Area planned: {roads} roads, {n} buildings",
+  "خريطة مدينة الكويت ثلاثية الأبعاد": "3D map of Kuwait City",
+  "عرض متوافق: اللعب كامل، والتجسيد ثنائي الأبعاد لعدم توفر WebGL.":
+    "Compatibility view: full gameplay, drawn in 2D because WebGL is unavailable.",
+  "أهلاً {name}!": "Welcome, {name}!",
+  "ترقية!": "Promotion!",
+  "حقبة جديدة": "New Era",
+  "إنجاز جديد": "New Achievement",
+  "يا سلام!": "Awesome!",
+  "هلا والله، رجعت!": "Ahlan! You're back!",
+  "مكافأة اليوم +{amount} د.ك · أيام متتالية {streak}":
+    "Daily bonus +{amount} KD · {streak}-day streak",
+  "أثناء غيابك اشتغلت المدينة {months} شهراً وربحت +{amount} د.ك":
+    "While you were away the city ran for {months} months and earned +{amount} KD",
+  "يلا نكمل": "Let's go",
+
+  // ------------------------------------------------------------ HUD
+  "ماء %": "Water %",
+  "كهرباء %": "Power %",
+  الجريمة: "Crime",
+  السكان: "Residents",
+  الأموال: "Funds",
+  التلوث: "Pollution",
+  الزحمة: "Traffic",
+  البطالة: "Unemployment",
+  الصناعة: "Industry",
+  الرضا: "Approval",
+  "حجم المدينة": "City size",
+  التجارة: "Commerce",
+  "قيمة الأرض": "Land value",
+  الكهرباء: "Power",
+  الماء: "Water",
+  "ميزانية التعليم": "Education budget",
+  "ترفع التعليم والرضا. ٢٠ د.ك كل شهر.": "Raises education and approval. 20 KD a month.",
+  "إعادة التدوير": "Recycling",
+  "تقلل التلوث. ١٠ د.ك كل شهر.": "Cuts pollution. 10 KD a month.",
+  "مشاركة السيارات": "Carpooling",
+  "تخفف الزحمة. ٦ د.ك كل شهر.": "Eases traffic. 6 KD a month.",
+  "دعم المستوصفات": "Clinic funding",
+  "ترفع الصحة. ١٤ د.ك كل شهر.": "Raises health. 14 KD a month.",
+  "منع الدخان": "Smoking ban",
+  "هواء أنظف، وتجارة المحلات تهدأ شوي. ٨ د.ك.": "Cleaner air, but shops slow down a little. 8 KD.",
+  "سكن وتجارة": "Housing & commerce",
+  طرق: "Roads",
+  "تنظيم منطقة": "Plan an area",
+  "كهرباء وماء وخدمات": "Power, water & services",
+  هدم: "Demolish",
+  "رضا الناس {n}%": "Approval {n}%",
+  تقريب: "Zoom in",
+  تبعيد: "Zoom out",
+  "الإضاءة: {mode}": "Lighting: {mode}",
+  تلقائية: "auto",
+  نهار: "day",
+  ليل: "night",
+  "ليل المدينة": "City at night",
+  "نهار المدينة": "City by day",
+  "دورة النهار والليل": "Day–night cycle",
+  "عرض المدينة": "View city",
+  "عرض القطع": "View blocks",
+  إغلاق: "Close",
+  الرسوم: "Graphs",
+  الميزانية: "Budget",
+  القوانين: "Laws",
+  المستشارون: "Advisors",
+  الكوارث: "Disasters",
+  "المشاريع والفعاليات": "Projects & Events",
+  "الشركات والاستثمار": "Companies & Investment",
+  "التقرير السنوي": "Annual Report",
+  "الحقب والإنجازات": "Eras & Achievements",
+  "اللاعبون والمحادثات": "Players & Chats",
+  "ابدأ مساعداً للمختار على خريطة الكويت الحقيقية. أرضِ الناس بالخدمات والأسعار العادلة لتكبر منطقتك وتترقّى.":
+    "Start as the Mukhtar's assistant on the real map of Kuwait. Keep people happy with good services and fair prices to grow your area and get promoted.",
+  "اختر الحي وابدأ": "Choose a district and start",
+  "استئناف مدينة الكويت القديمة": "Resume the old Kuwait City",
+  "إعادة المدينة الحالية من الصفر؟ مدن الأحياء الأخرى محفوظة.":
+    "Restart this city from scratch? Your other districts stay saved.",
+  امسح: "Reset",
+  لا: "No",
+  "مستوى {level}/{max}": "Level {level}/{max}",
+  "{n} د.ك/ث": "{n} KD/s",
+  كورنيش: "Corniche",
+  مكتمل: "Maxed",
+  "ترقّي مجاني": "Free upgrade",
+  "ترقّي {amount}": "Upgrade {amount}",
+  مجاني: "Free",
+  "اسحب والطريق يلف مع اليابسة. الشوارع الرئيسية ثابتة في الأحياء، والجانبي بين القطع.":
+    "Drag and the road follows the land. Main roads are fixed in districts; side streets go between blocks.",
+  "مجاني.": "Free.",
+  "{amount} د.ك.": "{amount} KD.",
+  "اضغط مبنى أو طريق. يرجع لك نصف التكلفة.": "Tap a building or road. You get half the cost back.",
+  المشاريع: "Projects",
+  الشركات: "Companies",
+  "اجمع {amount}": "Collect {amount}",
+  المزيد: "More",
+  إيقاف: "Pause",
+  تشغيل: "Play",
+  سريع: "Fast",
+  أسرع: "Faster",
+  شوارع: "Streets",
+  "تنظيم المنطقة": "Area planning",
+  "في الحي تُملأ القطعة المرقّمة كلها. خارجها وفي المنطقة الحرة يُبنى كل ما حدّدته، مع شوارع إن أبقيتها مفعّلة.":
+    "In a district the whole numbered block is filled. Outside it, and in the Free Zone, everything you selected is built, with streets if you keep them on.",
+  "نفّذ التخطيط": "Build the plan",
+  إلغاء: "Cancel",
+  سنة: "1 year",
+  "10 سنوات": "10 years",
+  "100 سنة": "100 years",
+  "رسم المدينة": "City graph",
+  "طلب السكن والتجارة والصناعة": "Residential, commercial and industrial demand",
+
+  // ------------------------------------------------------------ budget
+  "دخل الشهر": "Income",
+  المصروف: "Expenses",
+  الفرق: "Net",
+  "الضريبة {n}%": "Tax {n}%",
+  "أعلى = دخل أكبر من المباني، لكن الرضا ينزل فوق ٨٪.":
+    "Higher = more income from buildings, but approval drops above 8%.",
+  "نسبة الضريبة": "Tax rate",
+  "قرض البنك": "Bank loan",
+  "اختر المبلغ والفائدة بنفسك. أقل فائدة يقبلها البنك الآن {rate}٪، وأي نسبة أعلى مقبولة. القسط ينخصم كل شهر تلقائياً.":
+    "Set the amount and rate yourself. The bank's lowest rate right now is {rate}%; anything higher is accepted. Installments are deducted automatically every month.",
+  "القسط الحالي {amount} د.ك.": "Current installment: {amount} KD.",
+  "الدين الحالي {debt} د.ك من حد {limit}.": "Debt: {debt} KD of a {limit} limit.",
+  "الرصيد بالسالب: خذ قرضاً لتغطية العجز.": "You're in the red: take a loan to cover the deficit.",
+  المبلغ: "Amount",
+  الفائدة: "Interest",
+  "اقترض {amount} د.ك بفائدة {rate}٪": "Borrow {amount} KD at {rate}%",
+  "سدّد ما تقدر عليه": "Repay what you can",
+  "تمويل إسلامي (مرابحة)": "Islamic financing (Murabaha)",
+  "بديل القرض: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية، وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف فوائد، فقط تبرع خيري بسيط. تقدر تأخذ التمويل والقرض معاً.":
+    "An alternative to a loan: the Islamic bank buys what the city needs and sells it to you at a markup agreed up front, paid in fixed installments that never grow. Paying late adds no interest, only a small charity fee. You can have this financing and a loan at the same time.",
+  "عليك للمصرف {owed} د.ك · القسط {installment} شهرياً":
+    "You owe the bank {owed} KD · {installment} a month",
+  "ربح المصرف": "Bank markup",
+  الأشهر: "Months",
+  "خذ تمويل {amount} د.ك بربح {rate}٪": "Take {amount} KD financing at {rate}% markup",
+  "مصاريف المعيشة": "Cost of living",
+  "مؤشر الغلاء {n}": "Price index {n}",
+  "ما يدفعه الساكن شهرياً، بأي نسبة تريدها (حتى {max}٪). الرفع المعقول يزيد دخل الصندوق، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.":
+    "What each resident pays monthly, at any level you like (up to {max}%). A sensible rise brings in more money, but approval falls and people leave; above about 400% people stop paying and income drops.",
+  "+{n}/شهر": "+{n}/mo",
+  "زيادة سنوية تلقائية": "Automatic yearly raise",
+  ثابتة: "Frozen",
+
+  // ------------------------------------------------------------ projects & events panel
+  "مناطق نموذجية جاهزة": "Ready-made model areas",
+  "تُبنى بالكامل في أقرب أرض فاضية تكفيها، بشوارعها وخدماتها، بسعر أقل من البناء قطعة قطعة.":
+    "Built in full on the nearest free land that fits, streets and services included, for less than building lot by lot.",
+  "فعاليات ورياضة": "Events & sport",
+  "الفعالية ترفع الرضا والدخل وتجذب سكاناً جدداً طوال مدتها، وتترك سمعة دائمة للمنطقة.":
+    "An event lifts approval and income and draws new residents while it runs, and leaves a lasting reputation.",
+  "{days} يوم · دخل +{income}٪ · رضا +{happy}":
+    "{days} days · income +{income}% · approval +{happy}",
+
+  // ------------------------------------------------------------ advisors panel
+  "لقبك: {title}": "Your title: {title}",
+  "{n} ساكن للترقية إلى {title}": "{n} more residents to become {title}",
+  "أعلى لقب": "Highest title",
+
+  // ------------------------------------------------------------ disasters panel
+  "الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ قرضاً من الميزانية.":
+    "Disasters strike on their own and each one costs the treasury: a fire burns a building, storms and floods lower approval, and a blackout stops production. If you go into the red, take a loan in Budget.",
+  "جارية لين {date}": "Ongoing until {date}",
+  "الخسارة المتوقعة الآن: حريق {fire} · عاصفة {storm} · سيول {flood} د.ك":
+    "Expected cost now: fire {fire} · storm {storm} · flood {flood} KD",
+  "الكوارث تضرب عشوائياً (اضغط للإيقاف)": "Random disasters are on (tap to turn off)",
+  "تفعيل الكوارث العشوائية": "Turn on random disasters",
+  "أزمات عالمية": "Global crises",
+  "تأتي نادراً من نفسها وتستمر شهوراً. الأزمة الاقتصادية تهدد البنوك والشركات واستثماراتك، والوباء يمنع الفعاليات ويطلّع الناس، والحرب الإقليمية تكلّف دفاعاً مدنياً كل شهر.":
+    "They come rarely on their own and last for months. An economic crisis threatens banks, companies and your investments; a pandemic bans events and drives people out; a regional war costs civil defence every month.",
+
+  // ------------------------------------------------------------ district picker
+  "مخطط {name} التخطيطي": "Schematic plan of {name}",
+  "مخطط المنطقة الحرة": "Map of the Free Zone",
+  "اختر الحي أو المنطقة الحرة": "Choose a district or the Free Zone",
+  "إغلاق اختيار الحي": "Close district picker",
+  "المدينة صارت بخمسة أضعاف المساحة. داخل الحي تقدر تبني خارج القطع المرقّمة، والمنطقة الحرة هي كل اليابسة بلا أرقام. الاستعراض هنا لا يغيّر مدينتك.":
+    "The city is now five times bigger. In a district you can also build outside the numbered blocks, and the Free Zone is all the land, unnumbered. Browsing here doesn't change your city.",
+  "الأحياء المتاحة": "Available districts",
+  "كل المدينة · خمسة أضعاف": "The whole city · 5× the area",
+  "{n} قطع · والبناء خارجها مسموح": "{n} blocks · building outside them allowed",
+  "يُحفظ كل حي على حدة. لا يترحّل أي مبنى ولا يُستبدل الحفظ القديم.":
+    "Each district is saved separately. No building moves and old saves are never replaced.",
+  "استئناف {name}": "Resume {name}",
+  "دخول {name}": "Enter {name}",
+  "عودة آمنة إلى مدينة الكويت القديمة": "Safely return to the old Kuwait City",
+  "العودة إلى {name} دون تغيير": "Back to {name} unchanged",
+  "العودة إلى مدينة الكويت دون تغيير": "Back to Kuwait City unchanged",
+
+  // ------------------------------------------------------------ more sheet & money
+  "{n} مليون": "{n}M",
+  "{n} ألف": "{n}K",
+  الأحياء: "Districts",
+  "الكوارث والأزمات": "Disasters & crises",
+  الإنجازات: "Achievements",
+  "صورة المدينة": "City photo",
+  حظ: "Luck",
+  "إيقاف الموسيقى": "Music off",
+  "تشغيل الموسيقى": "Music on",
+  "تشغيل الأصوات": "Sound on",
+  "كتم الأصوات": "Mute",
+  اللاعبون: "Players",
+  ملفي: "My profile",
+  "مدينة جديدة": "New city",
+
+  // ------------------------------------------------------------ companies panel
+  "مفلسة ومغلقة لين {date}": "Bankrupt and closed until {date}",
+  "عائد شهري": "Return/mo",
+  "panel::مستثمر": "Invested",
+  "ربح / خسارة": "Profit / loss",
+  "أزمة اقتصادية: خطر إفلاس البنوك والشركات مرتفع جداً الآن.":
+    "Economic crisis: banks and companies are at very high risk of bankruptcy right now.",
+  "وديعة مضاربة (بدل الفائدة)": "Mudaraba deposit (instead of interest)",
+  "رصيدك {amount} د.ك بربح متوقع {rate}. الربح الفعلي يتغير كل شهر حسب أداء استثمارات المصرف، وقد يكون خسارة في الأزمات.":
+    "Your balance: {amount} KD, expected profit {rate}. The actual profit changes every month with the bank's investments and can be a loss in a crisis.",
+  "الربح المتوقع": "Expected profit",
+  "أودع {amount}": "Deposit {amount}",
+  "اسحب الوديعة": "Withdraw deposit",
+  "صكوك (بدل السندات)": "Sukuk (instead of bonds)",
+  "صكوك مدعومة بأصول حقيقية: الربح حصة من دخل الأصل ويتغير قليلاً، وعند التعثر يرجع لك جزء أكبر من السندات.":
+    "Sukuk backed by real assets: the profit is a share of the asset's income and varies a little, and if the issuer fails you get back more than with bonds.",
+  القيمة: "Value",
+  السنوات: "Years",
+  "صكوك المصرف": "Bank Sukuk",
+  "صكوك المرسى العقارية": "Al Marsa Sukuk",
+  "تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب القرض.":
+    "Murabaha financing at an agreed markup is in the Budget panel, next to the loan.",
+  "وديعتك {amount} د.ك بفائدة {rate} سنوياً تُضاف شهرياً.":
+    "Your deposit: {amount} KD at {rate} a year, added monthly.",
+  "اسحب الكل": "Withdraw all",
+  "مبلغ الإيداع": "Deposit amount",
+  "الفائدة التي تطلبها": "Rate you ask for",
+  "أودع {amount} بفائدة {rate}٪": "Deposit {amount} at {rate}%",
+  "الفائدة حرة. فوق ١٢٪ تقريباً يغامر البنك بأموالك ويزيد خطر إفلاسه، وبنسب خيالية يفلس فوراً.":
+    "Any rate goes. Above about 12% the bank gambles with your money and its bankruptcy risk rises; at fantasy rates it fails at once.",
+  سندات: "Bonds",
+  "سند {amount} · فائدة {rate}٪ · {years} سنوات": "{amount} bond · {rate}% · {years} years",
+  "سند بشروطك": "Bond on your terms",
+  "اشترِ سند {amount} بفائدة {rate}٪": "Buy a {amount} bond at {rate}%",
+  "استثمر {amount} ← يرجع {back} بعد {months} شهر":
+    "Invest {amount} → get {back} after {months} months",
+  "+ بيوت جاهزة": "+ ready homes",
+  "سندات الشركة {amount} · فائدة {rate}٪ · مخاطرة عالية":
+    "Company bonds {amount} · {rate}% · high risk",
+  "استثمار بشروطك": "Investment on your terms",
+  العائد: "Return",
+  "استثمر {amount} بعائد {rate}٪": "Invest {amount} at a {rate}% return",
+  "{name}: {amount} يكتمل {date}": "{name}: {amount}, completes {date}",
+  "العقد ساري لين {date}": "Contract runs until {date}",
+  "عقد {months} شهراً بـ {amount} د.ك": "{months}-month contract for {amount} KD",
+  سنداتك: "Your bonds",
+  "صكوك {company} {amount} حتى {date}": "{company} Sukuk {amount} until {date}",
+  "سندات {company} {amount} حتى {date}": "{company} bonds {amount} until {date}",
+
+  // ------------------------------------------------------------ annual report
+  "يُقاس كل سنة: عدد السكان والرضا ومؤشر غلاء المعيشة والدخل والمصروف. السنة الحالية حتى الآن: دخل {income} ومصروف {spend}.":
+    "Measured every year: residents, approval, the price index, income and spending. This year so far: {income} income and {spend} spending.",
+  "أول تقرير يصدر نهاية السنة": "The first report comes out at the end of the year",
+  السنة: "Year",
+  الغلاء: "Prices",
+  الصافي: "Net",
+  "الآن: {residents} ساكن · رضا {happy}% · غلاء {index}":
+    "Now: {residents} residents · {happy}% approval · price index {index}",
+
+  // ------------------------------------------------------------ tutorial
+  "أهلاً يا مساعد المختار! هذا حيّك. شغّل الوقت من زر ▶ أسفل الشاشة.":
+    "Welcome, Assistant Mukhtar! This is your district. Start time with the ▶ button at the bottom.",
+  "ارصف طريقاً: اضغط زر الطرق ثم اسحب بإصبعك على الأرض.":
+    "Pave a road: tap the Roads button, then drag your finger across the land.",
+  "ابنِ بيتاً: افتح «سكن وتجارة»، اختر فيلا، ثم اضغط أرضاً بجانب طريق.":
+    "Build a home: open “Housing & commerce”, pick a villa, then tap a lot next to a road.",
+  "اجمع الدخل: اضغط العملة الذهبية فوق المباني أو زر «اجمع».":
+    "Collect income: tap the gold coins over buildings or the “Collect” button.",
+  "رقِّ مبنى: اضغط أي مبنى ثم «ترقّي». التجارة تصير ناطحة سحاب في المستوى ٥.":
+    "Upgrade a building: tap any building, then “Upgrade”. Shops become skyscrapers at level 5.",
+  "افتح الميزانية: الضرائب ومصاريف السكن والتعليم والصحة تحدد رضا الناس.":
+    "Open the Budget: taxes and the cost of housing, education and health decide how happy people are.",
+  "تعلّم اللعب": "How to play",
+  "إخفاء مؤقت": "Hide for now",
+  "تخطَّ الشرح": "Skip tutorial",
+
+  // ------------------------------------------------------------ profile, builder card, people
+  "من أنت يا مساعد المختار؟": "Who are you, Assistant Mukhtar?",
+  اسمك: "Your name",
+  "مثلاً: سليمان": "e.g. Sulaiman",
+  صورتك: "Your avatar",
+  "احفظ وابدأ": "Save and start",
+  "يبني ويرقّي كل شهر على حسابك: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. تدفع له التكاليف كاملة وأتعاباً شهرية (حوالي {fee} د.ك + ٥٪ من الأعمال).":
+    "Builds and upgrades every month on your budget: adds missing services, replaces villas with apartment blocks and raises them into skyscrapers, plants parks, and upgrades shops and towers. You pay the full costs plus a monthly fee (about {fee} KD + 5% of the works).",
+  "نسبة الميزانية الشهرية له: {share}٪ (≈ {amount} د.ك هذا الشهر)":
+    "His share of the monthly budget: {share}% (≈ {amount} KD this month)",
+  "آخر شهر: {report}": "Last month: {report}",
+  "المجموع: {works} عمل بقيمة {amount} د.ك": "Total: {works} works worth {amount} KD",
+  "أنهِ العقد": "End contract",
+  "عيّنه (توقيع {amount} د.ك)": "Hire him ({amount} KD signing fee)",
+  "ثقة {n}٪": "Trust {n}%",
+  "عليه لك {amount}": "owes you {amount}",
+  "عليك له {amount}": "you owe {amount}",
+  رجوع: "Back",
+  "اكتب رسالة… (قرض، فائدة، أزمة، بناء)": "Write a message… (loan, interest, crisis, build)",
+  إرسال: "Send",
+  "يطلب منك فائدة {rate}٪ سنوياً إذا اقترضت. الفائدة حرة: أي نسبة، لكن الفوائد العالية تُرفض أو تنتهي بعجز عن السداد. اكتب ٠٪ لطلب قرض حسن، ويقبله إذا كانت ثقته بك ٧٥٪ أو أكثر.":
+    "Asks you {rate}% a year if you borrow. Any rate goes, but high interest gets refused or ends in default. Enter 0% to ask for a Qard Hasan; it's accepted if their trust in you is 75% or more.",
+  "الفائدة السنوية": "Yearly interest",
+  المدة: "Term",
+  شهر: "mo",
+  أقرضه: "Lend",
+  "اقترض منه": "Borrow",
+  "سدّد دينه": "Repay",
+  "قرض حسن بلا فائدة ({amount} د.ك) · يرفع الثقة كثيراً":
+    "Interest-free Qard Hasan ({amount} KD) · builds a lot of trust",
+};

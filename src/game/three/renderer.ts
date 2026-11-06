@@ -24,6 +24,7 @@ import { createBuildingObject } from "./models.ts";
 import { CityFx, type FxCell, type FxInput } from "./fx.ts";
 import { PALETTE, cityMaterials } from "./palette.ts";
 import { mountDinarCoin } from "@/game/coin-face";
+import { getLang, type Lang } from "@/i18n";
 import {
   carGeometry,
   createGrid,
@@ -95,6 +96,8 @@ export class CityWorld {
     district: null,
   };
   private placeLabels = createPlaceLabels();
+  /** Language the text sprites (place names, parcel numbers) were drawn in. */
+  private lang: Lang = getLang();
   private parcels: THREE.Mesh | null = null;
   private fx = new CityFx();
   private fxInput: FxInput = {
@@ -678,6 +681,25 @@ export class CityWorld {
     this.grid = createGrid(roads, district);
     this.grid.visible = Boolean(this.currentTool);
     this.scene.add(this.grid);
+  }
+
+  /** Redraws the map's text (place names and parcel numbers) in another language. */
+  setLang(lang: Lang) {
+    if (lang === this.lang) return;
+    this.lang = lang;
+    const visible = this.placeLabels.visible;
+    this.scene.remove(this.placeLabels);
+    disposePlaceLabels(this.placeLabels);
+    this.placeLabels = createPlaceLabels();
+    this.placeLabels.visible = visible;
+    this.scene.add(this.placeLabels);
+    const district = districtById(this.districtId);
+    if (this.districtNumbers && district) {
+      this.scene.remove(this.districtNumbers);
+      disposeDistrictNumbers(this.districtNumbers);
+      this.districtNumbers = createDistrictNumbers(district);
+      this.scene.add(this.districtNumbers);
+    }
   }
 
   setDayMode(mode: DayMode) {

@@ -3,6 +3,7 @@ import { consulting, emptyFinance, financeMonth, loadFinance, type FinanceState 
 import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import { COLS, GRID_GEN, LAND, ROWS } from "./land";
+import { msg, t, tx } from "../i18n/index.ts";
 export { districtById, isDistrictLand } from "./districts";
 import {
   districtById,
@@ -223,7 +224,7 @@ export function checkPromotion(s: Sim, st = stats(s)) {
   const title = RANKS[now]!.title;
   const bonus = now === 1 ? 5000 : 50000;
   s.coins += bonus;
-  pushLog(s, `ترقية: صرت ${title}`);
+  pushLog(s, msg("ترقية: صرت {title}", { title }));
   return { title, bonus };
 }
 
@@ -285,16 +286,16 @@ function activeEvent(s: Sim) {
 }
 
 export function startEvent(s: Sim, kind: EventKind): Act {
-  if (activeEvent(s)) return { ok: false, msg: "في فعالية شغّالة. استنى تخلص" };
-  if (crisisOf(s) === "pandemic") return { ok: false, msg: "الوباء يمنع التجمعات الآن" };
+  if (activeEvent(s)) return { ok: false, msg: t("في فعالية شغّالة. استنى تخلص") };
+  if (crisisOf(s) === "pandemic") return { ok: false, msg: t("الوباء يمنع التجمعات الآن") };
   const def = EVENTS[kind];
-  if (s.coins < def.cost) return { ok: false, msg: `تحتاج ${def.cost.toLocaleString("en-US")} د.ك` };
+  if (s.coins < def.cost) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: def.cost }) };
   if (stats(s).residents < 600)
-    return { ok: false, msg: "تحتاج ٦٠٠ ساكن على الأقل لتنظيم فعالية" };
+    return { ok: false, msg: t("تحتاج ٦٠٠ ساكن على الأقل لتنظيم فعالية") };
   s.coins -= def.cost;
   s.event = { kind, until: s.day + def.days };
   s.flags.push(`event:${kind}`);
-  pushLog(s, `انطلقت: ${def.name}`);
+  pushLog(s, msg("انطلقت: {name}", { name: def.name }));
   return { ok: true };
 }
 
@@ -319,30 +320,30 @@ export function minLoanRate(s: Sim, st = stats(s)) {
 }
 
 export function takeLoan(s: Sim, amount: number, rate = LOAN_RATE): Act {
-  if (!(amount > 0)) return { ok: false, msg: "مبلغ غير صحيح" };
-  if (!s.finance || s.finance.down.bank > s.day) return { ok: false, msg: "البنك مغلق بعد إفلاسه" };
+  if (!(amount > 0)) return { ok: false, msg: t("مبلغ غير صحيح") };
+  if (!s.finance || s.finance.down.bank > s.day) return { ok: false, msg: t("البنك مغلق بعد إفلاسه") };
   const st = stats(s);
   const floor = minLoanRate(s, st);
   if (rate < floor)
     return {
       ok: false,
-      msg: `البنك يرفض: أقل فائدة يقبلها الآن ${Math.ceil(floor * 1000) / 10}٪`,
+      msg: t("البنك يرفض: أقل فائدة يقبلها الآن {rate}٪", { rate: Math.ceil(floor * 1000) / 10 }),
     };
   const debt = Math.round(amount * (1 + rate));
-  if (s.loan + debt > loanLimit(s, st)) return { ok: false, msg: "البنك رفض: الديون وصلت الحد" };
+  if (s.loan + debt > loanLimit(s, st)) return { ok: false, msg: t("البنك رفض: الديون وصلت الحد") };
   s.coins += amount;
   s.loan += debt;
-  pushLog(s, `قرض ${amount.toLocaleString("en-US")} د.ك من البنك`);
+  pushLog(s, msg("قرض {amount} د.ك من البنك", { amount }));
   return { ok: true };
 }
 
 export function repayLoan(s: Sim, amount: number): Act {
   const pay = Math.min(amount, s.loan, Math.max(0, s.coins));
-  if (pay <= 0) return { ok: false, msg: s.loan <= 0 ? "ما عليك دين" : "الرصيد ما يكفي للسداد" };
+  if (pay <= 0) return { ok: false, msg: t(s.loan <= 0 ? "ما عليك دين" : "الرصيد ما يكفي للسداد") };
   s.coins -= pay;
   s.loan -= pay;
   if (s.loan <= 0) {
-    pushLog(s, "سدّدت القرض كاملاً");
+    pushLog(s, msg("سدّدت القرض كاملاً"));
     if (!s.flags.includes("repaid")) s.flags.push("repaid");
   }
   return { ok: true };
@@ -474,13 +475,13 @@ export function crisisOf(s: Sim): CrisisKind | null {
 }
 
 export function startCrisis(s: Sim, kind: CrisisKind, random = Math.random) {
-  if (crisisOf(s)) return { ok: false as const, msg: "في أزمة جارية" };
+  if (crisisOf(s)) return { ok: false as const, msg: t("في أزمة جارية") };
   const [a, b] = CRISES[kind].months;
   s.crisis = { kind, until: s.day + Math.round(a + random() * (b - a)) * 30 };
-  const msg = `${CRISES[kind].name}! ${CRISES[kind].blurb}`;
-  pushLog(s, msg);
+  const entry = msg("{name}! {blurb}", { name: CRISES[kind].name, blurb: CRISES[kind].blurb });
+  pushLog(s, entry);
   if (kind === "pandemic" && s.event) s.event = null;
-  return { ok: true as const, msg };
+  return { ok: true as const, msg: tx(entry) };
 }
 
 // ---------------------------------------------------------------- calendar
@@ -537,23 +538,23 @@ export function neighborEffect(s: Sim, b: Building) {
     const parks = Math.min(2, count(["park"]));
     if (parks) {
       mult *= 1 + parks * 0.12;
-      notes.push(`بجانب حديقة +${parks * 12}٪`);
+      notes.push(t("بجانب حديقة +{n}٪", { n: parks * 12 }));
     }
     const shops = Math.min(2, count(["shop", "mubarakiya", "avenues"]));
     if (shops) {
       mult *= 1 + shops * 0.06;
-      notes.push(`قريب من السوق +${shops * 6}٪`);
+      notes.push(t("قريب من السوق +{n}٪", { n: shops * 6 }));
     }
     const plants = count(["power", "water"]);
     if (plants) {
       mult *= Math.max(0.5, 1 - plants * 0.15);
-      notes.push(`بجانب محطة −${plants * 15}٪`);
+      notes.push(t("بجانب محطة −{n}٪", { n: plants * 15 }));
     }
   } else if (d.cat === "commerce" || ["avenues", "mubarakiya", "hamra"].includes(b.kind)) {
     const homes = Math.min(4, near.filter((k) => CATALOG[k].pop > 0).length);
     if (homes) {
       mult *= 1 + homes * 0.05;
-      notes.push(`زبائن من البيوت حوله +${homes * 5}٪`);
+      notes.push(t("زبائن من البيوت حوله +{n}٪", { n: homes * 5 }));
     }
   }
   return { mult, notes };
@@ -1059,9 +1060,9 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
 export function blockReason(b: Building, s: Sim, st = stats(s)) {
   const d = CATALOG[b.kind];
   if (d.income <= 0) return null;
-  if (d.needsRoad && !besideRoad(b.c, b.r, roadSet(s))) return "ارصف طريقاً بجانبه عشان ينتج";
-  if (st.short) return "الكهرباء أو الماء ناقص";
-  if (d.needsPop > 0 && st.pop < d.needsPop) return `يحتاج ${d.needsPop} ساكن`;
+  if (d.needsRoad && !besideRoad(b.c, b.r, roadSet(s))) return t("ارصف طريقاً بجانبه عشان ينتج");
+  if (st.short) return t("الكهرباء أو الماء ناقص");
+  if (d.needsPop > 0 && st.pop < d.needsPop) return t("يحتاج {n} ساكن", { n: d.needsPop });
   return null;
 }
 
@@ -1111,30 +1112,30 @@ function spent(b: Building) {
 export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
-  if (!isLand(c, r)) return { ok: false, msg: "ما ينفع الطريق في البحر" };
+  if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع الطريق في البحر") };
   if (s.district && s.district !== "free" && isDistrictLand(s.district, cellKey(c, r)))
-    return { ok: false, msg: "المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة" };
-  if (s.buildings.some((b) => b.c === c && b.r === r)) return { ok: false, msg: "في مبنى هنا" };
+    return { ok: false, msg: t("المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة") };
+  if (s.buildings.some((b) => b.c === c && b.r === r)) return { ok: false, msg: t("في مبنى هنا") };
   const k = cellKey(c, r);
   if (s.roads.includes(k)) return { ok: true, fresh: false };
   const cost = priceOf(ROAD_COST, s);
-  if (cost > 0 && s.coins < cost) return { ok: false, msg: "الرصيد ما يكفي للطريق" };
+  if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي للطريق") };
   s.coins -= cost;
   s.roads.push(k);
   return { ok: true, fresh: true };
 }
 
 export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: number): Act {
-  if (!isLand(c, r)) return { ok: false, msg: "ما ينفع البناء في البحر" };
+  if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع البناء في البحر") };
   if (s.roads.includes(cellKey(c, r)) || s.buildings.some((b) => b.c === c && b.r === r)) {
-    return { ok: false, msg: "الأرض مشغولة" };
+    return { ok: false, msg: t("الأرض مشغولة") };
   }
   if (CATALOG[kind].needsCoast && !coastal(c, r))
-    return { ok: false, msg: "الشاليه لازم يكون على البحر مباشرة" };
+    return { ok: false, msg: t("الشاليه لازم يكون على البحر مباشرة") };
   if (!prepaid && !isUnlocked(s, kind))
-    return { ok: false, msg: `يُفتح في حقبة ${ERAS[CATALOG[kind].era ?? 0]}` };
+    return { ok: false, msg: t("يُفتح في حقبة {era}", { era: ERAS[CATALOG[kind].era ?? 0]! }) };
   const cost = priceOf(CATALOG[kind].cost, s);
-  if (cost > 0 && s.coins < cost) return { ok: false, msg: "الرصيد ما يكفي" };
+  if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي") };
   s.coins -= cost;
   s.buildings.push({
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1221,7 +1222,7 @@ function fillParcel(
       i += 1;
     }
   }
-  if (built === 0) return { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+  if (built === 0) return { ok: false, msg: t("ما لقيت أرض فاضية في المنطقة") };
   return { ok: true, roads: 0, built };
 }
 
@@ -1268,7 +1269,7 @@ function zoneOpenLand(
   skip: ReadonlySet<string>,
 ): { ok: true; roads: number; built: number } | { ok: false; msg: string } {
   const cells = capCells(collectOpen(s, cA, rA, cB, rB, skip), (cA + cB) / 2, (rA + rB) / 2);
-  if (!cells.length) return { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+  if (!cells.length) return { ok: false, msg: t("ما لقيت أرض فاضية في المنطقة") };
   let roads = 0;
   if (pick.streets && cells.length >= 12) {
     for (const cell of cells) {
@@ -1296,7 +1297,7 @@ export function planZone(
   let rA = Math.max(0, Math.min(r0, r1));
   let rB = Math.min(ROWS - 1, Math.max(r0, r1));
   if (!pick.streets && !pick.schools && !pick.fire && !pick.landmarks && !pick.parks) {
-    return { ok: false, msg: "اختر ماذا يُبنى في المنطقة" };
+    return { ok: false, msg: t("اختر ماذا يُبنى في المنطقة") };
   }
   if (s.district === "free") return zoneOpenLand(s, cA, rA, cB, rB, pick, now, new Set());
   if (s.district) {
@@ -1323,13 +1324,13 @@ export function planZone(
     if (!outside.length) {
       return built > 0
         ? { ok: true, roads: 0, built }
-        : { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+        : { ok: false, msg: t("ما لقيت أرض فاضية في المنطقة") };
     }
     const act = zoneOpenLand(s, cA, rA, cB, rB, pick, now, parcelKeys);
     if (!act.ok) return built > 0 ? { ok: true, roads: 0, built } : act;
     return { ok: true, roads: act.roads, built: built + act.built };
   }
-  if (cB - cA < 3 || rB - rA < 3) return { ok: false, msg: "حدّد منطقة أكبر" };
+  if (cB - cA < 3 || rB - rA < 3) return { ok: false, msg: t("حدّد منطقة أكبر") };
   let roads = 0;
   let built = 0;
   const period = 4;
@@ -1420,7 +1421,7 @@ export function planZone(
       i += 1;
     }
   }
-  if (roads === 0 && built === 0) return { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+  if (roads === 0 && built === 0) return { ok: false, msg: t("ما لقيت أرض فاضية في المنطقة") };
   return { ok: true, roads, built };
 }
 
@@ -1511,13 +1512,13 @@ export function buyModelArea(
 ): { ok: true; c: number; r: number; built: number } | { ok: false; msg: string } {
   const def = MODEL_AREAS[kind];
   if (s.coins < def.cost)
-    return { ok: false, msg: `تحتاج ${def.cost.toLocaleString("en-US")} د.ك` };
+    return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: def.cost }) };
   const site = findModelSite(s, def.w, def.h);
-  if (!site) return { ok: false, msg: "ما في أرض فاضية تكفي المشروع" };
+  if (!site) return { ok: false, msg: t("ما في أرض فاضية تكفي المشروع") };
   s.coins -= def.cost;
   s.ytd.spend += def.cost;
   const built = placePackage(s, kind, now, site);
-  pushLog(s, `افتتاح ${def.name}`);
+  pushLog(s, msg("افتتاح {name}", { name: def.name }));
   return { ok: true, c: site.c + def.w / 2, r: site.r + def.h / 2, built };
 }
 
@@ -1573,22 +1574,22 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
     return { ok: true };
   }
   const k = cellKey(c, r);
-  if (roadIsSchematic(s.district, k)) return { ok: false, msg: "الشارع الرئيسي ثابت في مخطط الحي" };
+  if (roadIsSchematic(s.district, k)) return { ok: false, msg: t("الشارع الرئيسي ثابت في مخطط الحي") };
   const ri = s.roads.indexOf(k);
   if (ri >= 0) {
     s.roads.splice(ri, 1);
     s.coins += Math.round(priceOf(ROAD_COST, s) * 0.5);
     return { ok: true };
   }
-  return { ok: false, msg: "ما في شيء تهدّه هنا" };
+  return { ok: false, msg: t("ما في شيء تهدّه هنا") };
 }
 
 export function upgrade(s: Sim, id: string, now: number): Act {
   const b = s.buildings.find((x) => x.id === id);
-  if (!b) return { ok: false, msg: "المبنى مو موجود" };
-  if (b.level >= maxLevelOf(b.kind)) return { ok: false, msg: "وصل آخر مستوى" };
+  if (!b) return { ok: false, msg: t("المبنى مو موجود") };
+  if (b.level >= maxLevelOf(b.kind)) return { ok: false, msg: t("وصل آخر مستوى") };
   const cost = priceOf(upgradeCost(b.kind, b.level), s);
-  if (cost > 0 && s.coins < cost) return { ok: false, msg: "الرصيد ما يكفي للترقية" };
+  if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي للترقية") };
   s.coins -= cost;
   b.level += 1;
   b.born = now;
@@ -1720,7 +1721,7 @@ export function advanceDays(s: Sim, days: number) {
   s.day += days;
   const after = Math.floor(s.day / 30);
   if (s.disaster && s.day >= s.disaster.until) {
-    pushLog(s, "انتهت الكارثة. المدينة تلمّ جراحها");
+    pushLog(s, msg("انتهت الكارثة. المدينة تلمّ جراحها"));
     s.disaster = null;
   }
   if (after <= before) {
@@ -1743,7 +1744,7 @@ export function advanceDays(s: Sim, days: number) {
       s.ytd.spend += due;
       s.loan = Math.max(0, s.loan - due);
       if (s.loan === 0) {
-        pushLog(s, "سدّدت القرض كاملاً");
+        pushLog(s, msg("سدّدت القرض كاملاً"));
         if (!s.flags.includes("repaid")) s.flags.push("repaid");
       }
     }
@@ -1756,7 +1757,7 @@ export function advanceDays(s: Sim, days: number) {
       random: Math.random,
     });
     const works = builderMonth(s);
-    if (works) pushLog(s, `مستشار البناء: ${works}`);
+    if (works) pushLog(s, msg("مستشار البناء: {works}", { works }));
     for (const line of npcMonth(s)) pushLog(s, line);
     s.coins = Math.max(-5_000_000, s.coins);
     // People move in when they are happy and served, and leave when they are not.
@@ -1774,7 +1775,7 @@ export function advanceDays(s: Sim, days: number) {
     const before2 = s.occupancy;
     s.occupancy = clamp(s.occupancy + (target - s.occupancy) * 0.35, OCCUPANCY_MIN, 1);
     if (st.capacity >= 60 && before2 - s.occupancy > 0.04)
-      pushLog(s, "ناس تطلع من المنطقة: الرضا نازل");
+      pushLog(s, msg("ناس تطلع من المنطقة: الرضا نازل"));
     s.history.push(takeSample(s));
     if (!rolled && s.randomDisasters && s.buildings.length > 3 && Math.random() < 0.035) {
       rolled = true;
@@ -1789,7 +1790,7 @@ export function advanceDays(s: Sim, days: number) {
       startCrisis(s, roll < 0.45 ? "economic" : roll < 0.75 ? "pandemic" : "war");
     }
     if (s.crisis && s.day >= s.crisis.until) {
-      pushLog(s, `انتهت ${CRISES[s.crisis.kind].name}. الحمد لله على السلامة`);
+      pushLog(s, msg("انتهت {name}. الحمد لله على السلامة", { name: CRISES[s.crisis.kind].name }));
       if (!s.flags.includes("crisis-survived")) s.flags.push("crisis-survived");
       s.crisis = null;
     }
@@ -1799,7 +1800,7 @@ export function advanceDays(s: Sim, days: number) {
   s.fx = s.fx.filter((f) => s.day < f.until);
   endEvent(s);
   if (s.history.length > 1200) s.history.splice(0, s.history.length - 1200);
-  if (!brokeBefore && s.coins < 0) pushLog(s, "عجز: مصروف الشهر أكبر من الصندوق");
+  if (!brokeBefore && s.coins < 0) pushLog(s, msg("عجز: مصروف الشهر أكبر من الصندوق"));
 }
 
 function closeYear(s: Sim) {
@@ -1819,14 +1820,14 @@ function closeYear(s: Sim) {
   if (s.autoRaise > 0)
     for (const k of COST_KEYS)
       s.costs[k] = clamp(Math.round(s.costs[k] * (1 + s.autoRaise / 100)), 0, COST_MAX);
-  pushLog(s, `التقرير السنوي ${year} جاهز`);
+  pushLog(s, msg("التقرير السنوي {year} جاهز", { year: String(year) }));
 }
 
 function endEvent(s: Sim) {
   if (!s.event || s.day < s.event.until) return;
   const def = EVENTS[s.event.kind];
   s.fame = Math.min(12, (s.fame ?? 0) + def.fame);
-  pushLog(s, `انتهت ${def.name}. سمعة المنطقة ارتفعت`);
+  pushLog(s, msg("انتهت {name}. سمعة المنطقة ارتفعت", { name: def.name }));
   s.event = null;
 }
 
@@ -1843,13 +1844,13 @@ export function triggerDisaster(
   kind: DisasterKind,
 ): { ok: true; msg: string } | { ok: false; msg: string } {
   if (s.disaster && s.day < s.disaster.until) {
-    return { ok: false, msg: "في كارثة جارية. استنى تخلص" };
+    return { ok: false, msg: t("في كارثة جارية. استنى تخلص") };
   }
   if (kind === "fire") {
     const targets = s.buildings.filter(
       (b) => !isLandmark(b.kind),
     );
-    if (!targets.length) return { ok: false, msg: "ما في مبنى يطاله الحريق" };
+    if (!targets.length) return { ok: false, msg: t("ما في مبنى يطاله الحريق") };
     const b = targets[Math.floor(Math.random() * targets.length)]!;
     const name = CATALOG[b.kind].name;
     s.fx.push({ kind: "fire", c: b.c, r: b.r, until: s.day + 14 });
@@ -1861,66 +1862,71 @@ export function triggerDisaster(
     }
     const bill = disasterBill(s, "fire");
     s.coins -= bill;
-    const msg = `حريق ضرب ${name} · خسارة ${bill.toLocaleString("en-US")} د.ك`;
-    pushLog(s, msg);
-    return { ok: true, msg };
+    const entry = msg("حريق ضرب {name} · خسارة {amount} د.ك", { name, amount: bill });
+    pushLog(s, entry);
+    return { ok: true, msg: tx(entry) };
   }
   if (kind === "storm") {
     s.disaster = { kind: "storm", until: s.day + 50 };
     const bill = disasterBill(s, "storm");
     s.coins -= bill;
-    const msg = `عاصفة رملية تغطي الكويت · تنظيف ${bill.toLocaleString("en-US")} د.ك`;
-    pushLog(s, msg);
-    return { ok: true, msg };
+    const entry = msg("عاصفة رملية تغطي الكويت · تنظيف {amount} د.ك", { amount: bill });
+    pushLog(s, entry);
+    return { ok: true, msg: tx(entry) };
   }
   if (kind === "flood") {
     s.disaster = { kind: "flood", until: s.day + 30 };
     const bill = disasterBill(s, "flood");
     s.coins -= bill;
-    const msg = `أمطار وسيول تغرق الشوارع · تصريف ${bill.toLocaleString("en-US")} د.ك`;
-    pushLog(s, msg);
-    return { ok: true, msg };
+    const entry = msg("أمطار وسيول تغرق الشوارع · تصريف {amount} د.ك", { amount: bill });
+    pushLog(s, entry);
+    return { ok: true, msg: tx(entry) };
   }
   s.disaster = { kind: "blackout", until: s.day + 36 };
   const bill = disasterBill(s, "blackout");
   s.coins -= bill;
-  const msg = `انقطاع كهرباء على الأحياء · إصلاح ${bill.toLocaleString("en-US")} د.ك`;
-  pushLog(s, msg);
-  return { ok: true, msg };
+  const entry = msg("انقطاع كهرباء على الأحياء · إصلاح {amount} د.ك", { amount: bill });
+  pushLog(s, entry);
+  return { ok: true, msg: tx(entry) };
 }
 
 export function bulletin(s: Sim, st = stats(s)) {
   const m = metrics(s, st);
-  const lines = [...s.log];
-  if (s.speed === 0 && s.started) lines.push("الزمن واقف. اضغط تشغيل");
-  if (m.pollution >= 42) lines.push("شيء في الهواء: التلوث متوسط");
-  else lines.push("الهواء على الكورنيش صافٍ");
-  if (m.power < 85 && st.pop >= 20) lines.push("مستشار الكهرباء: الإنتاج ما يغطي");
-  if (m.water < 85 && st.pop >= 20) lines.push("التحلية ناقصة والأحياء تعطش");
-  if (m.crime > 48) lines.push("الجريمة ترتفع. ابنِ مركز شرطة");
-  if (m.unemployment > 38) lines.push("البطالة عالية. افتح محلات وأبراج");
-  if (m.approval >= 72) lines.push("الرضا عالٍ. أهل الكويت مبسوطين");
-  if (s.tax >= 80) lines.push("الضريبة عالية والناس تتذمر");
-  if (s.coins < 0) lines.push("صندوق البلدية في عجز. خذ قرضاً من الميزانية");
-  if (st.capacity >= 60 && st.service < 0.6) lines.push("الخدمات ناقصة والناس متضايقة");
-  if (costIndex(s) > 125) lines.push("غلاء المعيشة: السكن والتعليم غالية والناس تشتكي");
+  // Stored log entries plus live advice, all shown in the current language.
+  const lines = s.log.map((entry) => tx(entry));
+  const add = (key: string, params?: Parameters<typeof t>[1]) => lines.push(t(key, params));
+  if (s.speed === 0 && s.started) add("الزمن واقف. اضغط تشغيل");
+  if (m.pollution >= 42) add("شيء في الهواء: التلوث متوسط");
+  else add("الهواء على الكورنيش صافٍ");
+  if (m.power < 85 && st.pop >= 20) add("مستشار الكهرباء: الإنتاج ما يغطي");
+  if (m.water < 85 && st.pop >= 20) add("التحلية ناقصة والأحياء تعطش");
+  if (m.crime > 48) add("الجريمة ترتفع. ابنِ مركز شرطة");
+  if (m.unemployment > 38) add("البطالة عالية. افتح محلات وأبراج");
+  if (m.approval >= 72) add("الرضا عالٍ. أهل الكويت مبسوطين");
+  if (s.tax >= 80) add("الضريبة عالية والناس تتذمر");
+  if (s.coins < 0) add("صندوق البلدية في عجز. خذ قرضاً من الميزانية");
+  if (st.capacity >= 60 && st.service < 0.6) add("الخدمات ناقصة والناس متضايقة");
+  if (costIndex(s) > 125) add("غلاء المعيشة: السكن والتعليم غالية والناس تشتكي");
   const crisis = crisisOf(s);
-  if (crisis) lines.unshift(`${CRISES[crisis].name} لين ${formatCityDate(s.crisis!.until)}`);
+  if (crisis)
+    lines.unshift(
+      t("{name} لين {date}", { name: CRISES[crisis].name, date: formatCityDate(s.crisis!.until) }),
+    );
   const mood = calendarMood(s);
-  if (mood.national) lines.push("العيد الوطني وعيد التحرير: الأعلام في كل مكان");
+  if (mood.national) add("العيد الوطني وعيد التحرير: الأعلام في كل مكان");
   if (mood.ramadan)
-    lines.push(
+    add(
       s.buildings.some((b) => b.kind === "mosque")
         ? "رمضان كريم: إفطار جماعي في المسجد الكبير"
         : "رمضان كريم: ابنِ المسجد الكبير للإفطار الجماعي",
     );
-  if (mood.eid) lines.push("عيدكم مبارك");
-  if (s.loan > 0) lines.push(`دين البنك ${Math.round(s.loan).toLocaleString("en-US")} د.ك`);
+  if (mood.eid) add("عيدكم مبارك");
+  if (s.loan > 0) add("دين البنك {amount} د.ك", { amount: Math.round(s.loan) });
   const ev = activeEvent(s);
-  if (ev) lines.push(`فعالية جارية: ${ev.name}`);
+  if (ev) add("فعالية جارية: {name}", { name: ev.name });
   const q = QUESTS[s.quest];
-  if (q) lines.push(`مهمة: ${q.text}`);
-  if (!lines.length) lines.push("مدينة الكويت تنتظر قرارك");
+  if (q) add("مهمة: {quest}", { quest: q.text });
+  if (!lines.length) add("مدينة الكويت تنتظر قرارك");
   return lines.slice(0, 8);
 }
 
@@ -1928,13 +1934,13 @@ export function rollLuck(s: Sim, now: number) {
   const wait = 7000;
   const left = s.luckAt + wait - now;
   if (left > 0) {
-    return { ok: false as const, amount: 0, msg: `الحظ يرجع بعد ${Math.ceil(left / 1000)} ث` };
+    return { ok: false as const, amount: 0, msg: t("الحظ يرجع بعد {n} ث", { n: Math.ceil(left / 1000) }) };
   }
   const bag = [120, 180, 220, 260, 320, 400, 450, 700, 1100];
   const amount = bag[Math.floor(Math.random() * bag.length)] ?? 200;
   s.coins += amount;
   s.luckAt = now;
-  return { ok: true as const, amount, msg: `حظك +${amount} د.ك` };
+  return { ok: true as const, amount, msg: t("حظك +{amount} د.ك", { amount }) };
 }
 
 export function advanceQuest(s: Sim) {

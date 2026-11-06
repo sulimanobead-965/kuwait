@@ -7,6 +7,7 @@ import type { Cell } from "@/game/three/camera";
 import type { DayMode } from "@/game/three/day-night";
 import { FallbackCityWorld } from "@/game/three/fallback";
 import { createAudio } from "@/game/audio";
+import { bootLang, dirOf, msg, t, useLang } from "@/i18n";
 import {
   buySukuk,
   depositMudaraba,
@@ -113,6 +114,7 @@ function fmt(n: number) {
 }
 
 export function CityGame() {
+  const lang = useLang();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<Sim>(createInitial());
   const toolRef = useRef<Tool>(null);
@@ -269,7 +271,7 @@ export function CityGame() {
     function noteQuests() {
       for (const gained of advanceQuest(simRef.current)) {
         audio.play("quest", simRef.current.mute);
-        toastRef.current(`تمت المهمة +${fmt(gained.reward)} د.ك`);
+        toastRef.current(t("تمت المهمة +{amount} د.ك", { amount: fmt(gained.reward) }));
       }
       notePromotion();
     }
@@ -279,14 +281,19 @@ export function CityGame() {
       const up = checkPromotion(sim);
       if (up) {
         audio.play("quest", sim.mute);
+        // Stored as keys/encoded messages so the card follows a language switch.
         celebrateRef.current({
           kind: "rank",
           title: up.title,
-          detail: `مكافأة ${fmt(up.bonus)} د.ك. ${
+          detail:
             up.title === RANKS[RANKS.length - 1]!.title
-              ? "صرت المحافظ! الهدف القادم: مليون ساكن."
-              : `الترقية القادمة: ${RANKS[RANKS.findIndex((r) => r.title === up.title) + 1]?.title ?? ""}`
-          }`,
+              ? msg("مكافأة {amount} د.ك. صرت المحافظ! الهدف القادم: مليون ساكن.", {
+                  amount: fmt(up.bonus),
+                })
+              : msg("مكافأة {amount} د.ك. الترقية القادمة: {title}", {
+                  amount: fmt(up.bonus),
+                  title: RANKS[RANKS.findIndex((r) => r.title === up.title) + 1]?.title ?? "",
+                }),
         });
       }
       const era = eraOf(sim);
@@ -295,12 +302,12 @@ export function CityGame() {
         celebrateRef.current({
           kind: "era",
           title: ERAS[era]!,
-          detail: "انفتحت مبانٍ ومعالم جديدة في قائمة البناء.",
+          detail: msg("انفتحت مبانٍ ومعالم جديدة في قائمة البناء."),
         });
       }
       for (const a of checkAchievements(sim)) {
         audio.play("collect", sim.mute);
-        toastRef.current(`🏆 إنجاز: ${a.name}`);
+        toastRef.current(msg("🏆 إنجاز: {name}", { name: a.name }));
       }
     }
     notifyRef.current = { promotion: notePromotion };
@@ -311,7 +318,7 @@ export function CityGame() {
       if (b && world instanceof CityWorld) flyCoins(world.projectCell(b.c, b.r));
       audio.play("collect", simRef.current.mute);
       syncRef.current();
-      toastRef.current(`+${fmt(n)} د.ك`);
+      toastRef.current(t("+{amount} د.ك", { amount: fmt(n) }));
     }
     function interact(at: Cell) {
       const sim = simRef.current;
@@ -331,7 +338,7 @@ export function CityGame() {
         for (const step of path) {
           const act = placeRoad(sim, step.c, step.r);
           if (!act.ok) {
-            if (act.msg.includes("رصيد") || !from) {
+            if (act.msg === t("الرصيد ما يكفي للطريق") || !from) {
               audio.play("error", sim.mute);
               toastRef.current(act.msg);
             }
@@ -351,7 +358,7 @@ export function CityGame() {
         if (!act.ok) toastRef.current(act.msg);
         else {
           if (coastal(at.c, at.r) && CATALOG[current.building].coastBoost)
-            toastRef.current("على الكورنيش +١٥٪");
+            toastRef.current(t("على الكورنيش +١٥٪"));
           noteQuests();
         }
       } else {
@@ -464,6 +471,12 @@ export function CityGame() {
     if (worldRef.current) worldRef.current.disabled = districtChooser;
   }, [districtChooser]);
 
+  // Language: pick the saved/browser choice after hydration, then keep 3D labels in step.
+  useEffect(() => bootLang(), []);
+  useEffect(() => {
+    worldRef.current?.setLang(lang);
+  }, [lang]);
+
   // The tutorial watches the city and moves on when the player does each step.
   useEffect(() => {
     if (tutorial < 0 || !snap.started) return;
@@ -544,7 +557,9 @@ export function CityGame() {
     zoneRectRef.current = null;
     worldRef.current?.sync(simRef.current, timeRef.current, true);
     sync();
-    pushToast(`${districtById(id)!.name}: حُفظ تقدّمك، ويمكنك التبديل من زر الأحياء`);
+    pushToast(
+      msg("{name}: حُفظ تقدّمك، ويمكنك التبديل من زر الأحياء", { name: districtById(id)!.name }),
+    );
   }
 
   function resumeLegacy() {
@@ -559,7 +574,7 @@ export function CityGame() {
     setConfirmReset(false);
     setSnap(cloneSim(simRef.current));
     worldRef.current?.sync(simRef.current, timeRef.current, true);
-    pushToast("استعدت مدينة الكويت القديمة دون تغيير حفظها");
+    pushToast(msg("استعدت مدينة الكويت القديمة دون تغيير حفظها"));
   }
 
   function stopAndSave() {
@@ -586,7 +601,7 @@ export function CityGame() {
     setConfirmReset(false);
     worldRef.current?.sync(simRef.current, timeRef.current, true);
     sync();
-    pushToast("مدينة جديدة على خريطة الكويت");
+    pushToast(msg("مدينة جديدة على خريطة الكويت"));
   }
 
   function onUpgrade() {
@@ -604,7 +619,7 @@ export function CityGame() {
     const n = collectAll(simRef.current);
     if (n <= 0) return;
     sync();
-    pushToast(`+${fmt(n)} د.ك`);
+    pushToast(t("+{amount} د.ك", { amount: fmt(n) }));
   }
 
   function onSpeed(n: 0 | 1 | 2 | 3) {
@@ -666,15 +681,18 @@ export function CityGame() {
       ctx.drawImage(img, 0, 0);
       const st = stats(simRef.current);
       ctx.fillStyle = "#f3eee4";
-      ctx.textAlign = "right";
-      ctx.direction = "rtl";
+      // The caption sits on the reading side: right in Arabic, left in English.
+      const rtl = dirOf() === "rtl";
+      const x = rtl ? out.width - 24 : 24;
+      ctx.textAlign = rtl ? "right" : "left";
+      ctx.direction = rtl ? "rtl" : "ltr";
       ctx.font = "bold 34px 'Noto Kufi Arabic', sans-serif";
       const name = districtById(simRef.current.district)?.name ?? "الكويت";
-      ctx.fillText(`المحافظ · ${name}`, out.width - 24, img.height + 42);
+      ctx.fillText(t("المحافظ · {name}", { name }), x, img.height + 42);
       ctx.font = "22px 'Noto Kufi Arabic', sans-serif";
       ctx.fillText(
-        `${st.residents.toLocaleString("en-US")} ساكن · رضا ${st.happy}%`,
-        out.width - 24,
+        t("{residents} ساكن · رضا {happy}%", { residents: st.residents, happy: st.happy }),
+        x,
         img.height + 74,
       );
       const blob = await new Promise<Blob | null>((ok) => out.toBlob(ok, "image/jpeg", 0.9));
@@ -682,29 +700,29 @@ export function CityGame() {
       const file = new File([blob], "kuwait-city.jpg", { type: "image/jpeg" });
       const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
       if (nav.share && nav.canShare?.({ files: [file] })) {
-        await nav.share({ files: [file], title: "مدينتي في المحافظ" });
+        await nav.share({ files: [file], title: t("مدينتي في المحافظ") });
       } else {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = "kuwait-city.jpg";
         a.click();
         window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-        pushToast("تم حفظ صورة المدينة");
+        pushToast(t("تم حفظ صورة المدينة"));
       }
     } catch {
-      pushToast("ما قدرت ألتقط الصورة");
+      pushToast(t("ما قدرت ألتقط الصورة"));
     }
   }
 
   function onLoan(amount: number, rate: number) {
     const act = takeLoan(simRef.current, amount, rate);
-    pushToast(act.ok ? `دخل حسابك ${fmt(amount)} د.ك من البنك` : act.msg);
+    pushToast(act.ok ? t("دخل حسابك {amount} د.ك من البنك", { amount: fmt(amount) }) : act.msg);
     sync();
   }
 
   function onRepay(amount: number) {
     const act = repayLoan(simRef.current, amount);
-    pushToast(act.ok ? "تم السداد" : act.msg);
+    pushToast(act.ok ? t("تم السداد") : act.msg);
     sync();
   }
 
@@ -724,7 +742,7 @@ export function CityGame() {
     notifyRef.current.promotion();
     worldRef.current?.focus({ c: act.c, r: act.r }, 30);
     sync();
-    pushToast(`تم البناء: ${act.built} مبنى`);
+    pushToast(t("تم البناء: {n} مبنى", { n: act.built }));
   }
 
   function onOrdinance(key: keyof Ordinances, value: boolean) {
@@ -777,8 +795,8 @@ export function CityGame() {
     sync();
     pushToast(
       simRef.current.district
-        ? `امتلأت القطع: ${act.built} مبنى`
-        : `تم التنظيم: ${act.roads} طريق، ${act.built} مبنى`,
+        ? t("امتلأت القطع: {n} مبنى", { n: act.built })
+        : t("تم التنظيم: {roads} طريق، {n} مبنى", { roads: act.roads, n: act.built }),
     );
   }
 
@@ -816,17 +834,17 @@ export function CityGame() {
 
   return (
     <main className="game-shell relative bg-sc-bar text-sc-mint">
-      <h1 className="sr-only">المحافظ</h1>
+      <h1 className="sr-only">{t("المحافظ")}</h1>
       <div className="coin-fly-layer" aria-hidden="true" />
       <canvas
         ref={canvasRef}
         data-testid="city-canvas"
-        aria-label="خريطة مدينة الكويت ثلاثية الأبعاد"
+        aria-label={t("خريطة مدينة الكويت ثلاثية الأبعاد")}
         className="absolute inset-0 h-full w-full touch-none"
       />
       {graphicsError && (
         <p className="graphics-note" role="status">
-          عرض متوافق: اللعب كامل، والتجسيد ثنائي الأبعاد لعدم توفر WebGL.
+          {t("عرض متوافق: اللعب كامل، والتجسيد ثنائي الأبعاد لعدم توفر WebGL.")}
         </p>
       )}
       <CityHud
@@ -863,7 +881,7 @@ export function CityGame() {
         onMudarabaWithdraw={() => finance(withdrawMudaraba(simRef.current))}
         onSukuk={(issuer, a, r, y) => finance(buySukuk(simRef.current, issuer, a, r, y))}
         onMurabaha={(a, p, m) => finance(takeMurabaha(simRef.current, a, p, m))}
-        player={player ?? { name: "المحافظ", avatar: "🧔🏽" }}
+        player={player ?? { name: t("المحافظ"), avatar: "🧔🏽" }}
         onEditPlayer={() => setEditPlayer(true)}
         onBuilderHire={() => finance(hireBuilder(simRef.current))}
         onBuilderFire={() => finance(fireBuilder(simRef.current))}
@@ -933,7 +951,7 @@ export function CityGame() {
             savePlayer(p);
             setPlayer(p);
             setEditPlayer(false);
-            pushToast(`أهلاً ${p.name}!`);
+            pushToast(t("أهلاً {name}!", { name: p.name }));
           }}
         />
       )}

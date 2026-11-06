@@ -22,6 +22,13 @@
   --font-sans: "Noto Kufi Arabic", "Noto Naskh Arabic", "Noto Sans Arabic", sans-serif;
 }
 
+/* English: a Latin UI face first, the Arabic face as a fallback for names. */
+:root[lang="en"] {
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Kufi Arabic",
+    sans-serif;
+}
+
 @layer base {
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -267,7 +274,6 @@
   justify-content: center;
   align-items: flex-end;
   background: rgb(8 31 34 / 72%);
-  direction: rtl;
 }
 .district-dialog {
   pointer-events: auto;
@@ -911,5 +917,58 @@ body {
 @media (min-width: 768px) and (min-height: 600px) and (pointer: coarse) {
   html {
     font-size: 18px;
+  }
+}
+
+/* ------------------------------------------------------------ English (left-to-right) */
+
+/* The HUD mirrors: tools move to the left edge, the rank badge and zoom to the right. */
+:root[dir="ltr"] .hud-tools {
+  right: auto;
+  left: max(0.25rem, env(safe-area-inset-left));
+}
+
+:root[dir="ltr"] .hud-badge {
+  left: auto;
+  right: max(0.5rem, env(safe-area-inset-right));
+}
+
+:root[dir="ltr"] .hud-left {
+  left: auto;
+  right: max(0.5rem, env(safe-area-inset-right));
+  align-items: flex-end;
+}
+
+:root[dir="ltr"] .hud-panel {
+  left: 4rem;
+  right: 0.5rem;
+}
+
+:root[dir="ltr"] .tutorial-card {
+  left: 4.2rem;
+  right: 0.6rem;
+}
+
+@media (min-width: 700px) {
+  :root[dir="ltr"] .hud-panel {
+    left: auto;
+    right: 0.5rem;
+  }
+
+  :root[dir="ltr"] .tutorial-card {
+    right: auto;
+    left: 50%;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  :root[dir="ltr"] .hud-panel {
+    left: auto;
+    right: 0.5rem;
+  }
+
+  :root[dir="ltr"] .tutorial-card {
+    right: auto;
+    left: 50%;
   }
 }

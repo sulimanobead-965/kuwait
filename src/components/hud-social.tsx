@@ -3,6 +3,8 @@ import { HardHat, MessageCircle, Send } from "lucide-react";
 import { stats, type Sim } from "@/game/sim";
 import { BUILDER_NAME, BUILDER_SIGN_ON, builderFee } from "@/game/builder";
 import { askRate, npcDef, NPCS, type NpcId } from "@/game/npcs";
+import { LangPicker } from "@/components/hud-panels";
+import { currency, dirOf, percentSign, t, tx, useLang } from "@/i18n";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 
@@ -39,30 +41,32 @@ export function PlayerSetup({
   initial: Player | null;
   onSave: (p: Player) => void;
 }) {
+  const lang = useLang();
   const [name, setName] = useState(initial?.name ?? "");
   const [avatar, setAvatar] = useState(initial?.avatar ?? AVATARS[0]!);
   return (
-    <div className="celebrate pointer-events-auto" dir="rtl">
+    <div className="celebrate pointer-events-auto" dir={dirOf(lang)}>
       <form
-        className="celebrate-card sc-panel text-right"
+        className="celebrate-card sc-panel text-start"
         onSubmit={(e) => {
           e.preventDefault();
-          onSave({ name: name.trim() || "المحافظ", avatar });
+          onSave({ name: name.trim() || t("المحافظ"), avatar });
         }}
       >
-        <p className="text-xl font-extrabold">من أنت يا مساعد المختار؟</p>
+        <LangPicker className="mb-3" />
+        <p className="text-xl font-extrabold">{t("من أنت يا مساعد المختار؟")}</p>
         <label className="mt-3 block text-sm font-extrabold">
-          اسمك
+          {t("اسمك")}
           <input
             data-testid="player-name"
             value={name}
             maxLength={24}
             onChange={(e) => setName(e.target.value)}
-            placeholder="مثلاً: سليمان"
+            placeholder={t("مثلاً: سليمان")}
             className="mt-1 h-11 w-full rounded-md border-2 border-sc-ink bg-white px-2 text-base"
           />
         </label>
-        <p className="mt-3 text-sm font-extrabold">صورتك</p>
+        <p className="mt-3 text-sm font-extrabold">{t("صورتك")}</p>
         <div className="mt-1 grid grid-cols-6 gap-1">
           {AVATARS.map((a) => (
             <button
@@ -83,7 +87,7 @@ export function PlayerSetup({
           data-testid="player-save"
           className="sc-menu sc-on mt-3 w-full text-sm"
         >
-          احفظ وابدأ
+          {t("احفظ وابدأ")}
         </button>
       </form>
     </div>
@@ -150,17 +154,21 @@ export function BuilderCard({
   return (
     <section className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="builder-card">
       <p className="flex items-center gap-1 text-sm font-extrabold">
-        <HardHat size={16} /> مستشار البناء · {BUILDER_NAME}
+        <HardHat size={16} /> {t("مستشار البناء")} · {t(BUILDER_NAME)}
       </p>
       <p className="mt-1 text-xs leading-relaxed">
-        يبني ويرقّي كل شهر على حسابك: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات
-        سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. تدفع له التكاليف كاملة وأتعاباً شهرية (حوالي{" "}
-        {fmt(builderFee(snap))} د.ك + ٥٪ من الأعمال).
+        {t(
+          "يبني ويرقّي كل شهر على حسابك: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. تدفع له التكاليف كاملة وأتعاباً شهرية (حوالي {fee} د.ك + ٥٪ من الأعمال).",
+          { fee: fmt(builderFee(snap)) },
+        )}
       </p>
       {b.hired ? (
         <>
           <label className="mt-2 block text-xs font-extrabold">
-            نسبة الميزانية الشهرية له: {b.share}٪ (≈ {fmt(budget)} د.ك هذا الشهر)
+            {t("نسبة الميزانية الشهرية له: {share}٪ (≈ {amount} د.ك هذا الشهر)", {
+              share: b.share,
+              amount: fmt(budget),
+            })}
             <input
               type="range"
               min={1}
@@ -180,16 +188,24 @@ export function BuilderCard({
                 onClick={() => onShare(p)}
                 className={`sc-menu flex-1 px-1 text-xs ${b.share === p ? "sc-on" : ""}`}
               >
-                {p}٪
+                {p}
+                {percentSign()}
               </button>
             ))}
           </div>
-          {b.last && <p className="mt-2 rounded bg-white/70 p-1 text-xs">آخر شهر: {b.last}</p>}
+          {b.last && (
+            <p className="mt-2 rounded bg-white/70 p-1 text-xs">
+              {t("آخر شهر: {report}", { report: b.last })}
+            </p>
+          )}
           <p className="mt-1 text-xs">
-            المجموع: {fmt(b.works)} عمل بقيمة {fmt(b.spent)} د.ك
+            {t("المجموع: {works} عمل بقيمة {amount} د.ك", {
+              works: fmt(b.works),
+              amount: fmt(b.spent),
+            })}
           </p>
           <button type="button" onClick={onFire} className="sc-textbtn mt-2 h-9 w-full text-xs">
-            أنهِ العقد
+            {t("أنهِ العقد")}
           </button>
         </>
       ) : (
@@ -200,7 +216,7 @@ export function BuilderCard({
           disabled={snap.coins < BUILDER_SIGN_ON}
           className="sc-menu sc-on mt-2 w-full text-sm disabled:opacity-40"
         >
-          عيّنه (توقيع {fmt(BUILDER_SIGN_ON)} د.ك)
+          {t("عيّنه (توقيع {amount} د.ك)", { amount: fmt(BUILDER_SIGN_ON) })}
         </button>
       )}
     </section>
@@ -239,7 +255,7 @@ export function People({
 
   if (!open || !npc) {
     return (
-      <ul className="space-y-1.5" dir="rtl">
+      <ul className="space-y-1.5" dir={dirOf()}>
         {NPCS.map((d) => {
           const n = snap.npcs.find((x) => x.id === d.id)!;
           const owesMe = n.owesMe.reduce((t, l) => t + l.left, 0);
@@ -254,22 +270,23 @@ export function People({
                   setRate(Math.round(askRate(snap, d.id) * 1000) / 10);
                   onOpen(d.id);
                 }}
-                className="sc-choice flex w-full items-center gap-2 rounded-md px-2 py-2 text-right"
+                className="sc-choice flex w-full items-center gap-2 rounded-md px-2 py-2 text-start"
               >
                 <span className="text-3xl">{d.avatar}</span>
                 <span className="min-w-0 flex-1">
                   <span className="flex justify-between text-sm font-extrabold">
-                    <span>{d.name}</span>
+                    <span>{t(d.name)}</span>
                     {n.unread > 0 && (
                       <span className="rounded-full bg-coral px-2 text-xs text-sc-mint">
                         {n.unread}
                       </span>
                     )}
                   </span>
-                  <span className="block text-xs opacity-80">{d.role}</span>
+                  <span className="block text-xs opacity-80">{t(d.role)}</span>
                   <span className="block text-xs">
-                    ثقة {Math.round(n.trust)}٪{owesMe > 0 ? ` · عليه لك ${fmt(owesMe)}` : ""}
-                    {iOwe > 0 ? ` · عليك له ${fmt(iOwe)}` : ""}
+                    {t("ثقة {n}٪", { n: Math.round(n.trust) })}
+                    {owesMe > 0 ? ` · ${t("عليه لك {amount}", { amount: fmt(owesMe) })}` : ""}
+                    {iOwe > 0 ? ` · ${t("عليك له {amount}", { amount: fmt(iOwe) })}` : ""}
                   </span>
                 </span>
               </button>
@@ -283,14 +300,14 @@ export function People({
   const d = npcDef(open);
   const asked = askRate(snap, open);
   return (
-    <div className="flex h-full flex-col gap-2" dir="rtl">
+    <div className="flex h-full flex-col gap-2" dir={dirOf()}>
       <div className="flex items-center gap-2">
         <button type="button" className="sc-textbtn h-9 text-xs" onClick={() => setOpen(null)}>
-          رجوع
+          {t("رجوع")}
         </button>
         <span className="text-2xl">{d.avatar}</span>
         <span className="text-sm font-extrabold">
-          {d.name} · <span className="font-medium">{d.role}</span>
+          {t(d.name)} · <span className="font-medium">{t(d.role)}</span>
         </span>
       </div>
       <div className="max-h-56 min-h-32 space-y-1 overflow-y-auto rounded-md bg-white/70 p-2 text-sm">
@@ -305,7 +322,7 @@ export function People({
                 m.from === "me" ? "bg-sc-lime/60" : "bg-sc-mint"
               }`}
             >
-              {m.text}
+              <bdi>{tx(m.text)}</bdi>
             </span>
           </p>
         ))}
@@ -324,39 +341,40 @@ export function People({
           value={text}
           data-testid="chat-input"
           onChange={(e) => setText(e.target.value)}
-          placeholder="اكتب رسالة… (قرض، فائدة، أزمة، بناء)"
+          placeholder={t("اكتب رسالة… (قرض، فائدة، أزمة، بناء)")}
           className="h-10 min-w-0 flex-1 rounded-md border-2 border-sc-ink bg-white px-2 text-sm"
         />
-        <button type="submit" className="sc-menu sc-on px-3" aria-label="إرسال">
+        <button type="submit" className="sc-menu sc-on px-3" aria-label={t("إرسال")}>
           <Send size={16} />
         </button>
       </form>
       <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
         <p className="text-xs">
-          يطلب منك فائدة {Math.round(asked * 1000) / 10}٪ سنوياً إذا اقترضت. الفائدة حرة: أي نسبة،
-          لكن الفوائد العالية تُرفض أو تنتهي بعجز عن السداد. اكتب ٠٪ لطلب قرض حسن، ويقبله إذا كانت
-          ثقته بك ٧٥٪ أو أكثر.
+          {t(
+            "يطلب منك فائدة {rate}٪ سنوياً إذا اقترضت. الفائدة حرة: أي نسبة، لكن الفوائد العالية تُرفض أو تنتهي بعجز عن السداد. اكتب ٠٪ لطلب قرض حسن، ويقبله إذا كانت ثقته بك ٧٥٪ أو أكثر.",
+            { rate: Math.round(asked * 1000) / 10 },
+          )}
         </p>
         <div className="mt-1 grid grid-cols-3 gap-1">
           <NumberField
-            label="المبلغ"
+            label={t("المبلغ")}
             value={amount}
             onChange={setAmount}
-            suffix="د.ك"
+            suffix={currency()}
             testid="npc-amount"
           />
           <NumberField
-            label="الفائدة السنوية"
+            label={t("الفائدة السنوية")}
             value={rate}
             onChange={setRate}
-            suffix="٪"
+            suffix={percentSign()}
             testid="npc-rate"
           />
           <NumberField
-            label="المدة"
+            label={t("المدة")}
             value={months}
             onChange={(v) => setMonths(Math.max(1, Math.round(v)))}
-            suffix="شهر"
+            suffix={t("شهر")}
           />
         </div>
         <div className="mt-1 grid grid-cols-3 gap-1">
@@ -366,7 +384,7 @@ export function People({
             onClick={() => onLend(open, amount, rate / 100, months)}
             className="sc-menu text-xs"
           >
-            أقرضه
+            {t("أقرضه")}
           </button>
           <button
             type="button"
@@ -374,10 +392,10 @@ export function People({
             onClick={() => onBorrow(open, amount, rate / 100, months)}
             className="sc-menu text-xs"
           >
-            اقترض منه
+            {t("اقترض منه")}
           </button>
           <button type="button" onClick={() => onRepay(open)} className="sc-menu text-xs">
-            سدّد دينه
+            {t("سدّد دينه")}
           </button>
         </div>
         <button
@@ -386,7 +404,7 @@ export function People({
           onClick={() => onLend(open, amount, 0, months)}
           className="sc-menu sc-on mt-1 w-full text-xs"
         >
-          قرض حسن بلا فائدة ({fmt(amount)} د.ك) · يرفع الثقة كثيراً
+          {t("قرض حسن بلا فائدة ({amount} د.ك) · يرفع الثقة كثيراً", { amount: fmt(amount) })}
         </button>
       </div>
     </div>
@@ -398,13 +416,13 @@ export function PeopleButton({ unread, onClick }: { unread: number; onClick: () 
     <button
       type="button"
       data-testid="people-btn"
-      aria-label="اللاعبون والمحادثات"
+      aria-label={t("اللاعبون والمحادثات")}
       onClick={onClick}
       className="sc-round relative"
     >
       <MessageCircle size={18} />
       {unread > 0 && (
-        <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-coral px-1 text-[11px] font-extrabold text-sc-mint">
+        <span className="absolute -end-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-coral px-1 text-[11px] font-extrabold text-sc-mint">
           {unread}
         </span>
       )}

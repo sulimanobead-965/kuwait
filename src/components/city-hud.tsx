@@ -43,6 +43,7 @@ import {
   CrisisBanner,
   CrisisButtons,
   money,
+  LangPicker,
   MoreSheet,
   TutorialCard,
   WeatherOverlay,
@@ -90,6 +91,7 @@ import {
 } from "@/game/sim";
 import type { DayMode } from "@/game/three/day-night";
 import { districtById } from "@/game/districts";
+import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
 
 export type HudTool =
   | { kind: "road" }
@@ -278,6 +280,8 @@ export function CityHud({
   onZoneApply: (pick: ZonePick) => void;
   onZoneCancel: () => void;
 }) {
+  const lang = useLang();
+  const dir = dirOf(lang);
   const [panel, setPanelState] = useState<Panel | null>(null);
   const [more, setMore] = useState(false);
   const setPanel = (next: Panel | null | ((p: Panel | null) => Panel | null)) =>
@@ -330,34 +334,38 @@ export function CityHud({
         {snap.started && (
           <div className="hud-tools safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
             <Round
-              label="سكن وتجارة"
+              label={t("سكن وتجارة")}
               tut="tool-homes"
               on={tray && (cat === "housing" || cat === "commerce")}
               onClick={() => openCat("housing")}
             >
               <LayoutGrid size={18} />
             </Round>
-            <Round label="طرق" tut="tool-road" on={tool?.kind === "road"} onClick={onRoad}>
+            <Round label={t("طرق")} tut="tool-road" on={tool?.kind === "road"} onClick={onRoad}>
               <Route size={18} />
             </Round>
-            <Round label="تنظيم منطقة" on={tool?.kind === "zone" || zone !== null} onClick={onZone}>
+            <Round
+              label={t("تنظيم منطقة")}
+              on={tool?.kind === "zone" || zone !== null}
+              onClick={onZone}
+            >
               <Grid2x2 size={18} />
             </Round>
             <Round
-              label="كهرباء وماء وخدمات"
+              label={t("كهرباء وماء وخدمات")}
               on={tray && cat === "services"}
               onClick={() => openCat("services")}
             >
               <Zap size={18} />
             </Round>
             <Round
-              label="معالم"
+              label={t("معالم")}
               on={tray && cat === "landmarks"}
               onClick={() => openCat("landmarks")}
             >
               <Landmark size={18} />
             </Round>
-            <Round label="هدم" on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
+            <Round label={t("هدم")} on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
               <Trash2 size={18} />
             </Round>
             <Rci r={dem.r} c={dem.c} i={dem.i} />
@@ -368,34 +376,36 @@ export function CityHud({
             type="button"
             data-testid="rank"
             onClick={() => togglePanel("advisors")}
-            className="hud-badge pointer-events-auto absolute left-2 top-0 mt-2 flex flex-col items-start rounded-md bg-sc-ink/85 px-2 py-1 text-right text-sc-mint"
-            dir="rtl"
+            className="hud-badge pointer-events-auto absolute left-2 top-0 mt-2 flex flex-col items-start rounded-md bg-sc-ink/85 px-2 py-1 text-start text-sc-mint"
+            dir={dir}
           >
             <span className="flex items-center gap-1.5 text-sm font-extrabold">
               <span className="text-2xl leading-none">{player.avatar}</span>
               <span className="flex flex-col leading-tight">
                 <span data-testid="player-label">{player.name}</span>
                 <span className="flex items-center gap-1 text-xs text-sc-gold">
-                  <Trophy size={12} /> {RANKS[rankOf(st.residents)]!.title}
+                  <Trophy size={12} /> {t(RANKS[rankOf(st.residents)]!.title)}
                 </span>
               </span>
             </span>
             <span className={`text-xs font-bold ${st.happy < 40 ? "text-coral" : "text-sc-lime"}`}>
-              رضا الناس {st.happy}%
+              {t("رضا الناس {n}%", { n: st.happy })}
             </span>
           </button>
         )}
         {snap.started && (
           <div className="hud-left pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
             <PeopleButton unread={unreadCount(snap)} onClick={() => togglePanel("people")} />
-            <Round label="تقريب" onClick={() => onZoom(1.28)}>
+            <Round label={t("تقريب")} onClick={() => onZoom(1.28)}>
               <Plus size={18} />
             </Round>
-            <Round label="تبعيد" onClick={() => onZoom(1 / 1.28)}>
+            <Round label={t("تبعيد")} onClick={() => onZoom(1 / 1.28)}>
               <Minus size={18} />
             </Round>
             <Round
-              label={`الإضاءة: ${dayMode === "auto" ? "تلقائية" : dayMode === "day" ? "نهار" : "ليل"}`}
+              label={t("الإضاءة: {mode}", {
+                mode: dayMode === "auto" ? "تلقائية" : dayMode === "day" ? "نهار" : "ليل",
+              })}
               testid="day-mode"
               on={dayMode === "night"}
               onClick={() =>
@@ -404,12 +414,14 @@ export function CityHud({
             >
               <SunMoon size={18} />
             </Round>
-            <span className="view-3d-badge" dir="rtl">
-              {dayMode === "night"
-                ? "ليل المدينة"
-                : dayMode === "day"
-                  ? "نهار المدينة"
-                  : "دورة النهار والليل"}
+            <span className="view-3d-badge" dir={dir}>
+              {t(
+                dayMode === "night"
+                  ? "ليل المدينة"
+                  : dayMode === "day"
+                    ? "نهار المدينة"
+                    : "دورة النهار والليل",
+              )}
             </span>
           </div>
         )}
@@ -423,8 +435,8 @@ export function CityHud({
             onClick={onFocusDistrict}
             className="district-focus pointer-events-auto"
           >
-            {districtById(snap.district)?.name} ·{" "}
-            {snap.district === "free" ? "عرض المدينة" : "عرض القطع"}
+            {t(districtById(snap.district)?.name ?? "")} ·{" "}
+            {t(snap.district === "free" ? "عرض المدينة" : "عرض القطع")}
           </button>
         </div>
       )}
@@ -434,33 +446,36 @@ export function CityHud({
             {snap.started && <CrisisBanner snap={snap} />}
             {toasts.map((item) => (
               <p key={item.id} className="sc-lcd text-sm">
-                {item.text}
+                {tx(item.text)}
               </p>
             ))}
           </div>
           {zone && <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />}
           {panel && snap.started && (
-            <section className="hud-panel sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md">
+            <section
+              className="hud-panel sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md"
+              dir={dir}
+            >
               <div className="sc-title m-2">
                 <button
                   type="button"
                   className="sc-x"
-                  aria-label="إغلاق"
+                  aria-label={t("إغلاق")}
                   onClick={() => setPanel(null)}
                 >
                   <X size={18} />
                 </button>
                 <h2 className="flex-1 text-center text-base">
-                  {panel === "graphs" && "الرسوم"}
-                  {panel === "budget" && "الميزانية"}
-                  {panel === "laws" && "القوانين"}
-                  {panel === "advisors" && "المستشارون"}
-                  {panel === "disasters" && "الكوارث"}
-                  {panel === "projects" && "المشاريع والفعاليات"}
-                  {panel === "companies" && "الشركات والاستثمار"}
-                  {panel === "report" && "التقرير السنوي"}
-                  {panel === "achievements" && "الحقب والإنجازات"}
-                  {panel === "people" && "اللاعبون والمحادثات"}
+                  {panel === "graphs" && t("الرسوم")}
+                  {panel === "budget" && t("الميزانية")}
+                  {panel === "laws" && t("القوانين")}
+                  {panel === "advisors" && t("المستشارون")}
+                  {panel === "disasters" && t("الكوارث")}
+                  {panel === "projects" && t("المشاريع والفعاليات")}
+                  {panel === "companies" && t("الشركات والاستثمار")}
+                  {panel === "report" && t("التقرير السنوي")}
+                  {panel === "achievements" && t("الحقب والإنجازات")}
+                  {panel === "people" && t("اللاعبون والمحادثات")}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -547,15 +562,15 @@ export function CityHud({
                             type="button"
                             aria-pressed={on}
                             onClick={() => onOrdinance(law.key, !on)}
-                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-right ${on ? "sc-on sc-choice" : "sc-choice"}`}
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-start ${on ? "sc-on sc-choice" : "sc-choice"}`}
                           >
                             <span className="grid h-6 w-6 place-items-center">
                               {on ? <Check size={16} /> : null}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-sm">{law.title}</span>
+                              <span className="block text-sm">{t(law.title)}</span>
                               <span className="block text-xs font-medium opacity-80">
-                                {law.detail}
+                                {t(law.detail)}
                               </span>
                             </span>
                           </button>
@@ -580,15 +595,17 @@ export function CityHud({
             <div className="absolute inset-x-0 bottom-0">
               <div
                 className="sc-panel pointer-events-auto safe-bottom mx-2 rounded-t-xl px-4 pt-5"
-                dir="rtl"
+                dir={dir}
               >
+                <LangPicker />
                 <p className="text-sm font-bold text-sc-leaf">
-                  مساعد المختار ← مختار المنطقة ← المحافظ
+                  {RANKS.map((r) => t(r.title)).join(lang === "ar" ? " ← " : " → ")}
                 </p>
-                <h2 className="mt-1 text-3xl font-extrabold leading-tight">المحافظ</h2>
+                <h2 className="mt-1 text-3xl font-extrabold leading-tight">{t("المحافظ")}</h2>
                 <p className="mt-2 text-base leading-relaxed">
-                  ابدأ مساعداً للمختار على خريطة الكويت الحقيقية. أرضِ الناس بالخدمات والأسعار العادلة
-                  لتكبر منطقتك وتترقّى.
+                  {t(
+                    "ابدأ مساعداً للمختار على خريطة الكويت الحقيقية. أرضِ الناس بالخدمات والأسعار العادلة لتكبر منطقتك وتترقّى.",
+                  )}
                 </p>
                 <button
                   type="button"
@@ -596,7 +613,7 @@ export function CityHud({
                   onClick={onDistricts}
                   className="sc-menu sc-on mt-4 w-full text-base"
                 >
-                  اختر الحي وابدأ
+                  {t("اختر الحي وابدأ")}
                 </button>
                 {hasLegacy && (
                   <button
@@ -605,7 +622,7 @@ export function CityHud({
                     onClick={onStart}
                     className="mt-2 w-full py-2 text-sm underline underline-offset-4"
                   >
-                    استئناف مدينة الكويت القديمة
+                    {t("استئناف مدينة الكويت القديمة")}
                   </button>
                 )}
               </div>
@@ -614,17 +631,17 @@ export function CityHud({
         </div>
 
         {snap.started && (
-          <footer className="sc-status pointer-events-auto safe-bottom" dir="rtl">
+          <footer className="sc-status pointer-events-auto safe-bottom" dir={dir}>
             {confirmReset && (
               <div className="flex items-center gap-2 px-3 py-2">
                 <p className="flex-1 text-sm text-sc-mint">
-                  إعادة المدينة الحالية من الصفر؟ مدن الأحياء الأخرى محفوظة.
+                  {t("إعادة المدينة الحالية من الصفر؟ مدن الأحياء الأخرى محفوظة.")}
                 </p>
                 <button type="button" onClick={onReset} className="sc-menu sc-on h-11 px-3 text-sm">
-                  امسح
+                  {t("امسح")}
                 </button>
                 <button type="button" onClick={onCancelReset} className="sc-textbtn text-sm">
-                  لا
+                  {t("لا")}
                 </button>
               </div>
             )}
@@ -637,14 +654,17 @@ export function CityHud({
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-extrabold">
-                    {CATALOG[selected.kind].name} · مستوى {selected.level}/
-                    {maxLevelOf(selected.kind)}
-                    {selected.level >= 4 ? " · ناطحة سحاب" : ""}
+                    {t(CATALOG[selected.kind].name)} ·{" "}
+                    {t("مستوى {level}/{max}", {
+                      level: selected.level,
+                      max: maxLevelOf(selected.kind),
+                    })}
+                    {selected.level >= 4 ? ` · ${t("ناطحة سحاب")}` : ""}
                   </p>
                   <p className="text-xs">
-                    {incomePerSec(selected, snap).toFixed(1)} د.ك/ث
+                    {t("{n} د.ك/ث", { n: incomePerSec(selected, snap).toFixed(1) })}
                     {coastal(selected.c, selected.r) && CATALOG[selected.kind].coastBoost
-                      ? " · كورنيش"
+                      ? ` · ${t("كورنيش")}`
                       : ""}
                   </p>
                   {neighborEffect(snap, selected).notes.length > 0 && (
@@ -665,10 +685,12 @@ export function CityHud({
                   className="sc-menu h-11 shrink-0 px-3 text-xs disabled:opacity-40"
                 >
                   {selected.level >= maxLevelOf(selected.kind)
-                    ? "مكتمل"
+                    ? t("مكتمل")
                     : priceOf(upgradeCost(selected.kind, selected.level), snap) === 0
-                      ? "ترقّي مجاني"
-                      : `ترقّي ${fmt(priceOf(upgradeCost(selected.kind, selected.level), snap))}`}
+                      ? t("ترقّي مجاني")
+                      : t("ترقّي {amount}", {
+                          amount: fmt(priceOf(upgradeCost(selected.kind, selected.level), snap)),
+                        })}
                 </button>
               </div>
             )}
@@ -682,7 +704,7 @@ export function CityHud({
                       onClick={() => onCategory("housing")}
                       className={`sc-menu px-3 text-sm ${cat === "housing" ? "sc-on" : ""}`}
                     >
-                      سكن
+                      {t("سكن")}
                     </button>
                     <button
                       type="button"
@@ -690,7 +712,7 @@ export function CityHud({
                       onClick={() => onCategory("commerce")}
                       className={`sc-menu px-3 text-sm ${cat === "commerce" ? "sc-on" : ""}`}
                     >
-                      تجارة
+                      {t("تجارة")}
                     </button>
                   </div>
                 )}
@@ -707,7 +729,9 @@ export function CityHud({
                         data-testid={`build-${def.kind}`}
                         aria-pressed={on}
                         disabled={locked}
-                        title={locked ? `يُفتح في حقبة ${ERAS[def.era ?? 0]}` : def.blurb}
+                        title={
+                          locked ? t("يُفتح في حقبة {era}", { era: ERAS[def.era ?? 0]! }) : t(def.blurb)
+                        }
                         onClick={() => onBuild(def.kind)}
                         className={`relative flex w-24 shrink-0 flex-col items-center rounded-md border-2 px-1 py-1 ${
                           on ? "sc-on border-sc-ink" : "border-sc-ink bg-sc-mint text-sc-ink"
@@ -715,7 +739,7 @@ export function CityHud({
                       >
                         {locked && (
                           <span className="absolute inset-x-0 top-1 text-center text-[10px] font-extrabold">
-                            🔒 {ERAS[def.era ?? 0]}
+                            🔒 {t(ERAS[def.era ?? 0]!)}
                           </span>
                         )}
                         <img
@@ -724,11 +748,11 @@ export function CityHud({
                           className="h-12 w-full object-contain"
                         />
                         <span className="mt-1 w-full truncate text-center text-xs font-extrabold">
-                          {def.name}
+                          {t(def.name)}
                         </span>
                         <span className="text-xs">
-                          {def.needsCoast ? "على البحر · " : ""}
-                          {price === 0 ? "مجاني" : money(price)}
+                          {def.needsCoast ? `${t("على البحر")} · ` : ""}
+                          {price === 0 ? t("مجاني") : money(price)}
                         </span>
                       </button>
                     );
@@ -738,13 +762,17 @@ export function CityHud({
             )}
             {tool?.kind === "road" && (
               <p className="px-3 pt-2 text-xs font-bold text-sc-lime">
-                اسحب والطريق يلف مع اليابسة. الشوارع الرئيسية ثابتة في الأحياء، والجانبي بين القطع.
-                {priceOf(ROAD_COST, snap) === 0 ? " مجاني." : ` ${priceOf(ROAD_COST, snap)} د.ك.`}
+                {t(
+                  "اسحب والطريق يلف مع اليابسة. الشوارع الرئيسية ثابتة في الأحياء، والجانبي بين القطع.",
+                )}{" "}
+                {priceOf(ROAD_COST, snap) === 0
+                  ? t("مجاني.")
+                  : t("{amount} د.ك.", { amount: priceOf(ROAD_COST, snap) })}
               </p>
             )}
             {tool?.kind === "bulldoze" && (
               <p className="px-3 pt-2 text-xs font-bold text-sc-gold">
-                اضغط مبنى أو طريق. يرجع لك نصف التكلفة.
+                {t("اضغط مبنى أو طريق. يرجع لك نصف التكلفة.")}
               </p>
             )}
             {more && (
@@ -761,6 +789,7 @@ export function CityHud({
                   else if (action === "mute") onMute();
                   else if (action === "reset") onAskReset();
                   else if (action === "profile") onEditPlayer();
+                  else if (action === "language") setLang(lang === "ar" ? "en" : "ar");
                   else setPanel(action);
                 }}
               />
@@ -772,17 +801,17 @@ export function CityHud({
                 testid="menu-budget"
                 onClick={() => togglePanel("budget")}
               >
-                الميزانية
+                {t("الميزانية")}
               </Menu>
               <Menu on={panel === "projects"} testid="menu-projects" onClick={() => togglePanel("projects")}>
-                المشاريع
+                {t("المشاريع")}
               </Menu>
               <Menu
                 on={panel === "companies"}
                 testid="menu-companies"
                 onClick={() => togglePanel("companies")}
               >
-                الشركات
+                {t("الشركات")}
               </Menu>
               {stored > 0 ? (
                 <button
@@ -792,24 +821,29 @@ export function CityHud({
                   onClick={onCollect}
                   className="sc-menu sc-on shrink-0 px-2 text-sm"
                 >
-                  اجمع {money(stored)}
+                  {t("اجمع {amount}", { amount: money(stored) })}
                 </button>
               ) : null}
               <Menu on={more} testid="menu-more" onClick={() => setMore((m) => !m)}>
-                ☰ المزيد
+                ☰ {t("المزيد")}
               </Menu>
             </div>
             <div className="hud-status flex items-center gap-1 overflow-x-auto px-2 pb-2" dir="ltr">
-              <Round label="إيقاف" on={snap.speed === 0} onClick={() => onSpeed(0)}>
+              <Round label={t("إيقاف")} on={snap.speed === 0} onClick={() => onSpeed(0)}>
                 <Pause size={16} />
               </Round>
-              <Round label="تشغيل" tut="speed-1" on={snap.speed === 1} onClick={() => onSpeed(1)}>
+              <Round
+                label={t("تشغيل")}
+                tut="speed-1"
+                on={snap.speed === 1}
+                onClick={() => onSpeed(1)}
+              >
                 <Play size={16} />
               </Round>
-              <Round label="سريع" on={snap.speed === 2} onClick={() => onSpeed(2)}>
+              <Round label={t("سريع")} on={snap.speed === 2} onClick={() => onSpeed(2)}>
                 <FastForward size={16} />
               </Round>
-              <Round label="أسرع" on={snap.speed === 3} onClick={() => onSpeed(3)}>
+              <Round label={t("أسرع")} on={snap.speed === 3} onClick={() => onSpeed(3)}>
                 <ChevronsRight size={16} />
               </Round>
               <span className="sc-lcd shrink-0 text-sm" dir="ltr" data-hud="date">
@@ -821,14 +855,14 @@ export function CityHud({
                 id="hud-coins"
               >
                 <span dir="ltr">{money(snap.coins)}</span>
-                <span className="text-xs">د.ك</span>
+                <span className="text-xs">{currency()}</span>
               </span>
-              <span className="sc-lcd shrink-0 gap-1 text-sm" title="السكان">
+              <span className="sc-lcd shrink-0 gap-1 text-sm" title={t("السكان")}>
                 <Users size={13} />
                 <span dir="ltr">{money(st.residents)}</span>
               </span>
             </div>
-            <p className="hud-ticker sc-ticker flex items-center px-3 text-sm" dir="rtl">
+            <p className="hud-ticker sc-ticker flex items-center px-3 text-sm" dir={dir}>
               <span className="truncate">{line}</span>
             </p>
           </footer>
@@ -856,6 +890,7 @@ function ZoneCard({
     landmarks: false,
     parks: false,
   });
+  useLang();
   const chips: { key: keyof ZonePick; label: string }[] = [
     { key: "streets", label: "شوارع" },
     { key: "schools", label: "مدارس" },
@@ -866,12 +901,13 @@ function ZoneCard({
   return (
     <div
       className="sc-panel pointer-events-auto absolute inset-x-3 bottom-2 rounded-xl px-3 py-3"
-      dir="rtl"
+      dir={dirOf()}
     >
-      <p className="text-sm font-extrabold">تنظيم المنطقة</p>
+      <p className="text-sm font-extrabold">{t("تنظيم المنطقة")}</p>
       <p className="mt-1 text-xs leading-relaxed">
-        في الحي تُملأ القطعة المرقّمة كلها. خارجها وفي المنطقة الحرة يُبنى كل ما حدّدته، مع شوارع إن
-        أبقيتها مفعّلة.
+        {t(
+          "في الحي تُملأ القطعة المرقّمة كلها. خارجها وفي المنطقة الحرة يُبنى كل ما حدّدته، مع شوارع إن أبقيتها مفعّلة.",
+        )}
       </p>
       <div className="mt-2 flex flex-wrap gap-1">
         {chips.map((chip) => (
@@ -882,7 +918,7 @@ function ZoneCard({
             onClick={() => setPick((p) => ({ ...p, [chip.key]: !p[chip.key] }))}
             className={`sc-menu px-3 text-xs ${pick[chip.key] ? "sc-on" : ""}`}
           >
-            {chip.label}
+            {t(chip.label)}
           </button>
         ))}
       </div>
@@ -892,10 +928,10 @@ function ZoneCard({
           className="sc-menu sc-on h-11 flex-1 text-sm"
           onClick={() => onApply(pick)}
         >
-          نفّذ التخطيط
+          {t("نفّذ التخطيط")}
         </button>
         <button type="button" className="sc-menu h-11 px-3 text-sm" onClick={onCancel}>
-          إلغاء
+          {t("إلغاء")}
         </button>
       </div>
     </div>
@@ -933,11 +969,11 @@ function Graphs({
             onClick={() => onSpan(n)}
             className={`sc-menu flex-1 text-sm ${span === n ? "sc-on" : ""}`}
           >
-            {n === 1 ? "سنة" : n === 10 ? "10 سنوات" : "100 سنة"}
+            {t(n === 1 ? "سنة" : n === 10 ? "10 سنوات" : "100 سنة")}
           </button>
         ))}
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1" dir="rtl">
+      <div className="mt-2 grid grid-cols-2 gap-1" dir={dirOf()}>
         {SERIES.map((item) => {
           const on = onKeys.includes(item.key);
           return (
@@ -951,7 +987,7 @@ function Graphs({
               <span className="grid h-5 w-5 shrink-0 place-items-center">
                 {on ? <Check size={14} /> : null}
               </span>
-              <span className="truncate">{item.label}</span>
+              <span className="truncate">{t(item.label)}</span>
             </button>
           );
         })}
@@ -1011,7 +1047,7 @@ function GraphCanvas({
     return () => ro.disconnect();
   }, [sig, rows, active]);
   return (
-    <canvas ref={ref} className="h-40 w-full rounded-md bg-sc-mint" aria-label="رسم المدينة" />
+    <canvas ref={ref} className="h-40 w-full rounded-md bg-sc-mint" aria-label={t("رسم المدينة")} />
   );
 }
 
@@ -1041,27 +1077,27 @@ function Budget({
   const [loanAmount, setLoanAmount] = useState(10_000);
   const [loanRate, setLoanRate] = useState(Math.ceil(floor * 1000) / 10);
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3" dir={dirOf()}>
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
         <div className="sc-lcd h-auto flex-col py-2">
-          <span>دخل الشهر</span>
+          <span>{t("دخل الشهر")}</span>
           <span dir="ltr">{fmt(income)}</span>
         </div>
         <div className="sc-lcd h-auto flex-col py-2">
-          <span>المصروف</span>
+          <span>{t("المصروف")}</span>
           <span dir="ltr">{fmt(cost)}</span>
         </div>
         <div className="sc-lcd h-auto flex-col py-2">
-          <span>الفرق</span>
+          <span>{t("الفرق")}</span>
           <span dir="ltr" className={income - cost < 0 ? "text-coral" : ""}>
             {fmt(income - cost)}
           </span>
         </div>
       </div>
       <label className="block text-sm font-extrabold">
-        الضريبة {snap.tax}%
+        {t("الضريبة {n}%", { n: snap.tax })}
         <span className="block text-xs font-medium opacity-80">
-          أعلى = دخل أكبر من المباني، لكن الرضا ينزل فوق ٨٪.
+          {t("أعلى = دخل أكبر من المباني، لكن الرضا ينزل فوق ٨٪.")}
         </span>
         <input
           type="range"
@@ -1069,7 +1105,7 @@ function Budget({
           max={300}
           step={5}
           value={snap.tax}
-          aria-label="نسبة الضريبة"
+          aria-label={t("نسبة الضريبة")}
           onChange={(e) => onTax(Number(e.target.value))}
           className="mt-1 h-11 w-full accent-sc-leaf"
         />
@@ -1078,22 +1114,36 @@ function Budget({
       <Murabaha snap={snap} onMurabaha={onMurabaha} />
       <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
         <p className="flex items-center gap-1 text-sm font-extrabold">
-          <Bank size={16} /> قرض البنك
+          <Bank size={16} /> {t("قرض البنك")}
         </p>
         <p className="mt-1 text-xs leading-relaxed">
-          اختر المبلغ والفائدة بنفسك. أقل فائدة يقبلها البنك الآن {Math.ceil(floor * 1000) / 10}٪، وأي
-          نسبة أعلى مقبولة. القسط ينخصم كل شهر تلقائياً
-          {snap.loan > 0 ? ` (${fmt(due)} د.ك)` : ""}. الدين الحالي{" "}
-          <b dir="ltr">{fmt(snap.loan)}</b> د.ك من حد {fmt(limit)}.
+          {t(
+            "اختر المبلغ والفائدة بنفسك. أقل فائدة يقبلها البنك الآن {rate}٪، وأي نسبة أعلى مقبولة. القسط ينخصم كل شهر تلقائياً.",
+            { rate: Math.ceil(floor * 1000) / 10 },
+          )}{" "}
+          {snap.loan > 0 ? t("القسط الحالي {amount} د.ك.", { amount: fmt(due) }) : ""}{" "}
+          {t("الدين الحالي {debt} د.ك من حد {limit}.", { debt: fmt(snap.loan), limit: fmt(limit) })}
         </p>
         {snap.coins < 0 && (
           <p className="mt-1 text-xs font-extrabold text-coral">
-            الرصيد بالسالب: خذ قرضاً لتغطية العجز.
+            {t("الرصيد بالسالب: خذ قرضاً لتغطية العجز.")}
           </p>
         )}
         <div className="mt-2 grid grid-cols-2 gap-1">
-          <NumberField label="المبلغ" value={loanAmount} onChange={setLoanAmount} suffix="د.ك" testid="loan-amount" />
-          <NumberField label="الفائدة" value={loanRate} onChange={setLoanRate} suffix="٪" testid="loan-rate" />
+          <NumberField
+            label={t("المبلغ")}
+            value={loanAmount}
+            onChange={setLoanAmount}
+            suffix={currency()}
+            testid="loan-amount"
+          />
+          <NumberField
+            label={t("الفائدة")}
+            value={loanRate}
+            onChange={setLoanRate}
+            suffix={percentSign()}
+            testid="loan-rate"
+          />
         </div>
         <button
           type="button"
@@ -1101,7 +1151,7 @@ function Budget({
           onClick={() => onLoan(loanAmount, loanRate / 100)}
           className="sc-menu sc-on mt-1 w-full text-xs"
         >
-          اقترض {fmt(loanAmount)} د.ك بفائدة {loanRate}٪
+          {t("اقترض {amount} د.ك بفائدة {rate}٪", { amount: fmt(loanAmount), rate: loanRate })}
         </button>
         {snap.loan > 0 && (
           <button
@@ -1110,7 +1160,7 @@ function Budget({
             disabled={snap.coins <= 0}
             className="sc-menu sc-on mt-1 w-full text-xs disabled:opacity-40"
           >
-            سدّد ما تقدر عليه
+            {t("سدّد ما تقدر عليه")}
           </button>
         )}
       </div>
@@ -1132,22 +1182,41 @@ function Murabaha({
   return (
     <div className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="murabaha-card">
       <p className="flex items-center gap-1 text-sm font-extrabold">
-        <Bank size={16} /> تمويل إسلامي (مرابحة)
+        <Bank size={16} /> {t("تمويل إسلامي (مرابحة)")}
       </p>
       <p className="mt-1 text-xs leading-relaxed">
-        بديل القرض: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية،
-        وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف فوائد، فقط تبرع خيري بسيط. تقدر تأخذ التمويل
-        والقرض معاً.
+        {t(
+          "بديل القرض: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية، وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف فوائد، فقط تبرع خيري بسيط. تقدر تأخذ التمويل والقرض معاً.",
+        )}
       </p>
       {owed > 0 && (
         <p className="mt-1 text-xs font-extrabold">
-          عليك للمصرف {fmt(owed)} د.ك · القسط {fmt(murabahaInstallment(snap))} شهرياً
+          {t("عليك للمصرف {owed} د.ك · القسط {installment} شهرياً", {
+            owed: fmt(owed),
+            installment: fmt(murabahaInstallment(snap)),
+          })}
         </p>
       )}
       <div className="mt-1 grid grid-cols-3 gap-1">
-        <NumberField label="المبلغ" value={amount} onChange={setAmount} suffix="د.ك" testid="murabaha-amount" />
-        <NumberField label="ربح المصرف" value={profit} onChange={setProfit} suffix="٪" testid="murabaha-profit" />
-        <NumberField label="الأشهر" value={months} onChange={(v) => setMonths(Math.max(1, Math.round(v)))} />
+        <NumberField
+          label={t("المبلغ")}
+          value={amount}
+          onChange={setAmount}
+          suffix={currency()}
+          testid="murabaha-amount"
+        />
+        <NumberField
+          label={t("ربح المصرف")}
+          value={profit}
+          onChange={setProfit}
+          suffix={percentSign()}
+          testid="murabaha-profit"
+        />
+        <NumberField
+          label={t("الأشهر")}
+          value={months}
+          onChange={(v) => setMonths(Math.max(1, Math.round(v)))}
+        />
       </div>
       <button
         type="button"
@@ -1155,7 +1224,7 @@ function Murabaha({
         onClick={() => onMurabaha(amount, profit / 100, months)}
         className="sc-menu sc-on mt-1 w-full text-xs"
       >
-        خذ تمويل {fmt(amount)} د.ك بربح {profit}٪
+        {t("خذ تمويل {amount} د.ك بربح {rate}٪", { amount: fmt(amount), rate: profit })}
       </button>
     </div>
   );
@@ -1172,12 +1241,14 @@ function Projects({
 }) {
   const running = snap.event && snap.day < snap.event.until ? snap.event : null;
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3" dir={dirOf()}>
       <p className="flex items-center gap-1 text-sm font-extrabold">
-        <Building2 size={16} /> مناطق نموذجية جاهزة
+        <Building2 size={16} /> {t("مناطق نموذجية جاهزة")}
       </p>
       <p className="text-xs leading-relaxed">
-        تُبنى بالكامل في أقرب أرض فاضية تكفيها، بشوارعها وخدماتها، بسعر أقل من البناء قطعة قطعة.
+        {t(
+          "تُبنى بالكامل في أقرب أرض فاضية تكفيها، بشوارعها وخدماتها، بسعر أقل من البناء قطعة قطعة.",
+        )}
       </p>
       <ul className="space-y-2">
         {(Object.keys(MODEL_AREAS) as ModelKind[]).map((kind) => {
@@ -1189,27 +1260,32 @@ function Projects({
                 type="button"
                 data-testid={`model-${kind}`}
                 onClick={() => onModel(kind)}
-                className={`sc-choice w-full rounded-md px-2 py-2 text-right ${poor ? "opacity-60" : ""}`}
+                className={`sc-choice w-full rounded-md px-2 py-2 text-start ${poor ? "opacity-60" : ""}`}
               >
                 <span className="flex justify-between text-sm font-extrabold">
-                  <span>{def.name}</span>
-                  <span dir="ltr">{fmt(def.cost)} د.ك</span>
+                  <span>{t(def.name)}</span>
+                  <span dir="ltr">
+                    {fmt(def.cost)} {currency()}
+                  </span>
                 </span>
-                <span className="block text-xs font-medium opacity-80">{def.blurb}</span>
+                <span className="block text-xs font-medium opacity-80">{t(def.blurb)}</span>
               </button>
             </li>
           );
         })}
       </ul>
       <p className="flex items-center gap-1 text-sm font-extrabold">
-        <Trophy size={16} /> فعاليات ورياضة
+        <Trophy size={16} /> {t("فعاليات ورياضة")}
       </p>
       <p className="text-xs leading-relaxed">
-        الفعالية ترفع الرضا والدخل وتجذب سكاناً جدداً طوال مدتها، وتترك سمعة دائمة للمنطقة.
+        {t("الفعالية ترفع الرضا والدخل وتجذب سكاناً جدداً طوال مدتها، وتترك سمعة دائمة للمنطقة.")}
       </p>
       {running && (
         <p className="sc-lcd text-sm">
-          {EVENTS[running.kind].name} لين {formatCityDate(running.until)}
+          {t("{name} لين {date}", {
+            name: EVENTS[running.kind].name,
+            date: formatCityDate(running.until),
+          })}
         </p>
       )}
       <ul className="space-y-2">
@@ -1223,15 +1299,21 @@ function Projects({
                 data-testid={`event-${kind}`}
                 disabled={Boolean(running)}
                 onClick={() => onEvent(kind)}
-                className={`sc-choice w-full rounded-md px-2 py-2 text-right disabled:opacity-40 ${poor ? "opacity-60" : ""}`}
+                className={`sc-choice w-full rounded-md px-2 py-2 text-start disabled:opacity-40 ${poor ? "opacity-60" : ""}`}
               >
                 <span className="flex justify-between text-sm font-extrabold">
-                  <span>{def.name}</span>
-                  <span dir="ltr">{fmt(def.cost)} د.ك</span>
+                  <span>{t(def.name)}</span>
+                  <span dir="ltr">
+                    {fmt(def.cost)} {currency()}
+                  </span>
                 </span>
                 <span className="block text-xs font-medium opacity-80">
-                  {def.blurb} {def.days} يوم · دخل +{Math.round(def.income * 100)}٪ · رضا +
-                  {def.happy}
+                  {t(def.blurb)}{" "}
+                  {t("{days} يوم · دخل +{income}٪ · رضا +{happy}", {
+                    days: def.days,
+                    income: Math.round(def.income * 100),
+                    happy: def.happy,
+                  })}
                 </span>
               </button>
             </li>
@@ -1249,7 +1331,7 @@ function Advisors({ snap }: { snap: Sim }) {
   const rank = rankOf(st.residents);
   const next = RANKS[rank + 1];
   const cover = serviceCoverage(snap);
-  const rows = [
+  const rows: [string, string][] = [
     ["السكان", `${money(st.residents)} / ${money(st.capacity * 15)}`],
     ["الرضا", `${st.happy}%`],
     ["الكهرباء", `${Math.round(m.power)}%`],
@@ -1263,7 +1345,7 @@ function Advisors({ snap }: { snap: Sim }) {
     ["قيمة الأرض", String(Math.round(m.land))],
   ];
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2" dir={dirOf()}>
       <ul className="space-y-1">
         {bulletin(snap, st).map((text) => (
           <li key={text} className="rounded-md bg-sc-mint px-2 py-2 text-sm font-bold text-sc-ink">
@@ -1272,10 +1354,13 @@ function Advisors({ snap }: { snap: Sim }) {
         ))}
       </ul>
       <p className="rounded-md bg-sc-mint px-2 py-2 text-sm font-extrabold text-sc-ink">
-        لقبك: {RANKS[rank]!.title}
+        {t("لقبك: {title}", { title: RANKS[rank]!.title })} ·{" "}
         {next
-          ? ` · ${money(Math.max(0, next.pop - st.residents))} ساكن للترقية إلى ${next.title}`
-          : " · أعلى لقب"}
+          ? t("{n} ساكن للترقية إلى {title}", {
+              n: money(Math.max(0, next.pop - st.residents)),
+              title: next.title,
+            })
+          : t("أعلى لقب")}
       </p>
       <div className="grid grid-cols-5 gap-1 text-center text-xs font-extrabold">
         {(Object.keys(cover) as (keyof typeof cover)[]).map((key) => (
@@ -1283,20 +1368,21 @@ function Advisors({ snap }: { snap: Sim }) {
             key={key}
             className={`sc-lcd h-auto flex-col py-1 ${cover[key] < 0.6 ? "text-coral" : ""}`}
           >
-            <span>{SERVICE_NAMES[key]}</span>
+            <span>{t(SERVICE_NAMES[key])}</span>
             <span dir="ltr">{Math.round(cover[key] * 100)}%</span>
           </p>
         ))}
       </div>
       {q && (
         <p className="text-sm font-extrabold">
-          المهمة: {q.text} · {Math.min(q.total, Math.round(q.progress(snap)))}/{q.total}
+          {t("المهمة: {quest}", { quest: q.text })} ·{" "}
+          {Math.min(q.total, Math.round(q.progress(snap)))}/{q.total}
         </p>
       )}
       <div className="grid grid-cols-2 gap-1">
         {rows.map(([label, value]) => (
           <p key={label} className="sc-lcd h-auto justify-between py-2 text-xs">
-            <span>{label}</span>
+            <span>{t(label)}</span>
             <span dir="ltr">{value}</span>
           </p>
         ))}
@@ -1316,44 +1402,52 @@ function Disasters({
 }) {
   const active = snap.disaster && snap.day < snap.disaster.until ? snap.disaster : null;
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2" dir={dirOf()}>
       <p className="text-sm leading-relaxed">
-        الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل
-        الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ قرضاً من الميزانية.
+        {t(
+          "الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ قرضاً من الميزانية.",
+        )}
       </p>
-      {active && <p className="sc-lcd text-sm">جارية لين {formatCityDate(active.until)}</p>}
+      {active && (
+        <p className="sc-lcd text-sm">
+          {t("جارية لين {date}", { date: formatCityDate(active.until) })}
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-2">
         <button
           type="button"
           className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
           onClick={() => onDisaster("fire")}
         >
-          <Flame size={16} /> حريق
+          <Flame size={16} /> {t("حريق")}
         </button>
         <button
           type="button"
           className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
           onClick={() => onDisaster("storm")}
         >
-          <Cloud size={16} /> عاصفة رملية
+          <Cloud size={16} /> {t("عاصفة رملية")}
         </button>
         <button
           type="button"
           className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
           onClick={() => onDisaster("blackout")}
         >
-          <ZapOff size={16} /> انقطاع كهرباء
+          <ZapOff size={16} /> {t("انقطاع كهرباء")}
         </button>
         <button
           type="button"
           className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
           onClick={() => onDisaster("flood")}
         >
-          <CloudRain size={16} /> أمطار وسيول
+          <CloudRain size={16} /> {t("أمطار وسيول")}
         </button>
         <p className="text-xs">
-          الخسارة المتوقعة الآن: حريق {fmt(disasterBill(snap, "fire"))} · عاصفة{" "}
-          {fmt(disasterBill(snap, "storm"))} · سيول {fmt(disasterBill(snap, "flood"))} د.ك
+          {t("الخسارة المتوقعة الآن: حريق {fire} · عاصفة {storm} · سيول {flood} د.ك", {
+            fire: fmt(disasterBill(snap, "fire")),
+            storm: fmt(disasterBill(snap, "storm")),
+            flood: fmt(disasterBill(snap, "flood")),
+          })}
         </p>
       </div>
       <button
@@ -1362,7 +1456,11 @@ function Disasters({
         onClick={() => onRandom(!snap.randomDisasters)}
         className={`sc-menu w-full text-sm ${snap.randomDisasters ? "sc-on" : ""}`}
       >
-        {snap.randomDisasters ? "الكوارث تضرب عشوائياً (اضغط للإيقاف)" : "تفعيل الكوارث العشوائية"}
+        {t(
+          snap.randomDisasters
+            ? "الكوارث تضرب عشوائياً (اضغط للإيقاف)"
+            : "تفعيل الكوارث العشوائية",
+        )}
       </button>
     </div>
   );
@@ -1372,7 +1470,7 @@ function Rci({ r, c, i }: { r: number; c: number; i: number }) {
   return (
     <div
       className="mt-1 flex gap-1 rounded-md bg-sc-ink px-1 py-1"
-      aria-label="طلب السكن والتجارة والصناعة"
+      aria-label={t("طلب السكن والتجارة والصناعة")}
       dir="ltr"
     >
       <Meter label="R" value={r} tone="bg-sc-green" />

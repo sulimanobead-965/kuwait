@@ -7,6 +7,7 @@ import { roadIsSchematic, type Sim } from "../sim.ts";
 import { roadMarkingsAt } from "./road-markings.ts";
 import { districtById, sectorAt } from "../districts.ts";
 import { lonLatToCell, PLACES, type Place } from "../places.ts";
+import { getLang, t } from "../../i18n/index.ts";
 
 function tint(geo: THREE.BufferGeometry, color: string) {
   const c = new THREE.Color(color);
@@ -326,8 +327,11 @@ export function createDistrictNumbers(district: import("../districts.ts").Distri
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = 'bold 64px "Noto Kufi Arabic", sans-serif';
+    // Arabic-Indic digits in Arabic, Western digits in English.
     ctx.fillText(
-      String(sector.number).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!),
+      getLang() === "ar"
+        ? String(sector.number).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!)
+        : String(sector.number),
       64,
       63,
     );
@@ -368,24 +372,27 @@ const PLACE_FADE_START = 52;
 const PLACE_FADE_END = 78;
 
 /**
- * Arabic area names (places.ts) as camera-facing sprites over the terrain. They keep a
- * constant on-screen size and fade in only when the camera is zoomed out far enough to
- * read the map as a whole; `updatePlaceLabels` drives both every frame.
+ * Area names (places.ts, in the current language) as camera-facing sprites over the
+ * terrain. They keep a constant on-screen size and fade in only when the camera is
+ * zoomed out far enough to read the map as a whole; `updatePlaceLabels` drives both
+ * every frame. A language switch rebuilds the group (see `CityWorld.setLang`).
  */
 export function createPlaceLabels() {
   const group = new THREE.Group();
   group.name = "place-labels";
   const items: { sprite: THREE.Sprite; material: THREE.SpriteMaterial; size: number }[] = [];
+  const rtl = getLang() === "ar";
   const draw = (canvas: HTMLCanvasElement, place: Place) => {
+    const name = t(place.name);
     const px = place.major ? 64 : 48;
     const font = `bold ${px}px "Noto Kufi Arabic", "Noto Sans Arabic", sans-serif`;
     const ctx = canvas.getContext("2d")!;
     ctx.font = font;
-    const width = Math.ceil(ctx.measureText(place.name).width + px * 0.9);
+    const width = Math.ceil(ctx.measureText(name).width + px * 0.9);
     canvas.width = Math.min(1024, width);
     canvas.height = Math.ceil(px * 1.9);
     ctx.font = font;
-    ctx.direction = "rtl";
+    ctx.direction = rtl ? "rtl" : "ltr";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
@@ -393,8 +400,8 @@ export function createPlaceLabels() {
     const water = place.name === "جون الكويت";
     ctx.strokeStyle = water ? "rgba(18, 74, 86, 0.75)" : "rgba(250, 243, 226, 0.92)";
     ctx.fillStyle = water ? "#eaf6f4" : "#173c40";
-    ctx.strokeText(place.name, canvas.width / 2, canvas.height / 2);
-    ctx.fillText(place.name, canvas.width / 2, canvas.height / 2);
+    ctx.strokeText(name, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(name, canvas.width / 2, canvas.height / 2);
   };
   const canvases: [HTMLCanvasElement, Place, THREE.CanvasTexture, THREE.Sprite][] = [];
   for (const place of PLACES) {

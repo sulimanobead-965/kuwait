@@ -7,6 +7,7 @@ import type { HudTool } from "@/components/city-hud";
 import type { DayMode } from "./day-night";
 import { mountDinarCoin } from "@/game/coin-face";
 import type { WorldCallbacks, WorldDiagnostics } from "./renderer";
+import { getLang } from "@/i18n";
 
 let dinarFace: HTMLCanvasElement | null = null;
 function coinFace() {
@@ -91,6 +92,8 @@ export class FallbackCityWorld {
   setTool(tool: HudTool) {
     this.tool = tool;
   }
+  /** Text is drawn every frame in the current language; nothing to rebuild. */
+  setLang(_lang: string) {}
   setDayMode(mode: DayMode) {
     this.mode = mode;
     this.info.dayMode = mode;
@@ -291,7 +294,9 @@ export class FallbackCityWorld {
         ctx.stroke();
         ctx.fillStyle = "#173c40";
         ctx.fillText(
-          String(sector.number).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!),
+          getLang() === "ar"
+            ? String(sector.number).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!)
+            : String(sector.number),
           point.x,
           point.y,
         );

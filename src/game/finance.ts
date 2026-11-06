@@ -7,6 +7,7 @@
  * Pure functions over `Sim`; `sim.ts` calls `financeMonth` once per game month.
  */
 import type { Sim } from "./sim";
+import { msg, percentSign, t } from "../i18n/index.ts";
 
 export type CompanyId = "bank" | "islamic" | "developer" | "consultant";
 
@@ -196,8 +197,9 @@ const uid = (s: Sim) => `${Math.floor(s.day)}-${Math.random().toString(36).slice
 
 type Act = { ok: true; msg: string } | { ok: false; msg: string };
 
-/** Shows a yearly rate like 10٪ or 12,500٪. */
-export const pct = (rate: number) => `${(Math.round(rate * 1000) / 10).toLocaleString("en-US")}٪`;
+/** Shows a yearly rate like 10٪ or 12,500٪ (10% in English). */
+export const pct = (rate: number) =>
+  `${(Math.round(rate * 1000) / 10).toLocaleString("en-US")}${percentSign()}`;
 
 /**
  * Extra monthly bankruptcy chance from promising more than a healthy return. Asking a
@@ -208,9 +210,9 @@ export function promiseRisk(rate: number, healthy: number) {
 }
 
 export function deposit(s: Sim, amount: number, rate = DEPOSIT_RATE): Act {
-  if (!isOpen(s, "bank")) return { ok: false, msg: "البنك مغلق بعد إفلاسه" };
-  if (!(amount > 0) || s.coins < amount) return { ok: false, msg: "الرصيد ما يكفي للإيداع" };
-  if (!(rate >= 0)) return { ok: false, msg: "نسبة غير صحيحة" };
+  if (!isOpen(s, "bank")) return { ok: false, msg: t("البنك مغلق بعد إفلاسه") };
+  if (!(amount > 0) || s.coins < amount) return { ok: false, msg: t("الرصيد ما يكفي للإيداع") };
+  if (!(rate >= 0)) return { ok: false, msg: t("نسبة غير صحيحة") };
   const f = s.finance;
   // One deposit account: the rate is the money-weighted average of what was agreed.
   f.depositRate = (f.deposit * f.depositRate + amount * rate) / (f.deposit + amount);
@@ -218,28 +220,33 @@ export function deposit(s: Sim, amount: number, rate = DEPOSIT_RATE): Act {
   f.deposit += amount;
   return {
     ok: true,
-    msg: `أودعت ${fmt(amount)} د.ك في ${COMPANIES.bank.name} بفائدة ${pct(rate)}`,
+    msg: t("أودعت {amount} د.ك في {company} بفائدة {rate}", {
+      amount: fmt(amount),
+      company: COMPANIES.bank.name,
+      rate: pct(rate),
+    }),
   };
 }
 
 export function withdraw(s: Sim, amount: number): Act {
-  if (!isOpen(s, "bank")) return { ok: false, msg: "البنك مغلق بعد إفلاسه" };
+  if (!isOpen(s, "bank")) return { ok: false, msg: t("البنك مغلق بعد إفلاسه") };
   const take = Math.min(amount, s.finance.deposit);
-  if (take <= 0) return { ok: false, msg: "ما عندك وديعة" };
+  if (take <= 0) return { ok: false, msg: t("ما عندك وديعة") };
   s.finance.deposit -= take;
   s.coins += take;
-  return { ok: true, msg: `سحبت ${fmt(take)} د.ك` };
+  return { ok: true, msg: t("سحبت {amount} د.ك", { amount: fmt(take) }) };
 }
 
 export type BondOrder = { issuer: Bond["issuer"]; amount: number; rate: number; years: number };
 
 export function buyBond(s: Sim, index: number | BondOrder): Act {
   const offer = typeof index === "number" ? BOND_OFFERS[index] : index;
-  if (!offer) return { ok: false, msg: "عرض غير موجود" };
-  if (!isOpen(s, offer.issuer)) return { ok: false, msg: "الشركة مغلقة بعد إفلاسها" };
+  if (!offer) return { ok: false, msg: t("عرض غير موجود") };
+  if (!isOpen(s, offer.issuer)) return { ok: false, msg: t("الشركة مغلقة بعد إفلاسها") };
   if (!(offer.amount > 0) || !(offer.rate >= 0) || !(offer.years > 0))
-    return { ok: false, msg: "أرقام السند غير صحيحة" };
-  if (s.coins < offer.amount) return { ok: false, msg: `تحتاج ${fmt(offer.amount)} د.ك` };
+    return { ok: false, msg: t("أرقام السند غير صحيحة") };
+  if (s.coins < offer.amount)
+    return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(offer.amount) }) };
   s.coins -= offer.amount;
   s.finance.bonds.push({
     id: uid(s),
@@ -251,7 +258,10 @@ export function buyBond(s: Sim, index: number | BondOrder): Act {
   if (!s.flags.includes("bonds")) s.flags.push("bonds");
   return {
     ok: true,
-    msg: `اشتريت سندات بقيمة ${fmt(offer.amount)} د.ك بفائدة ${pct(offer.rate)}`,
+    msg: t("اشتريت سندات بقيمة {amount} د.ك بفائدة {rate}", {
+      amount: fmt(offer.amount),
+      rate: pct(offer.rate),
+    }),
   };
 }
 
@@ -266,11 +276,12 @@ export type ProjectOrder = {
 
 export function startProject(s: Sim, index: number | ProjectOrder): Act {
   const offer = typeof index === "number" ? PROJECT_OFFERS[index] : index;
-  if (!offer) return { ok: false, msg: "عرض غير موجود" };
-  if (!isOpen(s, "developer")) return { ok: false, msg: "الشركة مغلقة بعد إفلاسها" };
+  if (!offer) return { ok: false, msg: t("عرض غير موجود") };
+  if (!isOpen(s, "developer")) return { ok: false, msg: t("الشركة مغلقة بعد إفلاسها") };
   if (!(offer.amount > 0) || !(offer.payback >= 0) || !(offer.months > 0))
-    return { ok: false, msg: "أرقام المشروع غير صحيحة" };
-  if (s.coins < offer.amount) return { ok: false, msg: `تحتاج ${fmt(offer.amount)} د.ك` };
+    return { ok: false, msg: t("أرقام المشروع غير صحيحة") };
+  if (s.coins < offer.amount)
+    return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(offer.amount) }) };
   s.coins -= offer.amount;
   s.finance.projects.push({
     id: uid(s),
@@ -280,7 +291,13 @@ export function startProject(s: Sim, index: number | ProjectOrder): Act {
     handover: offer.handover,
     completes: s.day + offer.months * 30,
   });
-  return { ok: true, msg: `بدأ مشروع ${offer.name} مع ${COMPANIES.developer.name}` };
+  return {
+    ok: true,
+    msg: t("بدأ مشروع {name} مع {company}", {
+      name: offer.name,
+      company: COMPANIES.developer.name,
+    }),
+  };
 }
 
 // ------------------------------------------------------------- Islamic finance
@@ -291,15 +308,16 @@ export function startProject(s: Sim, index: number | ProjectOrder): Act {
  * costs a small fixed charity fee, not compounding interest.
  */
 export function takeMurabaha(s: Sim, amount: number, profit: number, months: number): Act {
-  if (!isOpen(s, "islamic")) return { ok: false, msg: "المصرف الإسلامي مغلق" };
+  if (!isOpen(s, "islamic")) return { ok: false, msg: t("المصرف الإسلامي مغلق") };
   if (!(amount > 0) || !(profit >= 0) || !(months >= 1))
-    return { ok: false, msg: "أرقام التمويل غير صحيحة" };
+    return { ok: false, msg: t("أرقام التمويل غير صحيحة") };
   const owed = s.finance.murabaha.reduce((t, m) => t + m.left, 0);
   const limit = Math.max(40_000, Math.max(0, s.coins) * 0.5 + 200_000);
   if (owed + amount * (1 + profit) > limit)
-    return { ok: false, msg: "المصرف رفض: تجاوزت حد التمويل" };
+    return { ok: false, msg: t("المصرف رفض: تجاوزت حد التمويل") };
   const floor = 0.04 * (months / 12);
-  if (profit < floor) return { ok: false, msg: `أقل ربح يقبله المصرف لهذه المدة ${pct(floor)}` };
+  if (profit < floor)
+    return { ok: false, msg: t("أقل ربح يقبله المصرف لهذه المدة {rate}", { rate: pct(floor) }) };
   const total = amount * (1 + profit);
   s.finance.murabaha.push({
     id: uid(s),
@@ -310,7 +328,10 @@ export function takeMurabaha(s: Sim, amount: number, profit: number, months: num
     installment: total / Math.round(months),
   });
   s.coins += amount;
-  return { ok: true, msg: `تمويل مرابحة ${fmt(amount)} د.ك بربح ${pct(profit)}` };
+  return {
+    ok: true,
+    msg: t("تمويل مرابحة {amount} د.ك بربح {rate}", { amount: fmt(amount), rate: pct(profit) }),
+  };
 }
 
 export function murabahaInstallment(s: Sim) {
@@ -319,23 +340,29 @@ export function murabahaInstallment(s: Sim) {
 
 /** Mudaraba deposit: the bank invests it and shares the real profit (or loss). */
 export function depositMudaraba(s: Sim, amount: number, expected: number): Act {
-  if (!isOpen(s, "islamic")) return { ok: false, msg: "المصرف الإسلامي مغلق" };
-  if (!(amount > 0) || s.coins < amount) return { ok: false, msg: "الرصيد ما يكفي" };
-  if (!(expected >= 0)) return { ok: false, msg: "نسبة غير صحيحة" };
+  if (!isOpen(s, "islamic")) return { ok: false, msg: t("المصرف الإسلامي مغلق") };
+  if (!(amount > 0) || s.coins < amount) return { ok: false, msg: t("الرصيد ما يكفي") };
+  if (!(expected >= 0)) return { ok: false, msg: t("نسبة غير صحيحة") };
   const f = s.finance;
   f.mudarabaRate = (f.mudaraba * f.mudarabaRate + amount * expected) / (f.mudaraba + amount);
   f.mudaraba += amount;
   s.coins -= amount;
-  return { ok: true, msg: `أودعت ${fmt(amount)} د.ك وديعة مضاربة بربح متوقع ${pct(expected)}` };
+  return {
+    ok: true,
+    msg: t("أودعت {amount} د.ك وديعة مضاربة بربح متوقع {rate}", {
+      amount: fmt(amount),
+      rate: pct(expected),
+    }),
+  };
 }
 
 export function withdrawMudaraba(s: Sim): Act {
-  if (!isOpen(s, "islamic")) return { ok: false, msg: "المصرف الإسلامي مغلق" };
+  if (!isOpen(s, "islamic")) return { ok: false, msg: t("المصرف الإسلامي مغلق") };
   const take = s.finance.mudaraba;
-  if (take <= 0) return { ok: false, msg: "ما عندك وديعة مضاربة" };
+  if (take <= 0) return { ok: false, msg: t("ما عندك وديعة مضاربة") };
   s.finance.mudaraba = 0;
   s.coins += take;
-  return { ok: true, msg: `سحبت ${fmt(take)} د.ك` };
+  return { ok: true, msg: t("سحبت {amount} د.ك", { amount: fmt(take) }) };
 }
 
 /** Sukuk: like a bond, but the return is a share of an asset's income and may vary. */
@@ -346,10 +373,10 @@ export function buySukuk(
   expected: number,
   years: number,
 ): Act {
-  if (!isOpen(s, issuer)) return { ok: false, msg: "الجهة المصدرة مغلقة" };
+  if (!isOpen(s, issuer)) return { ok: false, msg: t("الجهة المصدرة مغلقة") };
   if (!(amount > 0) || !(expected >= 0) || !(years > 0))
-    return { ok: false, msg: "أرقام الصك غير صحيحة" };
-  if (s.coins < amount) return { ok: false, msg: `تحتاج ${fmt(amount)} د.ك` };
+    return { ok: false, msg: t("أرقام الصك غير صحيحة") };
+  if (s.coins < amount) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(amount) }) };
   s.coins -= amount;
   s.finance.bonds.push({
     id: uid(s),
@@ -360,16 +387,23 @@ export function buySukuk(
     sukuk: true,
   });
   if (!s.flags.includes("bonds")) s.flags.push("bonds");
-  return { ok: true, msg: `اشتريت صكوكاً بقيمة ${fmt(amount)} د.ك بربح متوقع ${pct(expected)}` };
+  return {
+    ok: true,
+    msg: t("اشتريت صكوكاً بقيمة {amount} د.ك بربح متوقع {rate}", {
+      amount: fmt(amount),
+      rate: pct(expected),
+    }),
+  };
 }
 
 export function hireConsultant(s: Sim): Act {
-  if (!isOpen(s, "consultant")) return { ok: false, msg: "الشركة مغلقة بعد إفلاسها" };
-  if (s.finance.consultUntil > s.day) return { ok: false, msg: "العقد ساري" };
-  if (s.coins < CONSULT_COST) return { ok: false, msg: `تحتاج ${fmt(CONSULT_COST)} د.ك` };
+  if (!isOpen(s, "consultant")) return { ok: false, msg: t("الشركة مغلقة بعد إفلاسها") };
+  if (s.finance.consultUntil > s.day) return { ok: false, msg: t("العقد ساري") };
+  if (s.coins < CONSULT_COST)
+    return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(CONSULT_COST) }) };
   s.coins -= CONSULT_COST;
   s.finance.consultUntil = s.day + CONSULT_MONTHS * 30;
-  return { ok: true, msg: `وقّعت عقداً مع ${COMPANIES.consultant.name}` };
+  return { ok: true, msg: t("وقّعت عقداً مع {company}", { company: COMPANIES.consultant.name }) };
 }
 
 export function consulting(s: Sim) {
@@ -398,7 +432,8 @@ export function financeIncome(s: Sim) {
 }
 
 export type FinanceContext = {
-  log: (msg: string) => void;
+  /** Receives encoded messages (see `msg` in i18n) for the city log. */
+  log: (entry: string) => void;
   /** Hands over a completed developer project's homes; returns buildings placed. */
   handover: () => number;
   economicCrisis: boolean;
@@ -448,7 +483,11 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     f.bonds = f.bonds.filter((b) => b.issuer !== "islamic");
     f.down.islamic = s.day + 24 * 30;
     ctx.log(
-      `تعثّر ${COMPANIES.islamic.name}! خسرت ${fmt(exposed - recovered)} د.ك واسترجعت ${fmt(recovered)} من الأصول`,
+      msg("تعثّر {company}! خسرت {lost} د.ك واسترجعت {back} من الأصول", {
+        company: COMPANIES.islamic.name,
+        lost: fmt(exposed - recovered),
+        back: fmt(recovered),
+      }),
     );
   }
   if (isOpen(s, "bank") && ctx.random() < bankRisk) {
@@ -463,7 +502,11 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     f.bonds = f.bonds.filter((b) => b.issuer !== "bank");
     f.down.bank = s.day + 24 * 30;
     ctx.log(
-      `إفلاس ${COMPANIES.bank.name}! خسرت ${fmt(exposed - recovered)} د.ك واسترجعت ${fmt(recovered)}`,
+      msg("إفلاس {company}! خسرت {lost} د.ك واسترجعت {back}", {
+        company: COMPANIES.bank.name,
+        lost: fmt(exposed - recovered),
+        back: fmt(recovered),
+      }),
     );
   }
   if (isOpen(s, "developer") && ctx.random() < devRisk) {
@@ -476,12 +519,17 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     f.projects = [];
     f.bonds = f.bonds.filter((b) => b.issuer !== "developer");
     f.down.developer = s.day + 18 * 30;
-    ctx.log(`إفلاس ${COMPANIES.developer.name}! ضاع ${fmt(exposed - recovered)} د.ك من استثماراتك`);
+    ctx.log(
+      msg("إفلاس {company}! ضاع {lost} د.ك من استثماراتك", {
+        company: COMPANIES.developer.name,
+        lost: fmt(exposed - recovered),
+      }),
+    );
   }
   if (isOpen(s, "consultant") && ctx.random() < consultRisk) {
     f.consultUntil = 0;
     f.down.consultant = s.day + 12 * 30;
-    ctx.log(`إفلاس ${COMPANIES.consultant.name} وانتهى عقدك`);
+    ctx.log(msg("إفلاس {company} وانتهى عقدك", { company: COMPANIES.consultant.name }));
   }
   // Mudaraba: the real result depends on how the bank's investments did this month.
   if (f.mudaraba > 0 && isOpen(s, "islamic")) {
@@ -503,12 +551,14 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       m.left -= due;
       if (m.left <= 0.5) {
         f.murabaha = f.murabaha.filter((x) => x.id !== m.id);
-        ctx.log("سدّدت تمويل المرابحة كاملاً");
+        ctx.log(msg("سدّدت تمويل المرابحة كاملاً"));
       }
     } else {
       const charity = Math.min(500, due * 0.01);
       s.coins -= charity;
-      ctx.log(`تأخر قسط المرابحة: تبرع خيري ${fmt(charity)} د.ك بلا فوائد إضافية`);
+      ctx.log(
+        msg("تأخر قسط المرابحة: تبرع خيري {amount} د.ك بلا فوائد إضافية", { amount: fmt(charity) }),
+      );
     }
   }
   // Interest compounds inside the deposit; coupons are paid out.
@@ -528,7 +578,14 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     if (s.day >= bond.matures) {
       s.coins += bond.amount;
       f.bonds = f.bonds.filter((b) => b.id !== bond.id);
-      ctx.log(`استُحقت ${bond.sukuk ? "الصكوك" : "السندات"} ${fmt(bond.amount)} د.ك ورجع المبلغ`);
+      ctx.log(
+        msg(
+          bond.sukuk
+            ? "استُحقت الصكوك {amount} د.ك ورجع المبلغ"
+            : "استُحقت السندات {amount} د.ك ورجع المبلغ",
+          { amount: fmt(bond.amount) },
+        ),
+      );
     }
   }
   for (const project of [...f.projects]) {
@@ -538,6 +595,14 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     f.earned += back - project.amount;
     f.projects = f.projects.filter((p) => p.id !== project.id);
     const homes = project.handover ? ctx.handover() : 0;
-    ctx.log(`اكتمل ${project.name}: رجع ${fmt(back)} د.ك${homes ? ` وتسلّمت ${homes} مبنى` : ""}`);
+    ctx.log(
+      homes
+        ? msg("اكتمل {name}: رجع {amount} د.ك وتسلّمت {homes} مبنى", {
+            name: project.name,
+            amount: fmt(back),
+            homes,
+          })
+        : msg("اكتمل {name}: رجع {amount} د.ك", { name: project.name, amount: fmt(back) }),
+    );
   }
 }

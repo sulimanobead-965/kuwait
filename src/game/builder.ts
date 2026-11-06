@@ -21,6 +21,7 @@ import {
   type Building,
   type Sim,
 } from "./sim";
+import { msg, t } from "../i18n/index.ts";
 
 export type BuilderState = {
   hired: boolean;
@@ -29,7 +30,7 @@ export type BuilderState = {
   /** Lifetime money spent on works (fees excluded) and works done. */
   spent: number;
   works: number;
-  /** Last month's report, for the panel. */
+  /** Last month's report, for the panel (an encoded message, see `msg` in i18n). */
   last: string;
 };
 
@@ -171,7 +172,7 @@ function nextPlan(s: Sim): Plan | null {
   const other = s.buildings
     .filter((b) => b.level < maxLevelOf(b.kind) && CATALOG[b.kind].cat !== "landmarks")
     .sort((a, b) => a.level - b.level)[0];
-  if (other) return upgradePlan(s, other, `ترقية ${CATALOG[other.kind].name}`);
+  if (other) return upgradePlan(s, other, msg("ترقية {name}", { name: CATALOG[other.kind].name }));
   return null;
 }
 
@@ -204,24 +205,37 @@ export function builderMonth(s: Sim) {
   const works = [...done.values()].reduce((n, v) => n + v, 0);
   b.works += works;
   const gained = stats(s).residents - before;
+  const list = [...done].map(([label, n]) => msg("{n} {label}", { n, label }));
   b.last = works
-    ? `${[...done].map(([k, v]) => `${v} ${k}`).join("، ")} · ${fmt(spent)} د.ك + أتعاب ${fmt(fee)}${
-        gained > 0 ? ` · +${fmt(gained)} ساكن` : ""
-      }`
-    : `ما كفت الميزانية (${fmt(budget)} د.ك) لأي عمل · أتعاب ${fmt(fee)}`;
+    ? gained > 0
+      ? msg("{works} · {spent} د.ك + أتعاب {fee} · +{gained} ساكن", {
+          works: list,
+          spent: fmt(spent),
+          fee: fmt(fee),
+          gained: fmt(gained),
+        })
+      : msg("{works} · {spent} د.ك + أتعاب {fee}", {
+          works: list,
+          spent: fmt(spent),
+          fee: fmt(fee),
+        })
+    : msg("ما كفت الميزانية ({budget} د.ك) لأي عمل · أتعاب {fee}", {
+        budget: fmt(budget),
+        fee: fmt(fee),
+      });
   return b.last;
 }
 
 export function hireBuilder(s: Sim): { ok: boolean; msg: string } {
-  if (s.builder.hired) return { ok: false, msg: "المستشار يعمل عندك" };
+  if (s.builder.hired) return { ok: false, msg: t("المستشار يعمل عندك") };
   if (s.coins < BUILDER_SIGN_ON)
-    return { ok: false, msg: `تحتاج ${fmt(BUILDER_SIGN_ON)} د.ك للتعاقد` };
+    return { ok: false, msg: t("تحتاج {amount} د.ك للتعاقد", { amount: fmt(BUILDER_SIGN_ON) }) };
   s.coins -= BUILDER_SIGN_ON;
   s.builder.hired = true;
-  return { ok: true, msg: `تعاقدت مع ${BUILDER_NAME}` };
+  return { ok: true, msg: t("تعاقدت مع {name}", { name: BUILDER_NAME }) };
 }
 
 export function fireBuilder(s: Sim) {
   s.builder.hired = false;
-  return { ok: true, msg: "أنهيت عقد مستشار البناء" };
+  return { ok: true, msg: t("أنهيت عقد مستشار البناء") };
 }

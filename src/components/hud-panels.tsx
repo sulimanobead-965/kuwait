@@ -18,6 +18,7 @@ import {
   Users,
   Volume2,
   VolumeX,
+  Languages,
   X,
 } from "lucide-react";
 import {
@@ -53,17 +54,53 @@ import {
   type ProjectOrder,
 } from "@/game/finance";
 import { NumberField } from "@/components/hud-social";
+import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
 
 export function fmt(n: number) {
   return Math.floor(n).toLocaleString("en-US");
 }
 
-/** Short Arabic money, e.g. ١٫٢ مليون. */
+/** Short money, e.g. «1.2 مليون» / "1.2M", «250 ألف» / "250K". */
 export function money(n: number) {
   const a = Math.abs(n);
-  if (a >= 1_000_000) return `${(n / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1)} مليون`;
-  if (a >= 10_000) return `${Math.round(n / 1000)} ألف`;
+  if (a >= 1_000_000)
+    return t("{n} مليون", { n: (n / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1) });
+  if (a >= 10_000) return t("{n} ألف", { n: Math.round(n / 1000) });
   return fmt(n);
+}
+
+// ------------------------------------------------------------------ language picker
+
+/** Two buttons, «العربية» and "English"; switching re-renders everything in place. */
+export function LangPicker({ className = "" }: { className?: string }) {
+  const lang = useLang();
+  return (
+    <div
+      className={`lang-picker flex gap-1 ${className}`}
+      role="radiogroup"
+      aria-label="اللغة / Language"
+    >
+      {(
+        [
+          ["ar", "العربية"],
+          ["en", "English"],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          lang={id}
+          aria-checked={lang === id}
+          data-testid={`lang-${id}`}
+          onClick={() => setLang(id)}
+          className={`sc-menu h-9 flex-1 px-3 text-sm ${lang === id ? "sc-on" : ""}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ------------------------------------------------------------------ more sheet
@@ -82,7 +119,8 @@ export type MoreAction =
   | "mute"
   | "reset"
   | "profile"
-  | "people";
+  | "people"
+  | "language";
 
 export function MoreSheet({
   snap,
@@ -95,36 +133,43 @@ export function MoreSheet({
   onPick: (a: MoreAction) => void;
   onClose: () => void;
 }) {
+  const lang = useLang();
   const items: { id: MoreAction; label: string; icon: ReactNode }[] = [
-    { id: "districts", label: "الأحياء", icon: <MapIcon size={20} /> },
-    { id: "report", label: "التقرير السنوي", icon: <Newspaper size={20} /> },
-    { id: "graphs", label: "الرسوم", icon: <BarChart3 size={20} /> },
-    { id: "advisors", label: "المستشارون", icon: <Users size={20} /> },
-    { id: "laws", label: "القوانين", icon: <ScrollText size={20} /> },
-    { id: "disasters", label: "الكوارث والأزمات", icon: <Siren size={20} /> },
-    { id: "achievements", label: "الإنجازات", icon: <Award size={20} /> },
-    { id: "photo", label: "صورة المدينة", icon: <Camera size={20} /> },
-    { id: "luck", label: "حظ", icon: <Dices size={20} /> },
-    { id: "music", label: music ? "إيقاف الموسيقى" : "تشغيل الموسيقى", icon: <Music size={20} /> },
+    { id: "districts", label: t("الأحياء"), icon: <MapIcon size={20} /> },
+    { id: "report", label: t("التقرير السنوي"), icon: <Newspaper size={20} /> },
+    { id: "graphs", label: t("الرسوم"), icon: <BarChart3 size={20} /> },
+    { id: "advisors", label: t("المستشارون"), icon: <Users size={20} /> },
+    { id: "laws", label: t("القوانين"), icon: <ScrollText size={20} /> },
+    { id: "disasters", label: t("الكوارث والأزمات"), icon: <Siren size={20} /> },
+    { id: "achievements", label: t("الإنجازات"), icon: <Award size={20} /> },
+    { id: "photo", label: t("صورة المدينة"), icon: <Camera size={20} /> },
+    { id: "luck", label: t("حظ"), icon: <Dices size={20} /> },
+    {
+      id: "music",
+      label: t(music ? "إيقاف الموسيقى" : "تشغيل الموسيقى"),
+      icon: <Music size={20} />,
+    },
     {
       id: "mute",
-      label: snap.mute ? "تشغيل الأصوات" : "كتم الأصوات",
+      label: t(snap.mute ? "تشغيل الأصوات" : "كتم الأصوات"),
       icon: snap.mute ? <VolumeX size={20} /> : <Volume2 size={20} />,
     },
-    { id: "people", label: "اللاعبون", icon: <Users size={20} /> },
-    { id: "profile", label: "ملفي", icon: <Award size={20} /> },
-    { id: "reset", label: "مدينة جديدة", icon: <RotateCcw size={20} /> },
+    { id: "people", label: t("اللاعبون"), icon: <Users size={20} /> },
+    { id: "profile", label: t("ملفي"), icon: <Award size={20} /> },
+    // Always offers the other language, written in that language.
+    { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },
+    { id: "reset", label: t("مدينة جديدة"), icon: <RotateCcw size={20} /> },
   ];
   return (
     <div
       className="more-sheet sc-panel pointer-events-auto"
-      dir="rtl"
+      dir={dirOf(lang)}
       role="dialog"
-      aria-label="المزيد"
+      aria-label={t("المزيد")}
     >
       <div className="flex items-center justify-between px-1 pb-2">
-        <p className="text-sm font-extrabold">المزيد</p>
-        <button type="button" className="sc-x" aria-label="إغلاق" onClick={onClose}>
+        <p className="text-sm font-extrabold">{t("المزيد")}</p>
+        <button type="button" className="sc-x" aria-label={t("إغلاق")} onClick={onClose}>
           <X size={16} />
         </button>
       </div>
@@ -138,7 +183,9 @@ export function MoreSheet({
             className="more-item"
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span lang={item.id === "language" ? (lang === "ar" ? "en" : "ar") : undefined}>
+              {item.label}
+            </span>
           </button>
         ))}
       </div>
@@ -163,12 +210,16 @@ export function CostSliders({
   return (
     <div className="space-y-2">
       <p className="flex items-center justify-between text-sm font-extrabold">
-        <span>مصاريف المعيشة</span>
-        <span className={index > 115 ? "text-coral" : ""}>مؤشر الغلاء {index}</span>
+        <span>{t("مصاريف المعيشة")}</span>
+        <span className={index > 115 ? "text-coral" : ""}>
+          {t("مؤشر الغلاء {n}", { n: index })}
+        </span>
       </p>
       <p className="text-xs leading-relaxed opacity-80">
-        ما يدفعه الساكن شهرياً، بأي نسبة تريدها (حتى {fmt(COST_MAX)}٪). الرفع المعقول يزيد دخل
-        الصندوق، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.
+        {t(
+          "ما يدفعه الساكن شهرياً، بأي نسبة تريدها (حتى {max}٪). الرفع المعقول يزيد دخل الصندوق، لكن الرضا ينزل والناس تطلع، وفوق ٤٠٠٪ تقريباً يتوقف الناس عن الدفع فيقل الدخل.",
+          { max: fmt(COST_MAX) },
+        )}
       </p>
       {COST_KEYS.map((key) => {
         const v = snap.costs[key];
@@ -176,8 +227,8 @@ export function CostSliders({
         return (
           <div key={key} className="text-xs font-extrabold">
             <span className="flex justify-between">
-              <span>{COST_ITEMS[key].name}</span>
-              <span dir="ltr">+{fmt(rev.rows[key])}/شهر</span>
+              <span>{t(COST_ITEMS[key].name)}</span>
+              <span dir="ltr">{t("+{n}/شهر", { n: fmt(rev.rows[key]) })}</span>
             </span>
             <span className="mt-0.5 flex items-center gap-1" dir="ltr">
               <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v / 2)}>
@@ -189,7 +240,7 @@ export function CostSliders({
               <NumberField
                 label=""
                 value={v}
-                suffix="٪"
+                suffix={percentSign()}
                 testid={`cost-${key}`}
                 onChange={(n) => set(n)}
               />
@@ -204,7 +255,7 @@ export function CostSliders({
         );
       })}
       <div className="flex items-center gap-1 text-xs font-extrabold">
-        <span className="flex-1">زيادة سنوية تلقائية</span>
+        <span className="flex-1">{t("زيادة سنوية تلقائية")}</span>
         {[0, 5, 10, 50, 100].map((pct) => (
           <button
             key={pct}
@@ -213,7 +264,7 @@ export function CostSliders({
             onClick={() => onAutoRaise(pct)}
             className={`sc-menu px-2 text-xs ${snap.autoRaise === pct ? "sc-on" : ""}`}
           >
-            {pct === 0 ? "ثابتة" : `${pct}٪`}
+            {pct === 0 ? t("ثابتة") : `${pct}${percentSign()}`}
           </button>
         ))}
       </div>
@@ -261,22 +312,22 @@ export function Companies({
   const closed = (id: "bank" | "islamic" | "developer" | "consultant") =>
     !isOpen(snap, id) ? (
       <p className="text-xs font-extrabold text-coral">
-        مفلسة ومغلقة لين {formatCityDate(f.down[id])}
+        {t("مفلسة ومغلقة لين {date}", { date: formatCityDate(f.down[id]) })}
       </p>
     ) : null;
   return (
-    <div className="space-y-3" dir="rtl">
+    <div className="space-y-3" dir={dirOf()}>
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
         <div className="sc-lcd h-auto flex-col py-2">
-          <span>مستثمر</span>
+          <span>{t("panel::مستثمر")}</span>
           <span>{money(exposure(snap))}</span>
         </div>
         <div className="sc-lcd h-auto flex-col py-2">
-          <span>عائد شهري</span>
+          <span>{t("عائد شهري")}</span>
           <span>{money(financeIncome(snap))}</span>
         </div>
         <div className="sc-lcd h-auto flex-col py-2">
-          <span>ربح / خسارة</span>
+          <span>{t("ربح / خسارة")}</span>
           <span>
             {money(f.earned)} / {money(f.lost)}
           </span>
@@ -284,7 +335,7 @@ export function Companies({
       </div>
       {crisisOf(snap) === "economic" && (
         <p className="rounded-md bg-coral px-2 py-1 text-xs font-extrabold text-sc-ink">
-          أزمة اقتصادية: خطر إفلاس البنوك والشركات مرتفع جداً الآن.
+          {t("أزمة اقتصادية: خطر إفلاس البنوك والشركات مرتفع جداً الآن.")}
         </p>
       )}
 
@@ -294,18 +345,25 @@ export function Companies({
         icon={<Landmark size={16} />}
       >
         {closed("islamic")}
-        <p className="text-xs font-extrabold">وديعة مضاربة (بدل الفائدة)</p>
+        <p className="text-xs font-extrabold">{t("وديعة مضاربة (بدل الفائدة)")}</p>
         <p className="text-xs">
-          رصيدك <b dir="ltr">{fmt(f.mudaraba)}</b> د.ك بربح متوقع {pct(f.mudarabaRate)}. الربح الفعلي
-          يتغير كل شهر حسب أداء استثمارات المصرف، وقد يكون خسارة في الأزمات.
+          {t(
+            "رصيدك {amount} د.ك بربح متوقع {rate}. الربح الفعلي يتغير كل شهر حسب أداء استثمارات المصرف، وقد يكون خسارة في الأزمات.",
+            { amount: fmt(f.mudaraba), rate: pct(f.mudarabaRate) },
+          )}
         </p>
         <div className="mt-1 grid grid-cols-2 gap-1">
-          <NumberField label="المبلغ" value={mudAmount} onChange={setMudAmount} suffix="د.ك" />
           <NumberField
-            label="الربح المتوقع"
+            label={t("المبلغ")}
+            value={mudAmount}
+            onChange={setMudAmount}
+            suffix={currency()}
+          />
+          <NumberField
+            label={t("الربح المتوقع")}
             value={mudRate}
             onChange={setMudRate}
-            suffix="٪"
+            suffix={percentSign()}
             testid="mudaraba-rate"
           />
         </div>
@@ -317,7 +375,7 @@ export function Companies({
             onClick={() => onMudaraba(mudAmount, mudRate / 100)}
             className="sc-menu sc-on text-xs disabled:opacity-40"
           >
-            أودع {money(mudAmount)}
+            {t("أودع {amount}", { amount: money(mudAmount) })}
           </button>
           <button
             type="button"
@@ -325,13 +383,14 @@ export function Companies({
             onClick={onMudarabaWithdraw}
             className="sc-menu text-xs disabled:opacity-40"
           >
-            اسحب الوديعة
+            {t("اسحب الوديعة")}
           </button>
         </div>
-        <p className="mt-2 text-xs font-extrabold">صكوك (بدل السندات)</p>
+        <p className="mt-2 text-xs font-extrabold">{t("صكوك (بدل السندات)")}</p>
         <p className="text-xs">
-          صكوك مدعومة بأصول حقيقية: الربح حصة من دخل الأصل ويتغير قليلاً، وعند التعثر يرجع لك جزء
-          أكبر من السندات.
+          {t(
+            "صكوك مدعومة بأصول حقيقية: الربح حصة من دخل الأصل ويتغير قليلاً، وعند التعثر يرجع لك جزء أكبر من السندات.",
+          )}
         </p>
         <div className="mt-1 flex gap-1">
           {[1_000_000, 2_000_000].map((a) => (
@@ -346,10 +405,15 @@ export function Companies({
           ))}
         </div>
         <div className="mt-1 grid grid-cols-3 gap-1">
-          <NumberField label="القيمة" value={sukAmount} onChange={setSukAmount} />
-          <NumberField label="الربح المتوقع" value={sukRate} onChange={setSukRate} suffix="٪" />
+          <NumberField label={t("القيمة")} value={sukAmount} onChange={setSukAmount} />
           <NumberField
-            label="السنوات"
+            label={t("الربح المتوقع")}
+            value={sukRate}
+            onChange={setSukRate}
+            suffix={percentSign()}
+          />
+          <NumberField
+            label={t("السنوات")}
             value={sukYears}
             onChange={(v) => setSukYears(Math.max(1, Math.round(v)))}
           />
@@ -362,7 +426,7 @@ export function Companies({
             onClick={() => onSukuk("islamic", sukAmount, sukRate / 100, sukYears)}
             className="sc-menu text-xs disabled:opacity-40"
           >
-            صكوك المصرف
+            {t("صكوك المصرف")}
           </button>
           <button
             type="button"
@@ -371,11 +435,11 @@ export function Companies({
             onClick={() => onSukuk("developer", sukAmount, sukRate / 100, sukYears)}
             className="sc-menu text-xs disabled:opacity-40"
           >
-            صكوك المرسى العقارية
+            {t("صكوك المرسى العقارية")}
           </button>
         </div>
         <p className="mt-1 text-[11px] opacity-80">
-          تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب القرض.
+          {t("تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب القرض.")}
         </p>
       </Company>
 
@@ -386,8 +450,10 @@ export function Companies({
       >
         {closed("bank")}
         <p className="text-xs">
-          وديعتك <b dir="ltr">{fmt(f.deposit)}</b> د.ك بفائدة {pct(f.depositRate)}
-          سنوياً تُضاف شهرياً.
+          {t("وديعتك {amount} د.ك بفائدة {rate} سنوياً تُضاف شهرياً.", {
+            amount: fmt(f.deposit),
+            rate: pct(f.depositRate),
+          })}
         </p>
         <div className="mt-1 grid grid-cols-4 gap-1">
           {[10_000, 100_000, 1_000_000].map((a) => (
@@ -399,7 +465,7 @@ export function Companies({
               onClick={() => onDeposit(a, depRate / 100)}
               className="sc-menu px-1 text-xs disabled:opacity-40"
             >
-              أودع {money(a)}
+              {t("أودع {amount}", { amount: money(a) })}
             </button>
           ))}
           <button
@@ -408,16 +474,21 @@ export function Companies({
             onClick={() => onWithdraw(f.deposit)}
             className="sc-menu sc-on px-1 text-xs disabled:opacity-40"
           >
-            اسحب الكل
+            {t("اسحب الكل")}
           </button>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-1">
-          <NumberField label="مبلغ الإيداع" value={depAmount} onChange={setDepAmount} suffix="د.ك" />
           <NumberField
-            label="الفائدة التي تطلبها"
+            label={t("مبلغ الإيداع")}
+            value={depAmount}
+            onChange={setDepAmount}
+            suffix={currency()}
+          />
+          <NumberField
+            label={t("الفائدة التي تطلبها")}
             value={depRate}
             onChange={setDepRate}
-            suffix="٪"
+            suffix={percentSign()}
             testid="deposit-rate"
           />
         </div>
@@ -428,12 +499,14 @@ export function Companies({
           onClick={() => onDeposit(depAmount, depRate / 100)}
           className="sc-menu sc-on mt-1 w-full text-xs disabled:opacity-40"
         >
-          أودع {money(depAmount)} بفائدة {depRate}٪
+          {t("أودع {amount} بفائدة {rate}٪", { amount: money(depAmount), rate: depRate })}
         </button>
         <p className="mt-1 text-[11px] leading-relaxed opacity-80">
-          الفائدة حرة. فوق ١٢٪ تقريباً يغامر البنك بأموالك ويزيد خطر إفلاسه، وبنسب خيالية يفلس فوراً.
+          {t(
+            "الفائدة حرة. فوق ١٢٪ تقريباً يغامر البنك بأموالك ويزيد خطر إفلاسه، وبنسب خيالية يفلس فوراً.",
+          )}
         </p>
-        <p className="mt-2 text-xs font-extrabold">سندات</p>
+        <p className="mt-2 text-xs font-extrabold">{t("سندات")}</p>
         <ul className="mt-1 space-y-1">
           {BOND_OFFERS.map((b, i) =>
             b.issuer !== "bank" ? null : (
@@ -443,20 +516,29 @@ export function Companies({
                   data-testid={`bond-${i}`}
                   disabled={!isOpen(snap, "bank") || snap.coins < b.amount}
                   onClick={() => onBond(i)}
-                  className="sc-choice w-full rounded-md px-2 py-1 text-right text-xs disabled:opacity-40"
+                  className="sc-choice w-full rounded-md px-2 py-1 text-start text-xs disabled:opacity-40"
                 >
-                  سند {money(b.amount)} · فائدة {Math.round(b.rate * 1000) / 10}٪ · {b.years} سنوات
+                  {t("سند {amount} · فائدة {rate}٪ · {years} سنوات", {
+                    amount: money(b.amount),
+                    rate: Math.round(b.rate * 1000) / 10,
+                    years: b.years,
+                  })}
                 </button>
               </li>
             ),
           )}
         </ul>
-        <p className="mt-2 text-xs font-extrabold">سند بشروطك</p>
+        <p className="mt-2 text-xs font-extrabold">{t("سند بشروطك")}</p>
         <div className="grid grid-cols-3 gap-1">
-          <NumberField label="القيمة" value={bondAmount} onChange={setBondAmount} />
-          <NumberField label="الفائدة" value={bondRate} onChange={setBondRate} suffix="٪" />
+          <NumberField label={t("القيمة")} value={bondAmount} onChange={setBondAmount} />
           <NumberField
-            label="السنوات"
+            label={t("الفائدة")}
+            value={bondRate}
+            onChange={setBondRate}
+            suffix={percentSign()}
+          />
+          <NumberField
+            label={t("السنوات")}
             value={bondYears}
             onChange={(v) => setBondYears(Math.max(1, Math.round(v)))}
           />
@@ -470,7 +552,7 @@ export function Companies({
           }
           className="sc-menu mt-1 w-full text-xs disabled:opacity-40"
         >
-          اشترِ سند {money(bondAmount)} بفائدة {bondRate}٪
+          {t("اشترِ سند {amount} بفائدة {rate}٪", { amount: money(bondAmount), rate: bondRate })}
         </button>
       </Company>
 
@@ -488,10 +570,15 @@ export function Companies({
                 data-testid={`project-${i}`}
                 disabled={!isOpen(snap, "developer") || snap.coins < p.amount}
                 onClick={() => onProject(i)}
-                className="sc-choice w-full rounded-md px-2 py-1 text-right text-xs disabled:opacity-40"
+                className="sc-choice w-full rounded-md px-2 py-1 text-start text-xs disabled:opacity-40"
               >
-                <b>{p.name}</b> · استثمر {money(p.amount)} ← يرجع {money(p.amount * p.payback)} بعد{" "}
-                {p.months} شهر{p.handover ? " + بيوت جاهزة" : ""}
+                <b>{t(p.name)}</b> ·{" "}
+                {t("استثمر {amount} ← يرجع {back} بعد {months} شهر", {
+                  amount: money(p.amount),
+                  back: money(p.amount * p.payback),
+                  months: p.months,
+                })}
+                {p.handover ? ` ${t("+ بيوت جاهزة")}` : ""}
               </button>
             </li>
           ))}
@@ -503,20 +590,28 @@ export function Companies({
                   data-testid={`bond-${i}`}
                   disabled={!isOpen(snap, "developer") || snap.coins < b.amount}
                   onClick={() => onBond(i)}
-                  className="sc-choice w-full rounded-md px-2 py-1 text-right text-xs disabled:opacity-40"
+                  className="sc-choice w-full rounded-md px-2 py-1 text-start text-xs disabled:opacity-40"
                 >
-                  سندات الشركة {money(b.amount)} · فائدة {Math.round(b.rate * 100)}٪ · مخاطرة عالية
+                  {t("سندات الشركة {amount} · فائدة {rate}٪ · مخاطرة عالية", {
+                    amount: money(b.amount),
+                    rate: Math.round(b.rate * 100),
+                  })}
                 </button>
               </li>
             ),
           )}
         </ul>
-        <p className="mt-2 text-xs font-extrabold">استثمار بشروطك</p>
+        <p className="mt-2 text-xs font-extrabold">{t("استثمار بشروطك")}</p>
         <div className="grid grid-cols-3 gap-1">
-          <NumberField label="المبلغ" value={projAmount} onChange={setProjAmount} />
-          <NumberField label="العائد" value={projReturn} onChange={setProjReturn} suffix="٪" />
+          <NumberField label={t("المبلغ")} value={projAmount} onChange={setProjAmount} />
           <NumberField
-            label="الأشهر"
+            label={t("العائد")}
+            value={projReturn}
+            onChange={setProjReturn}
+            suffix={percentSign()}
+          />
+          <NumberField
+            label={t("الأشهر")}
             value={projMonths}
             onChange={(v) => setProjMonths(Math.max(1, Math.round(v)))}
           />
@@ -536,13 +631,18 @@ export function Companies({
           }
           className="sc-menu mt-1 w-full text-xs disabled:opacity-40"
         >
-          استثمر {money(projAmount)} بعائد {projReturn}٪
+          {t("استثمر {amount} بعائد {rate}٪", { amount: money(projAmount), rate: projReturn })}
         </button>
         {f.projects.length > 0 && (
           <ul className="mt-1 text-xs">
             {f.projects.map((p) => (
               <li key={p.id}>
-                • {p.name}: {money(p.amount)} يكتمل {formatCityDate(p.completes)}
+                •{" "}
+                {t("{name}: {amount} يكتمل {date}", {
+                  name: p.name,
+                  amount: money(p.amount),
+                  date: formatCityDate(p.completes),
+                })}
               </li>
             ))}
           </ul>
@@ -557,7 +657,7 @@ export function Companies({
         {closed("consultant")}
         {consulting(snap) ? (
           <p className="text-xs font-extrabold text-sc-leaf">
-            العقد ساري لين {formatCityDate(f.consultUntil)}
+            {t("العقد ساري لين {date}", { date: formatCityDate(f.consultUntil) })}
           </p>
         ) : (
           <button
@@ -567,18 +667,25 @@ export function Companies({
             onClick={onConsult}
             className="sc-menu w-full text-xs disabled:opacity-40"
           >
-            عقد {CONSULT_MONTHS} شهراً بـ {money(CONSULT_COST)} د.ك
+            {t("عقد {months} شهراً بـ {amount} د.ك", {
+              months: CONSULT_MONTHS,
+              amount: money(CONSULT_COST),
+            })}
           </button>
         )}
       </Company>
 
       {f.bonds.length > 0 && (
         <div className="text-xs">
-          <p className="font-extrabold">سنداتك</p>
+          <p className="font-extrabold">{t("سنداتك")}</p>
           {f.bonds.map((b) => (
             <p key={b.id}>
-              • {b.sukuk ? "صكوك" : "سندات"} {COMPANIES[b.issuer].name}{" "}
-              {money(b.amount)} حتى {formatCityDate(b.matures)}
+              •{" "}
+              {t(b.sukuk ? "صكوك {company} {amount} حتى {date}" : "سندات {company} {amount} حتى {date}", {
+                company: COMPANIES[b.issuer].name,
+                amount: money(b.amount),
+                date: formatCityDate(b.matures),
+              })}
             </p>
           ))}
         </div>
@@ -601,9 +708,9 @@ function Company({
   return (
     <section className="rounded-md bg-sc-mint p-2 text-sc-ink">
       <p className="flex items-center gap-1 text-sm font-extrabold">
-        {icon} {title}
+        {icon} {t(title)}
       </p>
-      <p className="mb-1 text-xs opacity-80">{blurb}</p>
+      <p className="mb-1 text-xs opacity-80">{t(blurb)}</p>
       {children}
     </section>
   );
@@ -615,22 +722,24 @@ export function YearReport({ snap }: { snap: Sim }) {
   const rows = [...snap.years].reverse();
   const st = stats(snap);
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2" dir={dirOf()}>
       <p className="text-xs leading-relaxed">
-        يُقاس كل سنة: عدد السكان والرضا ومؤشر غلاء المعيشة والدخل والمصروف. السنة الحالية حتى الآن:
-        دخل {money(snap.ytd.income)} ومصروف {money(snap.ytd.spend)}.
+        {t(
+          "يُقاس كل سنة: عدد السكان والرضا ومؤشر غلاء المعيشة والدخل والمصروف. السنة الحالية حتى الآن: دخل {income} ومصروف {spend}.",
+          { income: money(snap.ytd.income), spend: money(snap.ytd.spend) },
+        )}
       </p>
       {rows.length === 0 ? (
-        <p className="sc-lcd text-sm">أول تقرير يصدر نهاية السنة</p>
+        <p className="sc-lcd text-sm">{t("أول تقرير يصدر نهاية السنة")}</p>
       ) : (
         <table className="w-full text-center text-xs">
           <thead>
             <tr className="font-extrabold">
-              <th>السنة</th>
-              <th>السكان</th>
-              <th>الرضا</th>
-              <th>الغلاء</th>
-              <th>الصافي</th>
+              <th>{t("السنة")}</th>
+              <th>{t("السكان")}</th>
+              <th>{t("الرضا")}</th>
+              <th>{t("الغلاء")}</th>
+              <th>{t("الصافي")}</th>
             </tr>
           </thead>
           <tbody>
@@ -647,7 +756,8 @@ export function YearReport({ snap }: { snap: Sim }) {
                       <span className={growth < 0 ? "text-coral" : "text-sc-leaf"}>
                         {" "}
                         {growth >= 0 ? "▲" : "▼"}
-                        {Math.abs(Math.round(growth))}٪
+                        {Math.abs(Math.round(growth))}
+                        {percentSign()}
                       </span>
                     )}
                   </td>
@@ -663,7 +773,11 @@ export function YearReport({ snap }: { snap: Sim }) {
         </table>
       )}
       <p className="text-xs opacity-80">
-        الآن: {money(st.residents)} ساكن · رضا {st.happy}% · غلاء {costIndex(snap)}
+        {t("الآن: {residents} ساكن · رضا {happy}% · غلاء {index}", {
+          residents: money(st.residents),
+          happy: st.happy,
+          index: costIndex(snap),
+        })}
       </p>
     </div>
   );
@@ -674,7 +788,7 @@ export function YearReport({ snap }: { snap: Sim }) {
 export function Achievements({ snap }: { snap: Sim }) {
   const era = eraOf(snap);
   return (
-    <div className="space-y-2" dir="rtl">
+    <div className="space-y-2" dir={dirOf()}>
       <div className="flex flex-wrap gap-1">
         {ERAS.map((name, i) => (
           <span
@@ -684,7 +798,7 @@ export function Achievements({ snap }: { snap: Sim }) {
             }`}
           >
             {i < era ? "✓ " : i > era ? "🔒 " : "▶ "}
-            {name}
+            {t(name)}
           </span>
         ))}
       </div>
@@ -697,9 +811,9 @@ export function Achievements({ snap }: { snap: Sim }) {
               className={`rounded-md px-2 py-2 text-xs ${got ? "sc-on" : "bg-sc-mint text-sc-ink opacity-70"}`}
             >
               <span className="flex items-center gap-1 font-extrabold">
-                {got ? <Check size={14} /> : <Lock size={12} />} {a.name}
+                {got ? <Check size={14} /> : <Lock size={12} />} {t(a.name)}
               </span>
-              {a.detail && <span className="block opacity-80">{a.detail}</span>}
+              {a.detail && <span className="block opacity-80">{t(a.detail)}</span>}
             </li>
           );
         })}
@@ -720,14 +834,18 @@ export function CrisisButtons({
   const active = crisisOf(snap);
   return (
     <div className="space-y-1">
-      <p className="text-sm font-extrabold">أزمات عالمية</p>
+      <p className="text-sm font-extrabold">{t("أزمات عالمية")}</p>
       <p className="text-xs leading-relaxed">
-        تأتي نادراً من نفسها وتستمر شهوراً. الأزمة الاقتصادية تهدد البنوك والشركات واستثماراتك،
-        والوباء يمنع الفعاليات ويطلّع الناس، والحرب الإقليمية تكلّف دفاعاً مدنياً كل شهر.
+        {t(
+          "تأتي نادراً من نفسها وتستمر شهوراً. الأزمة الاقتصادية تهدد البنوك والشركات واستثماراتك، والوباء يمنع الفعاليات ويطلّع الناس، والحرب الإقليمية تكلّف دفاعاً مدنياً كل شهر.",
+        )}
       </p>
       {active && (
         <p className="sc-lcd text-sm">
-          {CRISES[active].name} لين {formatCityDate(snap.crisis!.until)}
+          {t("{name} لين {date}", {
+            name: CRISES[active].name,
+            date: formatCityDate(snap.crisis!.until),
+          })}
         </p>
       )}
       {(Object.keys(CRISES) as CrisisKind[]).map((kind) => (
@@ -739,7 +857,7 @@ export function CrisisButtons({
           onClick={() => onCrisis(kind)}
           className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm disabled:opacity-40"
         >
-          <Flame size={16} /> {CRISES[kind].name}
+          <Flame size={16} /> {t(CRISES[kind].name)}
         </button>
       ))}
     </div>
@@ -753,23 +871,23 @@ export function CrisisBanner({ snap }: { snap: Sim }) {
   const mood = calendarMood(snap);
   const disaster = snap.disaster && snap.day < snap.disaster.until ? snap.disaster.kind : null;
   const label = crisis
-    ? `⚠ ${CRISES[crisis].name}`
+    ? `⚠ ${t(CRISES[crisis].name)}`
     : disaster === "storm"
-      ? "🌪 عاصفة رملية"
+      ? `🌪 ${t("عاصفة رملية")}`
       : disaster === "flood"
-        ? "🌧 أمطار وسيول"
+        ? `🌧 ${t("أمطار وسيول")}`
         : disaster === "blackout"
-          ? "⚡ انقطاع كهرباء"
+          ? `⚡ ${t("انقطاع كهرباء")}`
           : mood.national
-            ? "🇰🇼 العيد الوطني وعيد التحرير"
+            ? `🇰🇼 ${t("العيد الوطني وعيد التحرير")}`
             : mood.eid
-              ? "🌙 عيدكم مبارك"
+              ? `🌙 ${t("عيدكم مبارك")}`
               : mood.ramadan
-                ? "🌙 رمضان كريم"
+                ? `🌙 ${t("رمضان كريم")}`
                 : null;
   if (!label) return null;
   return (
-    <p className={`crisis-banner ${crisis || disaster ? "is-bad" : "is-good"}`} dir="rtl">
+    <p className={`crisis-banner ${crisis || disaster ? "is-bad" : "is-good"}`} dir={dirOf()}>
       {label}
     </p>
   );
@@ -800,7 +918,7 @@ export function CelebrationCard({ item, onClose }: { item: Celebration; onClose:
     return () => window.clearTimeout(id);
   }, [item, onClose]);
   return (
-    <div className="celebrate pointer-events-auto" role="status" dir="rtl" onClick={onClose}>
+    <div className="celebrate pointer-events-auto" role="status" dir={dirOf()} onClick={onClose}>
       <div className="confetti" aria-hidden="true">
         {Array.from({ length: 28 }, (_, i) => (
           <i key={i} style={{ ["--i" as string]: i }} />
@@ -808,12 +926,12 @@ export function CelebrationCard({ item, onClose }: { item: Celebration; onClose:
       </div>
       <div className="celebrate-card sc-panel">
         <p className="text-sm font-bold text-sc-leaf">
-          {item.kind === "rank" ? "ترقية!" : item.kind === "era" ? "حقبة جديدة" : "إنجاز جديد"}
+          {t(item.kind === "rank" ? "ترقية!" : item.kind === "era" ? "حقبة جديدة" : "إنجاز جديد")}
         </p>
-        <p className="mt-1 text-3xl font-extrabold">{item.title}</p>
-        <p className="mt-2 text-sm">{item.detail}</p>
+        <p className="mt-1 text-3xl font-extrabold">{tx(item.title)}</p>
+        <p className="mt-2 text-sm">{tx(item.detail)}</p>
         <button type="button" className="sc-menu sc-on mt-3 w-full text-sm" onClick={onClose}>
-          يا سلام!
+          {t("يا سلام!")}
         </button>
       </div>
     </div>
@@ -834,21 +952,27 @@ export function WelcomeBack({
   onClose: () => void;
 }) {
   return (
-    <div className="celebrate pointer-events-auto" dir="rtl">
+    <div className="celebrate pointer-events-auto" dir={dirOf()}>
       <div className="celebrate-card sc-panel">
-        <p className="text-2xl font-extrabold">هلا والله، رجعت!</p>
+        <p className="text-2xl font-extrabold">{t("هلا والله، رجعت!")}</p>
         {daily > 0 && (
           <p className="mt-2 text-sm">
-            مكافأة اليوم <b dir="ltr">+{fmt(daily)}</b> د.ك · أيام متتالية {streak}
+            {t("مكافأة اليوم +{amount} د.ك · أيام متتالية {streak}", {
+              amount: fmt(daily),
+              streak,
+            })}
           </p>
         )}
         {offline > 0 && (
           <p className="mt-1 text-sm">
-            أثناء غيابك اشتغلت المدينة {months} شهراً وربحت <b dir="ltr">+{fmt(offline)}</b> د.ك
+            {t("أثناء غيابك اشتغلت المدينة {months} شهراً وربحت +{amount} د.ك", {
+              months,
+              amount: fmt(offline),
+            })}
           </p>
         )}
         <button type="button" className="sc-menu sc-on mt-3 w-full text-sm" onClick={onClose}>
-          يلا نكمل
+          {t("يلا نكمل")}
         </button>
       </div>
     </div>
@@ -886,17 +1010,17 @@ export function TutorialCard({ step, onSkip }: { step: number; onSkip: () => voi
   }, [item]);
   if (!item || hidden) return null;
   return (
-    <div className="tutorial-card sc-panel pointer-events-auto" dir="rtl" data-testid="tutorial">
+    <div className="tutorial-card sc-panel pointer-events-auto" dir={dirOf()} data-testid="tutorial">
       <p className="text-xs font-bold text-sc-leaf">
-        تعلّم اللعب · {step + 1}/{TUTORIAL.length}
+        {t("تعلّم اللعب")} · {step + 1}/{TUTORIAL.length}
       </p>
-      <p className="mt-1 text-sm font-extrabold leading-relaxed">{item.text}</p>
+      <p className="mt-1 text-sm font-extrabold leading-relaxed">{t(item.text)}</p>
       <div className="mt-2 flex gap-2">
         <button type="button" className="sc-textbtn text-xs" onClick={() => setHidden(true)}>
-          إخفاء مؤقت
+          {t("إخفاء مؤقت")}
         </button>
         <button type="button" className="sc-textbtn text-xs" onClick={onSkip}>
-          تخطَّ الشرح
+          {t("تخطَّ الشرح")}
         </button>
       </div>
     </div>

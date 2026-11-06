@@ -5,6 +5,7 @@
  * make borrowers more likely to default; every NPC remembers how you treated them.
  */
 import type { Sim } from "./sim";
+import { msg, percentSign, t, type Params } from "../i18n/index.ts";
 
 export type NpcId = "abufahad" | "umsalem" | "bukhalid" | "sara" | "meshal";
 
@@ -160,10 +161,15 @@ export function loadNpcs(raw: unknown): NpcState[] {
 export const npcDef = (id: NpcId) => NPCS.find((n) => n.id === id)!;
 const npcOf = (s: Sim, id: NpcId) => s.npcs.find((n) => n.id === id)!;
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
-const pctText = (rate: number) => `${(Math.round(rate * 1000) / 10).toLocaleString("en-US")}٪`;
+const pctText = (rate: number) =>
+  `${(Math.round(rate * 1000) / 10).toLocaleString("en-US")}${percentSign()}`;
 const pick = <T>(list: readonly T[], random = Math.random) =>
   list[Math.floor(random() * list.length)]!;
 
+/**
+ * Adds a chat line. Chat history is saved as plain text, so new lines are written in
+ * the language active when they are said.
+ */
 function say(n: NpcState, from: "me" | "them", text: string) {
   n.chat.push({ from, text });
   if (n.chat.length > 40) n.chat.splice(0, n.chat.length - 40);
@@ -205,9 +211,17 @@ export function lendTo(
 ) {
   const d = npcDef(id);
   const n = npcOf(s, id);
-  if (!(amount > 0) || !(rate >= 0)) return { ok: false, msg: "أرقام غير صحيحة" };
-  if (s.coins < amount) return { ok: false, msg: "رصيدك ما يكفي" };
-  say(n, "me", `أقرضك ${fmt(amount)} د.ك لمدة ${months} شهر بفائدة ${pctText(rate)} سنوياً؟`);
+  if (!(amount > 0) || !(rate >= 0)) return { ok: false, msg: t("أرقام غير صحيحة") };
+  if (s.coins < amount) return { ok: false, msg: t("رصيدك ما يكفي") };
+  say(
+    n,
+    "me",
+    t("أقرضك {amount} د.ك لمدة {months} شهر بفائدة {rate} سنوياً؟", {
+      amount: fmt(amount),
+      months,
+      rate: pctText(rate),
+    }),
+  );
   // Acceptance falls as the rate climbs above what they could get elsewhere.
   const fair = d.lendRate;
   const accept = rate <= fair * 1.5 ? 0.95 : Math.max(0.05, 0.9 - (rate - fair * 1.5) * 1.2);
@@ -215,34 +229,38 @@ export function lendTo(
     say(
       n,
       "them",
-      pick(
-        [
-          "لا والله، الفائدة واجد. خلها لغيري",
-          "مشكور، بس هالنسبة ما تمشي معي",
-          "تبي تذبحني بالفوايد؟ لا شكراً",
-        ],
-        random,
+      t(
+        pick(
+          [
+            "لا والله، الفائدة واجد. خلها لغيري",
+            "مشكور، بس هالنسبة ما تمشي معي",
+            "تبي تذبحني بالفوايد؟ لا شكراً",
+          ],
+          random,
+        ),
       ),
     );
     n.trust = Math.max(0, n.trust - 2);
-    return { ok: false, msg: `${d.name} رفض العرض` };
+    return { ok: false, msg: t("{name} رفض العرض", { name: d.name }) };
   }
   s.coins -= amount;
   n.cash += amount;
   n.owesMe.push(makeLoan(amount, rate, months));
   n.trust = Math.min(100, n.trust + (rate === 0 ? 15 : rate <= fair ? 6 : 2));
   if (rate === 0) {
-    say(n, "them", "قرض حسن؟ الله يجزاك خير ويجعلها في ميزان حسناتك. ما أنساها لك");
-    return { ok: true, msg: `أقرضت ${d.name} قرضاً حسناً` };
+    say(n, "them", t("قرض حسن؟ الله يجزاك خير ويجعلها في ميزان حسناتك. ما أنساها لك"));
+    return { ok: true, msg: t("أقرضت {name} قرضاً حسناً", { name: d.name }) };
   }
   say(
     n,
     "them",
-    rate <= fair
-      ? "الله يجزاك خير، ما تقصر. بيوصلك القسط كل شهر"
-      : "ماشي، اتفقنا. الفايدة ثقيلة بس بحاول ألتزم",
+    t(
+      rate <= fair
+        ? "الله يجزاك خير، ما تقصر. بيوصلك القسط كل شهر"
+        : "ماشي، اتفقنا. الفايدة ثقيلة بس بحاول ألتزم",
+    ),
   );
-  return { ok: true, msg: `أقرضت ${d.name} ${fmt(amount)} د.ك` };
+  return { ok: true, msg: t("أقرضت {name} {amount} د.ك", { name: d.name, amount: fmt(amount) }) };
 }
 
 /** Borrow from a virtual player at the rate they ask (or offer more to convince them). */
@@ -256,25 +274,33 @@ export function borrowFrom(
 ) {
   const d = npcDef(id);
   const n = npcOf(s, id);
-  if (!(amount > 0) || !(rate >= 0)) return { ok: false, msg: "أرقام غير صحيحة" };
-  say(n, "me", `تقدر تقرضني ${fmt(amount)} د.ك لمدة ${months} شهر بفائدة ${pctText(rate)}؟`);
+  if (!(amount > 0) || !(rate >= 0)) return { ok: false, msg: t("أرقام غير صحيحة") };
+  say(
+    n,
+    "me",
+    t("تقدر تقرضني {amount} د.ك لمدة {months} شهر بفائدة {rate}؟", {
+      amount: fmt(amount),
+      months,
+      rate: pctText(rate),
+    }),
+  );
   const asked = askRate(s, id);
   if (amount > n.cash * 0.8) {
-    say(n, "them", `والله ما عندي هالمبلغ، أقصى شي ${fmt(n.cash * 0.8)} د.ك`);
-    return { ok: false, msg: `${d.name} ما عنده المبلغ` };
+    say(n, "them", t("والله ما عندي هالمبلغ، أقصى شي {amount} د.ك", { amount: fmt(n.cash * 0.8) }));
+    return { ok: false, msg: t("{name} ما عنده المبلغ", { name: d.name }) };
   }
   // A qard hasan between friends (0٪, trust ≥ 75) skips the rate haggling.
   const qardHasan = rate === 0 && n.trust >= 75;
   if (!qardHasan && rate < asked) {
     const chance = Math.max(0, 1 - (asked - rate) * 12) * (n.trust / 100);
     if (random() > chance) {
-      say(n, "them", `أقل شي أقدر عليه ${pctText(asked)} سنوياً`);
-      return { ok: false, msg: `${d.name} يطلب ${pctText(asked)}` };
+      say(n, "them", t("أقل شي أقدر عليه {rate} سنوياً", { rate: pctText(asked) }));
+      return { ok: false, msg: t("{name} يطلب {rate}", { name: d.name, rate: pctText(asked) }) };
     }
   }
   if (n.trust < 20) {
-    say(n, "them", "سامحني، ما عاد أثق أقرضك بعد اللي صار");
-    return { ok: false, msg: `${d.name} ما يثق فيك` };
+    say(n, "them", t("سامحني، ما عاد أثق أقرضك بعد اللي صار"));
+    return { ok: false, msg: t("{name} ما يثق فيك", { name: d.name }) };
   }
   n.cash -= amount;
   s.coins += amount;
@@ -282,65 +308,83 @@ export function borrowFrom(
   say(
     n,
     "them",
-    pick(
-      ["تفضل، والله يوفقك. لا تتأخر بالقسط", "حلالك، بس الوعد وعد", "ولا يهمك، بيننا ثقة"],
-      random,
+    t(
+      pick(
+        ["تفضل، والله يوفقك. لا تتأخر بالقسط", "حلالك، بس الوعد وعد", "ولا يهمك، بيننا ثقة"],
+        random,
+      ),
     ),
   );
-  return { ok: true, msg: `اقترضت ${fmt(amount)} د.ك من ${d.name}` };
+  return {
+    ok: true,
+    msg: t("اقترضت {amount} د.ك من {name}", { amount: fmt(amount), name: d.name }),
+  };
 }
 
 /** Pay back early everything you owe this person, if you can. */
 export function repayNpc(s: Sim, id: NpcId) {
   const n = npcOf(s, id);
   const total = n.iOwe.reduce((t, l) => t + l.left, 0);
-  if (total <= 0) return { ok: false, msg: "ما عليك له شي" };
-  if (s.coins < total) return { ok: false, msg: `تحتاج ${fmt(total)} د.ك` };
+  if (total <= 0) return { ok: false, msg: t("ما عليك له شي") };
+  if (s.coins < total) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(total) }) };
   s.coins -= total;
   n.cash += total;
   n.iOwe = [];
   n.trust = Math.min(100, n.trust + 8);
-  say(n, "them", "وصلت، الله يبارك لك. رجال وكفو");
-  return { ok: true, msg: "سدّدت دينك كاملاً" };
+  say(n, "them", t("وصلت، الله يبارك لك. رجال وكفو"));
+  return { ok: true, msg: t("سدّدت دينك كاملاً") };
 }
 
-const KEYWORDS: { match: RegExp; reply: (s: Sim, d: NpcDef, n: NpcState) => string }[] = [
+/**
+ * Keyword replies, first match wins. Keys are Arabic source text (see i18n); the
+ * patterns understand both Arabic and English, so a player can chat in either.
+ */
+const KEYWORDS: {
+  match: RegExp;
+  reply: (s: Sim, d: NpcDef, n: NpcState) => [string, Params?];
+}[] = [
   {
-    match: /قرض|فلوس|اقرض|سلف|دين/,
-    reply: (s, d, n) =>
-      `إذا تبي قرض أقدر أعطيك لين ${fmt(n.cash * 0.8)} د.ك بفائدة ${pctText(askRate(s, d.id))}. وإذا تبي تقرضني قول النسبة`,
+    match: /قرض|فلوس|اقرض|سلف|دين|\b(loans?|lend|borrow|money|cash|debts?|credit)\b/i,
+    reply: (s, d, n) => [
+      "إذا تبي قرض أقدر أعطيك لين {amount} د.ك بفائدة {rate}. وإذا تبي تقرضني قول النسبة",
+      { amount: fmt(n.cash * 0.8), rate: pctText(askRate(s, d.id)) },
+    ],
   },
   {
-    match: /فايدة|فائدة|نسبة|فوائد/,
-    reply: (s, d) =>
-      `السوق اليوم يمشي على ${pctText(askRate(s, d.id))} سنوياً. أي شي فوق ٣٠٪ مخاطرة كبيرة على الطرفين`,
+    match: /فايدة|فائدة|نسبة|فوائد|\b(interest|rates?|percent)\b/i,
+    reply: (s, d) => [
+      "السوق اليوم يمشي على {rate} سنوياً. أي شي فوق ٣٠٪ مخاطرة كبيرة على الطرفين",
+      { rate: pctText(askRate(s, d.id)) },
+    ],
   },
   {
-    match: /أزمة|ازمة|حرب|وباء|كورونا/,
-    reply: (s) =>
+    match: /أزمة|ازمة|حرب|وباء|كورونا|\b(crisis|crises|war|pandemic|covid|recession)\b/i,
+    reply: (s) => [
       s.crisis && s.day < s.crisis.until
         ? "الله يعدّيها على خير. لا تحط كل فلوسك بمكان واحد، البنوك تطيح بهالأيام"
         : "الحمد لله الوضع هادي، بس خلك مستعد. الأزمات تجي فجأة",
+    ],
   },
   {
-    match: /سكان|ناس|سعادة|رضا/,
-    reply: () => "الناس تبي سكن رخيص ومدارس ومستوصفات قريبة. لا ترفع الإيجارات واجد",
+    match: /سكان|ناس|سعادة|رضا|\b(people|residents?|happy|happiness|population)\b/i,
+    reply: () => ["الناس تبي سكن رخيص ومدارس ومستوصفات قريبة. لا ترفع الإيجارات واجد"],
   },
   {
-    match: /بناء|عمارة|ترقية|مقاول|ناطحة/,
-    reply: () => "العمارات بدل الفلل تضاعف السكان. ومستشار البناء يوفر عليك وقت",
+    match:
+      /بناء|عمارة|ترقية|مقاول|ناطحة|\b(build|building|construction|upgrade|contractor|skyscraper|tower)\b/i,
+    reply: () => ["العمارات بدل الفلل تضاعف السكان. ومستشار البناء يوفر عليك وقت"],
   },
   {
-    match: /شكر|مشكور|تسلم|يعطيك/,
-    reply: () => "العفو، واجبنا. الكويت بيتنا كلنا",
+    match: /شكر|مشكور|تسلم|يعطيك|\b(thanks?|thank you|thx|cheers)\b/i,
+    reply: () => ["العفو، واجبنا. الكويت بيتنا كلنا"],
   },
   {
-    match: /سلام|هلا|مرحبا|شلونك|صباح|مساء/,
-    reply: (_s, d) => pick(d.greet),
+    match: /سلام|هلا|مرحبا|شلونك|صباح|مساء|\b(hello|hi|hey|salam|ahlan|good (morning|evening))\b/i,
+    reply: (_s, d) => [pick(d.greet)],
   },
 ];
 
-/** Free-text chat: scripted, keyword-driven replies in Kuwaiti dialect. */
+/** Free-text chat: scripted, keyword-driven replies in Kuwaiti dialect (or English). */
 export function chat(s: Sim, id: NpcId, text: string) {
   const d = npcDef(id);
   const n = npcOf(s, id);
@@ -349,20 +393,22 @@ export function chat(s: Sim, id: NpcId, text: string) {
   say(n, "me", clean);
   const hit = KEYWORDS.find((k) => k.match.test(clean));
   const owed = n.owesMe.reduce((t, l) => t + l.left, 0);
-  const reply = hit
+  const [key, params]: [string, Params?] = hit
     ? hit.reply(s, d, n)
     : owed > 0
-      ? `ما نسيت دينك علي (${fmt(owed)} د.ك)، القسط واصلك كل شهر إن شاء الله`
-      : pick(
-          {
-            formal: ["كلامك على عيني وراسي", "إن شاء الله خير، نتعاون فيها"],
-            warm: ["الله يحفظك يا ولدي", "تدري إن الفحيحيل تحبك؟"],
-            merchant: ["الكلام ما يأكل عيش، خلنا نتكلم أرقام", "السوق يبي جرأة"],
-            young: ["فكرة حلوة! خلنا نشتغل عليها", "ترند هالأيام الشاليهات البحرية"],
-            builder: ["عطني الأرض وأنا أبني لك", "الحديد غالي بس نتفاهم"],
-          }[d.style],
-        );
-  say(n, "them", reply);
+      ? ["ما نسيت دينك علي ({amount} د.ك)، القسط واصلك كل شهر إن شاء الله", { amount: fmt(owed) }]
+      : [
+          pick(
+            {
+              formal: ["كلامك على عيني وراسي", "إن شاء الله خير، نتعاون فيها"],
+              warm: ["الله يحفظك يا ولدي", "تدري إن الفحيحيل تحبك؟"],
+              merchant: ["الكلام ما يأكل عيش، خلنا نتكلم أرقام", "السوق يبي جرأة"],
+              young: ["فكرة حلوة! خلنا نشتغل عليها", "ترند هالأيام الشاليهات البحرية"],
+              builder: ["عطني الأرض وأنا أبني لك", "الحديد غالي بس نتفاهم"],
+            }[d.style],
+          ),
+        ];
+  say(n, "them", t(key, params));
   n.trust = Math.min(100, n.trust + 0.5);
 }
 
@@ -371,7 +417,11 @@ export function greet(s: Sim, id: NpcId) {
   const d = npcDef(id);
   const n = npcOf(s, id);
   if (n.chat.length) return;
-  say(n, "them", `${pick(d.greet)}. أنا ${d.name}، ${d.role}.`);
+  say(
+    n,
+    "them",
+    t("{greet}. أنا {name}، {role}.", { greet: pick(d.greet), name: d.name, role: d.role }),
+  );
 }
 
 /**
@@ -389,8 +439,13 @@ export function npcMonth(s: Sim, random = Math.random) {
     for (const loan of [...n.owesMe]) {
       const odds = d.risk * (1 + loan.rate * 4) * (crisis ? 3 : 1);
       if (random() < odds) {
-        news.push(`${d.name} أعلن عجزه عن السداد! ضاع ${fmt(loan.left)} د.ك`);
-        say(n, "them", "سامحني يا محافظ، خسرت كل شي وما أقدر أسدد");
+        news.push(
+          msg("{name} أعلن عجزه عن السداد! ضاع {amount} د.ك", {
+            name: d.name,
+            amount: fmt(loan.left),
+          }),
+        );
+        say(n, "them", t("سامحني يا محافظ، خسرت كل شي وما أقدر أسدد"));
         n.owesMe = n.owesMe.filter((l) => l.id !== loan.id);
         n.trust = Math.max(0, n.trust - 5);
         continue;
@@ -401,7 +456,7 @@ export function npcMonth(s: Sim, random = Math.random) {
       loan.left -= pay;
       if (loan.left <= 0.5) {
         n.owesMe = n.owesMe.filter((l) => l.id !== loan.id);
-        say(n, "them", "خلصت أقساطك كلها، مشكور على وقفتك");
+        say(n, "them", t("خلصت أقساطك كلها، مشكور على وقفتك"));
         n.trust = Math.min(100, n.trust + 5);
       }
     }
@@ -415,14 +470,14 @@ export function npcMonth(s: Sim, random = Math.random) {
         if (loan.left <= 0.5) {
           n.iOwe = n.iOwe.filter((l) => l.id !== loan.id);
           n.trust = Math.min(100, n.trust + 6);
-          say(n, "them", "وصلني آخر قسط. كفو والله");
+          say(n, "them", t("وصلني آخر قسط. كفو والله"));
         }
       } else {
         // Missed installment: a penalty and lost trust.
         loan.left += pay * 0.1;
         n.trust = Math.max(0, n.trust - 10);
-        say(n, "them", "القسط ما وصل! لا تخليني أتكلم مع الناس عنك");
-        news.push(`تأخرت عن قسط ${d.name}`);
+        say(n, "them", t("القسط ما وصل! لا تخليني أتكلم مع الناس عنك"));
+        news.push(msg("تأخرت عن قسط {name}", { name: d.name }));
       }
     }
     // Now and then someone asks you for help or offers a deal.
@@ -432,10 +487,13 @@ export function npcMonth(s: Sim, random = Math.random) {
         n,
         "them",
         d.style === "young"
-          ? `عندي مشروع يحتاج ${fmt(need)} د.ك، تقرضني؟ أرجعها بفائدة ${pctText(d.lendRate + 0.04)}`
+          ? t("عندي مشروع يحتاج {amount} د.ك، تقرضني؟ أرجعها بفائدة {rate}", {
+              amount: fmt(need),
+              rate: pctText(d.lendRate + 0.04),
+            })
           : d.style === "merchant"
-            ? `عندي سيولة، إذا تبي قرض بفائدة ${pctText(askRate(s, d.id))} كلمني`
-            : `تقدر تساعدنا بـ ${fmt(need)} د.ك؟ نرجعها مع فايدة`,
+            ? t("عندي سيولة، إذا تبي قرض بفائدة {rate} كلمني", { rate: pctText(askRate(s, d.id)) })
+            : t("تقدر تساعدنا بـ {amount} د.ك؟ نرجعها مع فايدة", { amount: fmt(need) }),
       );
     }
   }
