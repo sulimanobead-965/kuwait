@@ -125,6 +125,21 @@ namespace KuwaitCity.Tests
             }
             Assert.IsFalse(CityDistricts.Valid("jahra"));
         }
+        [Test] public void EveryMainArterialAndDividerIsStraightInThePlayableRoads()
+        {
+            foreach(string id in CityDistricts.Ids)
+            {
+                var district=CityDistricts.Get(id);
+                for(int r=18;r<=30;r++)
+                {
+                    Assert.AreEqual(36,CityDistricts.Main(id,r)[0]);Assert.AreEqual(37,CityDistricts.Main(id,r)[1]);
+                    Assert.IsTrue(district.Roads.Contains(CityLand.Key(36,r))&&district.Roads.Contains(CityLand.Key(37,r)));
+                    Assert.AreEqual(0,district.Sector(36,r));Assert.AreEqual(0,district.Sector(37,r));
+                }
+                foreach(int separator in id=="surra"?new[]{23,28}:new[]{27})
+                for(int c=30;c<=42;c++)if(CityLand.IsLand(c,separator)){Assert.IsTrue(district.Roads.Contains(CityLand.Key(c,separator)),id+" "+c+","+separator);Assert.AreEqual(0,district.Sector(c,separator));}
+            }
+        }
         [Test] public void EveryDistrictHasConnectedAsphaltOutsideEachBuildableParcel()
         {
             foreach(string id in CityDistricts.Ids)

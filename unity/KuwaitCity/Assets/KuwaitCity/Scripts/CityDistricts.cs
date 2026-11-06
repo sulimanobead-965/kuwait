@@ -21,7 +21,7 @@ namespace KuwaitCity
         public static string ArabicName(string id)
         {return id=="yarmouk"?"اليرموك":id=="adailiya"?"العديلية":id=="surra"?"السرة":"مدينة الكويت";}
         public static string Description(string id)
-        {return id=="yarmouk"?"طريق رئيسي مائل وتقاطع يفصل القطع الأربع":id=="adailiya"?"شارعان مستقيمان وتقاطع أفقي بين القطع الأربع":"شارع رئيسي متعرج وتقاطعان بين القطع الست";}
+        {return id=="yarmouk"?"شارع رئيسي مستقيم وتقاطع أفقي يفصل القطع الأربع":id=="adailiya"?"شارعان مستقيمان وتقاطع أفقي بين القطع الأربع":"شارع رئيسي مستقيم وتقاطعان أفقيان بين القطع الست";}
         public static string Number(int number){return "٠١٢٣٤٥٦٧٨٩".Substring(number,1);}
         public static CitySave NewCity(string id)
         {var d=Get(id);return new CitySave{Started=true,Speed=0,District=id,Version=2,Coins=3200,Roads=d.Roads.ToArray()};}
@@ -41,14 +41,15 @@ namespace KuwaitCity
                 var marker=parcel.Cells.OrderByDescending(at=>at.y).ThenBy(at=>parcel.Left?at.x:-at.x).First();parcel.C=marker.x;parcel.R=marker.y;
                 d.Parcels.Add(parcel);d.MapParcel(parcel);
             }
-            AddRoadNetwork(id,d);foreach(var at in d.Roads)d.SchematicRoads.Add(at);cache[id]=d;return d;
+            AddRoadNetwork(id,d);
+            for(int r=18;r<=30;r++){var edge=Main(id,r);for(int c=edge[0];c<=edge[1];c++)if(CityLand.IsLand(c,r))d.Roads.Add(CityLand.Key(c,r));}foreach(var at in d.Roads)d.SchematicRoads.Add(at);cache[id]=d;return d;
         }
         public static void ClearCache(){cache.Clear();}
         public static int[] Main(string id,int r)
         {
-            if(id=="yarmouk")return r<22?new[]{35,35}:r<26?new[]{35,36}:r<27?new[]{36,37}:new[]{37,37};
+            if(id=="yarmouk")return new[]{36,37};
             if(id=="adailiya")return new[]{36,37};
-            return r<24?new[]{35,37}:r<29?new[]{36,38}:r==29?new[]{37,38}:new[]{36,38};
+            return new[]{36,37};
         }
         private static IEnumerable<int[]> Blocks(string id)
         {

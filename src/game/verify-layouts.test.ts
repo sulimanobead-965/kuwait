@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DISTRICTS,
+  districtArterial,
   districtById,
   districtRoads,
   isDistrictId,
@@ -179,5 +180,25 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
   } finally {
     if (oldStorage === undefined) Reflect.deleteProperty(globalThis, "localStorage");
     else globalThis.localStorage = oldStorage;
+  }
+});
+
+
+test("all arterials use the bare constant 36/37 columns and straight separators on actual playable roads", () => {
+  for (const sector of DISTRICTS) {
+    assert.ok(districtArterial(sector.id).every(([lo, hi]) => lo === 36 && hi === 37), sector.id);
+    const roads = new Set(districtRoads(sector));
+    for (let r = 18; r <= 30; r++) {
+      assert.ok(roads.has(`36,${r}`) && roads.has(`37,${r}`), `${sector.id}/${r}`);
+      assert.equal(sectorAt(sector.id, `36,${r}`), undefined);
+      assert.equal(sectorAt(sector.id, `37,${r}`), undefined);
+    }
+    for (const r of sector.id === "surra" ? [23, 28] : [27]) {
+      for (let c = 30; c <= 42; c++) {
+        if (!isLand(c, r)) continue;
+        assert.ok(roads.has(`${c},${r}`), `${sector.id}/straight separator/${c},${r}`);
+        assert.equal(sectorAt(sector.id, `${c},${r}`), undefined);
+      }
+    }
   }
 });

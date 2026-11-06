@@ -28,8 +28,8 @@ const definitions: readonly Definition[] = [
   {
     id: "yarmouk",
     name: "اليرموك",
-    description: "ممشى رئيسي مائل، وتقاطع يفصل قطعتَي ٢/٣ عن ١/٤.",
-    main: (r) => (r < 22 ? [35, 35] : r < 26 ? [35, 36] : r < 27 ? [36, 37] : [37, 37]),
+    description: "شارع رئيسي مستقيم وتقاطع أفقي يفصل قطعتَي ٢/٣ عن ١/٤.",
+    main: () => [36, 37],
     blocks: [
       [2, "l", 19, 26],
       [3, "r", 19, 26],
@@ -53,7 +53,7 @@ const definitions: readonly Definition[] = [
     id: "surra",
     name: "السرة",
     description: "ممشى رئيسي متعرّج بين عمودين، وتقاطعان يفصلان القطع الست.",
-    main: (r) => (r < 24 ? [35, 37] : r < 29 ? [36, 38] : r === 29 ? [37, 38] : [36, 38]),
+    main: () => [36, 37],
     blocks: [
       [1, "l", 19, 22],
       [2, "r", 19, 22],
@@ -108,6 +108,11 @@ export const isDistrictLand = (id: DistrictId | null, key: string) =>
   id ? land.get(id)?.has(key) === true : true;
 export const sectorAt = (id: DistrictId | null, key: string | null) =>
   key !== null && id ? numbers.get(id)?.get(key) : undefined;
+/** Current straight centerline used by the schematic and its playable roads. */
+export function districtArterial(id: DistrictId): readonly (readonly [number, number])[] {
+  const definition = definitions.find((d) => d.id === id)!;
+  return Array.from({ length: 13 }, (_, i) => definition.main(i + 18));
+}
 /** Shared source for actual asphalt, vehicle instances, free schema access and save imports. */
 export function districtRoads(district: District): string[] {
   const roads = new Set<string>();
@@ -118,6 +123,9 @@ export function districtRoads(district: District): string[] {
         roads.add(key);
     }
   const definition = definitions.find((d) => d.id === district.id)!;
+  for (let r = 18; r <= 30; r++)
+    for (let c = definition.main(r)[0]; c <= definition.main(r)[1]; c++)
+      if (isLand(c, r)) roads.add(`${c},${r}`);
   for (let r = 18; r < 30; r++) {
     const current = definition.main(r),
       next = definition.main(r + 1);
