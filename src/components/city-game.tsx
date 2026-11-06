@@ -29,6 +29,7 @@ import {
   advanceQuest,
   bulldoze,
   buyModelArea,
+  startDevelopment,
   checkPromotion,
   checkAchievements,
   COST_MAX,
@@ -79,6 +80,7 @@ declare global {
       place: (kind: string, c: number, r: number) => string;
       road: (c: number, r: number) => string;
       coins: () => number;
+      grant?: (amount: number, days?: number) => void;
       pop: () => number;
       started: () => void;
     };
@@ -136,6 +138,8 @@ export function CityGame() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [districtChooser, setDistrictChooser] = useState(false);
   const toastSeq = useRef(0);
+  const setToolRef = useRef(setTool);
+  setToolRef.current = setTool;
   const notifyRef = useRef<{ promotion: () => void }>({ promotion: () => {} });
   const [celebration, setCelebration] = useState<Celebration | null>(null);
   const celebrateQueue = useRef<Celebration[]>([]);
@@ -351,6 +355,14 @@ export function CityGame() {
           noteQuests();
         }
         lastRoadCell.current = at;
+      } else if (current?.kind === "site") {
+        const act = startDevelopment(sim, current.project, at);
+        audio.play(act.ok ? "quest" : "error", sim.mute);
+        if (!act.ok) toastRef.current(act.msg);
+        else {
+          toastRef.current(t("تم تسوير الموقع وبدأ البناء"));
+          setToolRef.current(null);
+        }
       } else if (current?.kind === "build") {
         const lot = nearestOpenLot(sim, at.c, at.r, 1) ?? at;
         const act = placeBuilding(sim, current.building, lot.c, lot.r, timeRef.current);
@@ -447,6 +459,14 @@ export function CityGame() {
         return act.fresh ? "ok" : "exists";
       },
       coins: () => simRef.current.coins,
+      // Development-only helper for visual checks; absent from production builds.
+      grant: import.meta.env.DEV
+        ? (amount: number, days = 0) => {
+            simRef.current.coins += amount;
+            if (days > 0) advanceDays(simRef.current, days);
+            syncRef.current();
+          }
+        : undefined,
       pop: () => stats(simRef.current).pop,
       started() {
         simRef.current.started = true;
@@ -881,6 +901,23 @@ export function CityGame() {
         onMudarabaWithdraw={() => finance(withdrawMudaraba(simRef.current))}
         onSukuk={(issuer, a, r, y) => finance(buySukuk(simRef.current, issuer, a, r, y))}
         onMurabaha={(a, p, m) => finance(takeMurabaha(simRef.current, a, p, m))}
+        onDevelop={(kind) => {
+          const act = startDevelopment(simRef.current, kind);
+          if (!act.ok) pushToast(act.msg);
+          else {
+            pushToast(t("تم تسوير الموقع وبدأ البناء"));
+            worldRef.current?.focus(
+              { c: act.site.c + act.site.w / 2, r: act.site.r + act.site.h / 2 },
+              34,
+            );
+          }
+          sync();
+        }}
+        onPickSite={(kind) => {
+          setSelected(null);
+          setTool({ kind: "site", project: kind });
+          pushToast(t("اضغط على الخريطة في مكان المشروع"));
+        }}
         player={player ?? { name: t("المحافظ"), avatar: "🧔🏽" }}
         onEditPlayer={() => setEditPlayer(true)}
         onBuilderHire={() => finance(hireBuilder(simRef.current))}

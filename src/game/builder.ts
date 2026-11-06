@@ -10,6 +10,7 @@
  *   5. any other building that can still be upgraded.
  */
 import { CATALOG, maxLevelOf, type Kind } from "./catalog";
+import { siteAt } from "./developments";
 import {
   cellKey,
   isLand,
@@ -114,7 +115,7 @@ function openLot(s: Sim) {
       const c = b.c + dc;
       const r = b.r + dr;
       const key = cellKey(c, r);
-      if (!isLand(c, r) || taken.has(key)) continue;
+      if (!isLand(c, r) || taken.has(key) || siteAt(s.sites, c, r)) continue;
       const fronts = [
         [1, 0],
         [-1, 0],

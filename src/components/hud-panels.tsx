@@ -54,6 +54,12 @@ import {
   type ProjectOrder,
 } from "@/game/finance";
 import { NumberField } from "@/components/hud-social";
+import {
+  DEVELOPMENT_KINDS,
+  DEVELOPMENTS,
+  progressOf,
+  type DevelopmentKind,
+} from "@/game/developments";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
 
 export function fmt(n: number) {
@@ -284,6 +290,8 @@ export function Companies({
   onMudaraba,
   onMudarabaWithdraw,
   onSukuk,
+  onDevelop,
+  onPickSite,
 }: {
   snap: Sim;
   onDeposit: (amount: number, rate: number) => void;
@@ -294,6 +302,8 @@ export function Companies({
   onMudaraba: (amount: number, expected: number) => void;
   onMudarabaWithdraw: () => void;
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
+  onDevelop: (kind: DevelopmentKind) => void;
+  onPickSite: (kind: DevelopmentKind) => void;
 }) {
   const f = snap.finance;
   const [mudAmount, setMudAmount] = useState(100_000);
@@ -562,6 +572,72 @@ export function Companies({
         icon={<Building2 size={16} />}
       >
         {closed("developer")}
+        <p className="text-xs font-extrabold">{t("مشاريع داخل مدينتك")}</p>
+        <p className="mb-1 text-[11px] leading-relaxed opacity-80">
+          {t(
+            "تستثمر مع الشركة فتسوّر أرض المشروع وتبنيه. أثناء البناء المنطقة محمية ولا يبني فيها أحد غير الشركة، وعند انتهاء المدة يظهر الحي جاهزاً ومسكوناً بشكله المميز. إذا أفلست الشركة يتوقف المشروع.",
+          )}
+        </p>
+        <ul className="mb-2 space-y-1">
+          {DEVELOPMENT_KINDS.map((kind) => {
+            const def = DEVELOPMENTS[kind];
+            const can = isOpen(snap, "developer") && snap.coins >= def.cost;
+            return (
+              <li key={kind} className="rounded-md border border-sc-ink/30 bg-white/60 p-1.5">
+                <p className="flex justify-between text-xs font-extrabold">
+                  <span>{t(def.name)}</span>
+                  <span dir="ltr">
+                    {money(def.cost)} {currency()}
+                  </span>
+                </p>
+                <p className="text-[11px] opacity-80">
+                  {t(def.blurb)} ·{" "}
+                  {t("{w}×{h} قطعة · {months} شهر", { w: def.w, h: def.h, months: def.months })}
+                </p>
+                <div className="mt-1 grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    data-testid={`develop-pick-${kind}`}
+                    disabled={!can}
+                    onClick={() => onPickSite(kind)}
+                    className="sc-menu sc-on px-1 text-xs disabled:opacity-40"
+                  >
+                    {t("اختر الموقع على الخريطة")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`develop-auto-${kind}`}
+                    disabled={!can}
+                    onClick={() => onDevelop(kind)}
+                    className="sc-menu px-1 text-xs disabled:opacity-40"
+                  >
+                    {t("دع الشركة تختار")}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        {(snap.sites ?? []).length > 0 && (
+          <ul className="mb-2 space-y-1 text-xs">
+            {snap.sites.map((site) => (
+              <li key={site.id}>
+                <span className="font-extrabold">🏗 {t(DEVELOPMENTS[site.kind].name)}</span> ·{" "}
+                {t("اكتمل {pct}٪ · يُسلَّم {date}", {
+                  pct: Math.round(progressOf(snap.day, site) * 100),
+                  date: formatCityDate(site.completes),
+                })}
+                <span className="block h-1.5 rounded bg-sc-ink/20">
+                  <span
+                    className="block h-1.5 rounded bg-sc-orange"
+                    style={{ width: `${Math.round(progressOf(snap.day, site) * 100)}%` }}
+                  />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs font-extrabold">{t("استثمار مالي فقط")}</p>
         <ul className="space-y-1">
           {PROJECT_OFFERS.map((p, i) => (
             <li key={p.name}>

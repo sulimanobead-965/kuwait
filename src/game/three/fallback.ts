@@ -242,7 +242,7 @@ export class FallbackCityWorld {
     if (sim.district !== this.district) {
       this.district = sim.district;
       if (sim.district) this.frameDistrict();
-      else this.focus({ c: 92, r: 34 }, 65); // Sharq, south of Kuwait Towers
+      else this.focus({ c: 140, r: 49 }, 65); // Sharq, south of Kuwait Towers
     }
     this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
     const ctx = this.ctx;

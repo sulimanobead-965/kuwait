@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { COLS, LAND, ROWS } from "../../game/land.ts";
-import { CELL_SIZE, LAND_HEIGHT, cellWorld } from "./camera.ts";
+import { CAMERA_PITCH_DEGREES, CELL_SIZE, LAND_HEIGHT, cellWorld } from "./camera.ts";
 import { PALETTE as P } from "./palette.ts";
 import { roadIsSchematic, type Sim } from "../sim.ts";
 import { roadMarkingsAt } from "./road-markings.ts";
@@ -45,9 +45,86 @@ function merge(list: THREE.BufferGeometry[]) {
   return geo;
 }
 
+/** Axis-aligned boxes collected as plain numbers and written straight into one geometry. */
+type BoxBatch = number[];
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const batchColors = new Map<string, THREE.Color>();
+
+function addBox(
+  batch: BoxBatch,
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+  h: number,
+  d: number,
+  color: string,
+) {
+  let tone = batchColors.get(color);
+  if (!tone) batchColors.set(color, (tone = new THREE.Color(color)));
+  batch.push(x, y, z, w, h, d, tone.r, tone.g, tone.b);
+}
+
+/**
+ * Same geometry as merging one tinted BoxGeometry per entry (position, normal, uv,
+ * color and index), without allocating thousands of intermediate geometries.
+ */
+function buildBoxes(batch: BoxBatch) {
+  const count = batch.length / 9;
+  if (!count) {
+    const empty = new THREE.BoxGeometry(0, 0, 0);
+    empty.computeBoundingSphere();
+    return empty;
+  }
+  const unitPos = UNIT_BOX.getAttribute("position").array as Float32Array;
+  const unitNormal = UNIT_BOX.getAttribute("normal").array as Float32Array;
+  const unitUv = UNIT_BOX.getAttribute("uv").array as Float32Array;
+  const unitIndex = UNIT_BOX.index!.array;
+  const verts = unitPos.length / 3;
+  const position = new Float32Array(count * verts * 3);
+  const normal = new Float32Array(count * verts * 3);
+  const uv = new Float32Array(count * verts * 2);
+  const color = new Float32Array(count * verts * 3);
+  const index = new Uint32Array(count * unitIndex.length);
+  for (let b = 0; b < count; b += 1) {
+    const o = b * 9;
+    const x = batch[o]!,
+      y = batch[o + 1]!,
+      z = batch[o + 2]!,
+      w = batch[o + 3]!,
+      h = batch[o + 4]!,
+      d = batch[o + 5]!;
+    const cr = batch[o + 6]!,
+      cg = batch[o + 7]!,
+      cb = batch[o + 8]!;
+    const v0 = b * verts;
+    for (let v = 0; v < verts; v += 1) {
+      const i3 = (v0 + v) * 3;
+      position[i3] = unitPos[v * 3]! * w + x;
+      position[i3 + 1] = unitPos[v * 3 + 1]! * h + y;
+      position[i3 + 2] = unitPos[v * 3 + 2]! * d + z;
+      color[i3] = cr;
+      color[i3 + 1] = cg;
+      color[i3 + 2] = cb;
+    }
+    normal.set(unitNormal, v0 * 3);
+    uv.set(unitUv, v0 * 2);
+    const i0 = b * unitIndex.length;
+    for (let k = 0; k < unitIndex.length; k += 1) index[i0 + k] = unitIndex[k]! + v0;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(position, 3));
+  geo.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute("color", new THREE.BufferAttribute(color, 3));
+  geo.setIndex(new THREE.BufferAttribute(index, 1));
+  geo.computeBoundingSphere();
+  return geo;
+}
+
 export function createTerrain() {
-  const tiles: THREE.BufferGeometry[] = [];
-  const coast: THREE.BufferGeometry[] = [];
+  const tiles: BoxBatch = [];
+  const coast: BoxBatch = [];
   for (let r = 0; r < ROWS; r += 1) {
     let c = 0;
     while (c < COLS) {
@@ -69,7 +146,7 @@ export function createTerrain() {
       const a = cellWorld(start, r);
       const b = cellWorld(c - 1, r);
       const width = b.x - a.x + CELL_SIZE * 0.997;
-      box(
+      addBox(
         tiles,
         (a.x + b.x) / 2,
         LAND_HEIGHT / 2 - 0.08,
@@ -88,7 +165,7 @@ export function createTerrain() {
           [0, -1],
         ] as const) {
           if (LAND[r + dr]?.[col + dc] !== 0) continue;
-          box(
+          addBox(
             coast,
             at.x + dc * CELL_SIZE * 0.5,
             0.08,
@@ -108,10 +185,10 @@ export function createTerrain() {
     roughness: 0.92,
     metalness: 0,
   });
-  const land = new THREE.Mesh(merge(tiles), material);
+  const land = new THREE.Mesh(buildBoxes(tiles), material);
   land.receiveShadow = true;
   group.add(land);
-  const shore = new THREE.Mesh(merge(coast), material);
+  const shore = new THREE.Mesh(buildBoxes(coast), material);
   shore.castShadow = true;
   shore.receiveShadow = true;
   group.add(shore);
@@ -125,44 +202,85 @@ function parcelTint(number: number) {
   return PARCEL_TINTS[(number - 1 + PARCEL_TINTS.length * 8) % PARCEL_TINTS.length]!;
 }
 
-export function createGrid(
-  avoid: ReadonlySet<string> = new Set(),
-  district: Sim["district"] = null,
-) {
-  const vertices: number[] = [];
-  const colors: number[] = [];
+/** Every land cell's four grid edges for one district, built once and then sliced. */
+const gridCache = new Map<
+  string,
+  { keys: string[]; positions: Float32Array; colors: Float32Array }
+>();
+
+function gridTemplate(district: Sim["district"]) {
+  const id = district ?? "";
+  const cached = gridCache.get(id);
+  if (cached) return cached;
+  const keys: string[] = [];
+  for (let r = 0; r < ROWS; r += 1)
+    for (let c = 0; c < COLS; c += 1)
+      if (LAND[r]![c] && !roadIsSchematic(district, `${c},${r}`)) keys.push(`${c},${r}`);
+  // 4 edges × 2 vertices per cell.
+  const positions = new Float32Array(keys.length * 24);
+  const colors = new Float32Array(keys.length * 32);
   const half = CELL_SIZE / 2;
   const y = LAND_HEIGHT + 0.015;
   const base = new THREE.Color(P.dark);
   const edge = new THREE.Color();
-  const drawn = (c: number, r: number) =>
-    LAND[r]?.[c] === 1 && !avoid.has(`${c},${r}`) && !roadIsSchematic(district, `${c},${r}`);
-  for (let r = 0; r < ROWS; r += 1) {
-    for (let c = 0; c < COLS; c += 1) {
-      if (!drawn(c, r)) continue;
-      const { x, z } = cellWorld(c, r);
-      const own = sectorAt(district ?? null, `${c},${r}`);
-      if (own !== undefined) edge.set(parcelTint(own)).multiplyScalar(0.45);
-      const sides = [
-        [x - half, z - half, x + half, z - half, 0, -1],
-        [x + half, z - half, x + half, z + half, 1, 0],
-        [x + half, z + half, x - half, z + half, 0, 1],
-        [x - half, z + half, x - half, z - half, -1, 0],
-      ] as const;
-      for (const [x0, z0, x1, z1, dc, dr] of sides) {
-        // Parcel borders are drawn darker and in the parcel's own hue.
-        const border =
-          own !== undefined && sectorAt(district ?? null, `${c + dc},${r + dr}`) !== own;
-        const color = border ? edge : base;
-        const alpha = border ? 0.55 : 0.17;
-        vertices.push(x0, y, z0, x1, y, z1);
-        colors.push(color.r, color.g, color.b, alpha, color.r, color.g, color.b, alpha);
-      }
+  let p = 0,
+    q = 0;
+  for (const key of keys) {
+    const [c, r] = key.split(",").map(Number) as [number, number];
+    const { x, z } = cellWorld(c, r);
+    const own = sectorAt(district ?? null, key);
+    if (own !== undefined) edge.set(parcelTint(own)).multiplyScalar(0.45);
+    const sides = [
+      [x - half, z - half, x + half, z - half, 0, -1],
+      [x + half, z - half, x + half, z + half, 1, 0],
+      [x + half, z + half, x - half, z + half, 0, 1],
+      [x - half, z + half, x - half, z - half, -1, 0],
+    ] as const;
+    for (const [x0, z0, x1, z1, dc, dr] of sides) {
+      // Parcel borders are drawn darker and in the parcel's own hue.
+      const border = own !== undefined && sectorAt(district ?? null, `${c + dc},${r + dr}`) !== own;
+      const color = border ? edge : base;
+      const alpha = border ? 0.55 : 0.17;
+      positions.set([x0, y, z0, x1, y, z1], p);
+      colors.set([color.r, color.g, color.b, alpha, color.r, color.g, color.b, alpha], q);
+      p += 6;
+      q += 8;
     }
   }
+  const template = { keys, positions, colors };
+  gridCache.set(id, template);
+  return template;
+}
+
+/**
+ * Tile outlines for every open land cell. The per-district template is computed once;
+ * later calls (every road change while a tool is active) only copy the cells that are
+ * not in `avoid`, which keeps the ~32k-cell free zone cheap to refresh.
+ */
+export function createGrid(
+  avoid: ReadonlySet<string> = new Set(),
+  district: Sim["district"] = null,
+) {
+  const template = gridTemplate(district);
+  const kept: number[] = [];
+  for (let i = 0; i < template.keys.length; i += 1) if (!avoid.has(template.keys[i]!)) kept.push(i);
+  const positions = new Float32Array(kept.length * 24);
+  const colors = new Float32Array(kept.length * 32);
+  // Copy runs of consecutive kept cells in one go.
+  let out = 0;
+  for (let k = 0; k < kept.length;) {
+    let end = k + 1;
+    while (end < kept.length && kept[end] === kept[end - 1]! + 1) end += 1;
+    const from = kept[k]!,
+      count = end - k;
+    positions.set(template.positions.subarray(from * 24, (from + count) * 24), out * 24);
+    colors.set(template.colors.subarray(from * 32, (from + count) * 32), out * 32);
+    out += count;
+    k = end;
+  }
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 4));
   const material = new THREE.LineBasicMaterial({
     vertexColors: true,
     transparent: true,
@@ -232,21 +350,21 @@ export function createParcels(avoid: ReadonlySet<string>, district: Sim["distric
   return mesh;
 }
 export function createRoads(roadKeys: string[]) {
-  const asphalt: THREE.BufferGeometry[] = [];
-  const markings: THREE.BufferGeometry[] = [];
-  const lights: THREE.BufferGeometry[] = [];
+  const asphalt: BoxBatch = [];
+  const markings: BoxBatch = [];
+  const lights: BoxBatch = [];
   const roads = new Set(roadKeys);
   for (const key of [...roadKeys].sort()) {
     const [c, r] = key.split(",").map(Number);
     const { x, z } = cellWorld(c!, r!);
     // Continuous charcoal asphalt: interior paint only, never perimeter curbs/borders.
-    box(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
+    addBox(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
     for (const mark of roadMarkingsAt(roads, c!, r!)) {
       const along = mark.axis === "x";
       const xShift = mark.type === "stop" ? mark.dc * CELL_SIZE * 0.35 : 0;
       const zShift = mark.type === "stop" ? mark.dr * CELL_SIZE * 0.35 : 0;
       const length = mark.type === "dash" ? CELL_SIZE * 0.27 : CELL_SIZE * 0.31;
-      box(markings, x + xShift, LAND_HEIGHT + 0.016, z + zShift,
+      addBox(markings, x + xShift, LAND_HEIGHT + 0.016, z + zShift,
         along ? length : 0.052, 0.005, along ? 0.052 : length, "#e3d8ba");
     }
     const horizontal = roads.has(`${c + 1},${r}`) || roads.has(`${c - 1},${r}`);
@@ -254,10 +372,10 @@ export function createRoads(roadKeys: string[]) {
     if ((c! + r!) % 4 === 0 && (horizontal || vertical)) {
       const lx = x + (horizontal ? 0 : CELL_SIZE * 0.405);
       const lz = z + (horizontal ? -CELL_SIZE * 0.45 : 0);
-      box(asphalt, lx, LAND_HEIGHT + 0.463, lz, 0.042, 0.9, 0.042, P.dark);
+      addBox(asphalt, lx, LAND_HEIGHT + 0.463, lz, 0.042, 0.9, 0.042, P.dark);
       const armX = lx + (horizontal ? 0 : -0.08);
       const armZ = lz + (horizontal ? 0.08 : 0);
-      box(
+      addBox(
         asphalt,
         armX,
         LAND_HEIGHT + 0.89,
@@ -267,7 +385,7 @@ export function createRoads(roadKeys: string[]) {
         horizontal ? 0.21 : 0.045,
         P.dark,
       );
-      box(
+      addBox(
         lights,
         armX,
         LAND_HEIGHT + 0.865,
@@ -280,7 +398,12 @@ export function createRoads(roadKeys: string[]) {
     }
   }
   const details = new THREE.BoxGeometry(0, 0, 0);
-  return { asphalt: merge(asphalt), markings: merge(markings), details, lights: merge(lights) };
+  return {
+    asphalt: buildBoxes(asphalt),
+    markings: buildBoxes(markings),
+    details,
+    lights: buildBoxes(lights),
+  };
 }
 
 export function palmGeometry() {
@@ -449,10 +572,22 @@ export function updatePlaceLabels(group: THREE.Group, viewHeight: number) {
     material: THREE.SpriteMaterial;
     size: number;
   }[];
+  // Declutter in screen space (the camera's yaw and pitch never change): labels are
+  // listed by priority, and one that would overlap an earlier shown label is hidden
+  // until the player zooms in far enough for both to fit.
+  const sinPitch = Math.sin(THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES));
+  const shown: { x: number; y: number; w: number; h: number }[] = [];
   for (const { sprite, material, size } of items) {
     material.opacity = t;
-    const height = viewHeight * size;
-    sprite.scale.set(height * (sprite.userData.aspect as number), height, 1);
+    const h = viewHeight * size;
+    const w = h * (sprite.userData.aspect as number);
+    sprite.scale.set(w, h, 1);
+    const x = (sprite.position.x - sprite.position.z) * Math.SQRT1_2;
+    const y = (sprite.position.x + sprite.position.z) * Math.SQRT1_2 * sinPitch;
+    sprite.visible = !shown.some(
+      (o) => Math.abs(o.x - x) < (o.w + w) * 0.5 && Math.abs(o.y - y) < (o.h + h) * 0.45,
+    );
+    if (sprite.visible) shown.push({ x, y, w, h });
   }
 }
 

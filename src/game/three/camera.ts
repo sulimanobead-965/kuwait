@@ -7,9 +7,9 @@ export const LAND_HEIGHT = 0.3;
 /**
  * Distance from the orthographic camera to its target. Only the near/far clipping
  * depends on it: it must exceed the ground depth visible at the farthest zoom-out over
- * the whole 150×134 map, or the near corner of the view would be clipped.
+ * the whole 210×203 map, or the near corner of the view would be clipped.
  */
-export const CAMERA_DISTANCE = 320;
+export const CAMERA_DISTANCE = 460;
 
 export type Cell = { c: number; r: number };
 

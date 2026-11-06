@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DEVELOPMENTS } from "./developments.ts";
+import { CATALOG, maxLevelOf } from "./catalog.ts";
+import { LAND } from "./land.ts";
 import {
+  developmentMonth,
+  homesPerLevel,
+  RESIDENTS_PER_UNIT,
+  findModelSite,
+  placeBuilding,
+  placeRoad,
+  startDevelopment,
   advanceDays,
   collectedShare,
   createInitialDistrict,
@@ -158,4 +168,47 @@ test("qard hasan: an interest-free loan to or from a trusted virtual player", ()
   assert.equal(npc.owesMe[0]!.left, 10_000, "no interest");
   npc.trust = 90;
   assert.equal(borrowFrom(s, "umsalem", 5_000, 0, 5, () => 0.99).ok, true);
+});
+
+test("developer projects fence a site, protect it, and hand over a finished neighbourhood", () => {
+  const s = town();
+  s.coins = 10_000_000;
+  const act = startDevelopment(s, "towers");
+  assert.equal(act.ok, true);
+  if (!act.ok) return;
+  const site = act.site;
+  assert.equal(s.sites.length, 1);
+  assert.equal(s.coins, 10_000_000 - DEVELOPMENTS.towers.cost);
+  // Nobody else may build, pave or demolish inside the fence.
+  assert.equal(placeBuilding(s, "villa", site.c + 1, site.r + 1, 0).ok, false);
+  assert.equal(placeRoad(s, site.c, site.r).ok, false);
+  assert.ok(findModelSite(s, 1, 1));
+  const before = stats(s).capacity;
+  advanceDays(s, DEVELOPMENTS.towers.months * 30 + 31);
+  assert.equal(s.sites.length, 0, "handed over");
+  assert.ok(stats(s).capacity > before + 2000, "the towers are lived in");
+  assert.ok(
+    s.buildings.some(
+      (b) => b.kind === "apartments" && b.level === 5 && b.c >= site.c && b.c < site.c + site.w,
+    ),
+  );
+  // A bankrupt developer abandons its sites.
+  const b = town();
+  b.coins = 10_000_000;
+  assert.equal(startDevelopment(b, "compound").ok, true);
+  b.finance.down.developer = b.day + 999;
+  developmentMonth(b);
+  assert.equal(b.sites.length, 0);
+  assert.ok(b.finance.lost > 0);
+});
+
+test("the map can hold more than 50 million residents", () => {
+  let land = 0;
+  for (const row of LAND) for (const bit of row) land += bit;
+  const perTower =
+    CATALOG.apartments.pop * homesPerLevel(maxLevelOf("apartments")) * 2 * RESIDENTS_PER_UNIT;
+  // Even with 40٪ of the land left for roads, services and parks.
+  const capacity = land * 0.6 * perTower;
+  assert.ok(perTower >= 10_000, String(perTower));
+  assert.ok(capacity > 50_000_000, `capacity ${Math.round(capacity).toLocaleString()}`);
 });

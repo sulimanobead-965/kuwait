@@ -34,6 +34,7 @@ import {
 } from "@/components/hud-social";
 import { murabahaInstallment, type BondOrder, type ProjectOrder } from "@/game/finance";
 import type { NpcId } from "@/game/npcs";
+import type { DevelopmentKind } from "@/game/developments";
 import { unreadCount } from "@/game/npcs";
 import {
   Achievements,
@@ -98,6 +99,7 @@ export type HudTool =
   | { kind: "bulldoze" }
   | { kind: "zone" }
   | { kind: "build"; building: Kind }
+  | { kind: "site"; project: DevelopmentKind }
   | null;
 
 type GraphKey = Exclude<keyof Sample, "day">;
@@ -172,6 +174,8 @@ export function CityHud({
   onMudarabaWithdraw,
   onSukuk,
   onMurabaha,
+  onDevelop,
+  onPickSite,
   onCrisis,
   onPhoto,
   onMusic,
@@ -250,6 +254,8 @@ export function CityHud({
   onMudarabaWithdraw: () => void;
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
   onMurabaha: (amount: number, profit: number, months: number) => void;
+  onDevelop: (kind: DevelopmentKind) => void;
+  onPickSite: (kind: DevelopmentKind) => void;
   onCrisis: (kind: CrisisKind) => void;
   onPhoto: () => void;
   onMusic: () => void;
@@ -514,6 +520,14 @@ export function CityHud({
                     onMudaraba={onMudaraba}
                     onMudarabaWithdraw={onMudarabaWithdraw}
                     onSukuk={onSukuk}
+                    onDevelop={(kind) => {
+                      onDevelop(kind);
+                      setPanel(null);
+                    }}
+                    onPickSite={(kind) => {
+                      onPickSite(kind);
+                      setPanel(null);
+                    }}
                   />
                 )}
                 {panel === "report" && <YearReport snap={snap} />}

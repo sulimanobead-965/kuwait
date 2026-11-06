@@ -417,7 +417,8 @@ export function exposure(s: Sim) {
     f.deposit +
     f.mudaraba +
     f.bonds.reduce((n, b) => n + b.amount, 0) +
-    f.projects.reduce((n, p) => n + p.amount, 0)
+    f.projects.reduce((n, p) => n + p.amount, 0) +
+    (s.sites ?? []).reduce((n, x) => n + x.amount, 0)
   );
 }
 

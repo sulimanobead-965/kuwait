@@ -30,20 +30,20 @@ function city() {
   s.started = true;
   s.coins = 1e6;
   s.occupancy = 1;
-  for (const cell of cellsFromSource(33, 24)) placeRoad(s, cell.c, cell.r);
-  for (const cell of cellsFromSource(35, 24)) placeRoad(s, cell.c, cell.r);
-  for (const cell of cellsFromSource(37, 24)) placeRoad(s, cell.c, cell.r);
+  for (const cell of cellsFromSource(54, 30)) placeRoad(s, cell.c, cell.r);
+  for (const cell of cellsFromSource(56, 30)) placeRoad(s, cell.c, cell.r);
+  for (const cell of cellsFromSource(58, 30)) placeRoad(s, cell.c, cell.r);
   return s;
 }
 
 test("placement occupancy upgrades and income remain playable", () => {
   const s = city();
-  const home = at(34, 24);
-  const next = at(36, 24);
+  const home = at(55, 30);
+  const next = at(57, 30);
   assert.equal(placeBuilding(s, "villa", home.c, home.r, 0).ok, true);
   assert.equal(placeBuilding(s, "villa", next.c, next.r, 0).ok, true);
   assert.equal(placeBuilding(s, "apartments", home.c, home.r, 0).ok, false);
-  assert.equal(placeBuilding(s, "villa", 149, 0, 0).ok, false);
+  assert.equal(placeBuilding(s, "villa", 209, 0, 0).ok, false);
   assert.equal(stats(s).pop, 48);
   assert.ok(incomePerSec(s.buildings[0], s) > 0);
   const b = s.buildings[0];
@@ -65,7 +65,7 @@ test("every inland catalog type is placeable on the same 3D grid", () => {
   s.quest = QUESTS.length; // every era unlocked
   const inland = KINDS.filter((kind) => !CATALOG[kind].needsCoast);
   inland.forEach((kind, i) => {
-    const lot = at(28 + (i % 10), 27 + Math.floor(i / 10));
+    const lot = at(49 + (i % 10), 33 + Math.floor(i / 10));
     assert.equal(placeBuilding(s, kind, lot.c, lot.r, i).ok, true, kind);
     assert.ok(CATALOG[kind].name.length > 0);
   });
@@ -77,8 +77,8 @@ test("zone planning generates streets and housing on land", () => {
   const s = createInitial();
   s.started = true;
   s.coins = 1e6;
-  const a = at(34, 24);
-  const b = at(45, 29);
+  const a = at(55, 30);
+  const b = at(66, 35);
   const result = planZone(
     s,
     a.c,
@@ -111,8 +111,8 @@ test("v2 save serializes all playable fields without mutating during clones", ()
   };
   try {
     const s = city();
-    const villa = at(34, 24);
-    const icon = at(43, 19);
+    const villa = at(55, 30);
+    const icon = at(64, 25);
     placeBuilding(s, "villa", villa.c, villa.r, 0);
     placeBuilding(s, "kuwait", icon.c, icon.r, 0);
     upgrade(s, s.buildings[0].id, 1);

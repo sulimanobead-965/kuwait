@@ -38,8 +38,8 @@ const definitions: readonly Definition[] = [
     description: "شارع رئيسي مستقيم وتقاطع أفقي يفصل قطعتَي ٢/٣ عن ١/٤.",
     main: () => [36, 37],
     // 47.966° E, 29.311° N
-    dc: 3,
-    dr: 1,
+    dc: 24,
+    dr: 7,
     blocks: [
       [2, "l", 19, 26],
       [3, "r", 19, 26],
@@ -52,10 +52,10 @@ const definitions: readonly Definition[] = [
     name: "العديلية",
     description: "شارع رئيسي طولي وتقاطع أفقي: ٣/٢ أعلى المخطط، و٤/١ أسفله.",
     main: () => [36, 37],
-    // 47.987° E, 29.329° N (one source row south of the exact spot, so the
+    // 47.987° E, 29.329° N (shifted ~1 km south-west of the exact spot, so the
     // template's northern edge stays clear of the Shuwaikh/Sharq shoreline)
-    dc: 6,
-    dr: 0,
+    dc: 26,
+    dr: 6,
     blocks: [
       [3, "l", 19, 26],
       [2, "r", 19, 26],
@@ -69,8 +69,8 @@ const definitions: readonly Definition[] = [
     description: "شارع رئيسي مستقيم بين عمودين، وتقاطعان أفقيان يفصلان القطع الست.",
     main: () => [36, 37],
     // 48.003° E, 29.307° N
-    dc: 8,
-    dr: 2,
+    dc: 30,
+    dr: 8,
     blocks: [
       [1, "l", 19, 22],
       [2, "r", 19, 22],
@@ -206,13 +206,14 @@ land.set("free", new Set());
 
 /**
  * Approximate Kuwait highways, drawn on the real-coastline grid (land.ts: ≈300 m
- * cells, MAP_BOUNDS lon 47.70°–48.16° E, lat 29.10°–29.46° N). Ring roads 1st–6th
+ * cells, MAP_BOUNDS lon 47.55°–48.20° E, lat 28.95°–29.50° N). Ring roads 1st–7th
  * are circular arcs around Sharq (≈47.975° E, 29.385° N) sized to cross ~47.98° E
- * at 29.362°, 29.350°, 29.335°, 29.318°, 29.300° and 29.275° N. Radials are
+ * at 29.362°, 29.350°, 29.335°, 29.318°, 29.300°, 29.275° and 29.240° N. Radials are
  * polylines through rough lon/lat waypoints: Road 80 (Jahra Road) west along the
- * south shore of the Sulaibikhat inlet, Road 30 (King Fahd / Fahaheel expressway)
- * south-east, Road 40 inland parallel to it and Airport Road 55 south. Everything
- * is clipped to land and kept 4-connected. A playable sketch, not survey geometry.
+ * south shore of the Sulaibikhat inlet to Jahra, Road 30 (King Fahd / Fahaheel
+ * expressway) south-east and on down the coast, Road 40 inland parallel to it and
+ * Airport Road 55 south. Everything is clipped to land and kept 4-connected. A
+ * playable sketch, not survey geometry.
  */
 export function highwayCells(): string[] {
   const rows = LAND.length;
@@ -227,11 +228,13 @@ export function highwayCells(): string[] {
   });
   const center = toCell(47.975, 29.385);
   const crossing = toCell(47.98, 29.385).c;
-  for (const lat of [29.362, 29.35, 29.335, 29.318, 29.3, 29.275]) {
+  for (const lat of [29.362, 29.35, 29.335, 29.318, 29.3, 29.275, 29.24]) {
     const radius = Math.hypot(crossing - center.c, toCell(47.98, lat).r - center.r);
-    // 4-connected arc on the southern side of the centre.
+    // 4-connected arc on the southern side of the centre. The 7th ring stops at the
+    // Sulaibiya side instead of curling north up the Doha spit.
+    const end = lat < 29.26 ? Math.PI * 0.75 : Math.PI;
     let last: { c: number; r: number } | null = null;
-    for (let a = 0; a <= Math.PI; a += 0.5 / radius) {
+    for (let a = 0; a <= end; a += 0.5 / radius) {
       const c = Math.round(center.c + Math.cos(a) * radius);
       const r = Math.round(center.r + Math.sin(a) * radius);
       if (last && last.c !== c && last.r !== r) put(c, last.r);
@@ -262,25 +265,27 @@ export function highwayCells(): string[] {
       );
     }
   };
-  // Road 80, Jahra Road: skirts the south shore of the Sulaibikhat inlet.
+  // Road 80, Jahra Road: skirts the south shore of the Sulaibikhat inlet to Jahra.
   road([
     [47.95, 29.36],
     [47.905, 29.32],
     [47.85, 29.318],
     [47.78, 29.33],
-    [47.7, 29.345],
+    [47.68, 29.34],
   ]);
   // Road 30, King Fahd bin Abdulaziz / Fahaheel expressway.
   road([
     [47.99, 29.36],
     [48.05, 29.25],
     [48.1, 29.1],
+    [48.13, 28.95],
   ]);
   // Road 40, inland and roughly parallel to Road 30.
   road([
     [47.98, 29.33],
     [48.02, 29.2],
     [48.06, 29.1],
+    [48.08, 28.95],
   ]);
   // Road 55, Airport Road.
   road([

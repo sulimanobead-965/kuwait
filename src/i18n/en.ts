@@ -115,6 +115,9 @@ export const EN: Record<string, string> = {
   الظهر: "Daher",
   الأحمدي: "Ahmadi",
   الفحيحيل: "Fahaheel",
+  الصليبية: "Sulaibiya",
+  المنقف: "Mangaf",
+  كبد: "Kabd",
 
   // ------------------------------------------------------------ companies & finance
   "مصرف الأمان الإسلامي": "Al Aman Islamic Bank",
@@ -833,4 +836,24 @@ export const EN: Record<string, string> = {
   "سدّد دينه": "Repay",
   "قرض حسن بلا فائدة ({amount} د.ك) · يرفع الثقة كثيراً":
     "Interest-free Qard Hasan ({amount} KD) · builds a lot of trust",
+  "منطقة محمية: قيد التطوير من {company}": "Protected area: under development by {company}",
+  "الموقع يدخل البحر أو خارج الخريطة": "The site reaches the sea or the map edge",
+  "الموقع فيه مبانٍ أو طرق": "The site has buildings or roads on it",
+  "الموقع داخل قطع الحي المرقّمة": "The site is inside the neighbourhood's numbered blocks",
+  "الموقع داخل مشروع آخر": "The site overlaps another development",
+  "هذا المشروع لازم يكون على البحر": "This project must touch the sea",
+  "بدأت شركة المرسى العقارية بناء {name}": "Al Marsa Real Estate started building {name}",
+  "توقف بناء {name} بعد إفلاس المطور. استرجعت {amount} د.ك فقط":
+    "{name} stopped after the developer went bankrupt. You recovered only {amount} KD",
+  "اكتمل {name}: {count} مبنى جاهز ومسكون": "{name} is complete: {count} buildings ready and lived in",
+  "مشاريع داخل مدينتك": "Projects inside your city",
+  "تستثمر مع الشركة فتسوّر أرض المشروع وتبنيه. أثناء البناء المنطقة محمية ولا يبني فيها أحد غير الشركة، وعند انتهاء المدة يظهر الحي جاهزاً ومسكوناً بشكله المميز. إذا أفلست الشركة يتوقف المشروع.":
+    "You invest and the company fences off the site and builds it. During construction the area is protected and only the developer may build there; when time is up a finished, lived-in neighbourhood with its own look appears. If the company goes bankrupt, the project stops.",
+  "{w}×{h} قطعة · {months} شهر": "{w}×{h} lots · {months} months",
+  "اختر الموقع على الخريطة": "Pick the site on the map",
+  "دع الشركة تختار": "Let the developer choose",
+  "اكتمل {pct}٪ · يُسلَّم {date}": "{pct}% done · handover {date}",
+  "استثمار مالي فقط": "Financial investment only",
+  "تم تسوير الموقع وبدأ البناء": "Site fenced off; construction has started",
+  "اضغط على الخريطة في مكان المشروع": "Tap the map where the project should go",
 };

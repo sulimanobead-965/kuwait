@@ -2,6 +2,13 @@ import { CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog
 import { consulting, emptyFinance, financeMonth, loadFinance, type FinanceState } from "./finance";
 import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
+import {
+  DEVELOPMENTS,
+  loadSites,
+  siteAt,
+  type DevelopmentKind,
+  type Site,
+} from "./developments";
 import { COLS, GRID_GEN, LAND, ROWS } from "./land";
 import { msg, t, tx } from "../i18n/index.ts";
 export { districtById, isDistrictLand } from "./districts";
@@ -73,6 +80,8 @@ export type Sim = {
   builder: BuilderState;
   /** Virtual players: chats and loans in both directions. */
   npcs: NpcState[];
+  /** Fenced developer construction sites inside the city. */
+  sites: Site[];
   /** One-off story markers (event held, loan repaid, crisis survived…). */
   flags: string[];
   achievements: string[];
@@ -190,9 +199,25 @@ export function emptyOrdinances(): Ordinances {
 
 /** Set while a prepaid package (model area) places its own buildings. */
 let prepaid = false;
+/** Set while the developer builds inside its own fence. */
+let developing = false;
+
+/** The reason a cell is off-limits: it's inside someone's fenced construction site. */
+function fenced(s: Sim, c: number, r: number) {
+  if (developing || !s.sites?.length || !siteAt(s.sites, c, r)) return null;
+  return t("منطقة محمية: قيد التطوير من {company}", { company: "شركة المرسى العقارية" });
+}
 
 export function priceOf(base: number, _s: Sim) {
   return prepaid ? 0 : Math.round(base);
+}
+
+/**
+ * Homes multiplier by level. Levels 1–3 add a floor each; skyscraper levels 4 and 5
+ * stack dozens of floors, so a level-5 residential tower houses ~10,000 people.
+ */
+export function homesPerLevel(level: number) {
+  return level <= 3 ? level : level === 4 ? 6 : 10;
 }
 
 /** Lowest share of homes still lived in, however bad things get. */
@@ -381,7 +406,7 @@ export const SERVICE_NAMES: Record<keyof ReturnType<typeof serviceCoverage>, str
 
 function housingCapacity(s: Sim) {
   let pop = 0;
-  for (const b of s.buildings) pop += CATALOG[b.kind].pop * b.level * 2;
+  for (const b of s.buildings) pop += CATALOG[b.kind].pop * homesPerLevel(b.level) * 2;
   return pop;
 }
 
@@ -754,6 +779,7 @@ export function createInitial(): Sim {
     fx: [],
     crisis: null,
     finance: emptyFinance(),
+    sites: [],
     builder: emptyBuilder(),
     npcs: emptyNpcs(),
     flags: [],
@@ -782,6 +808,7 @@ export function cloneSim(s: Sim): Sim {
     flags: [...s.flags],
     achievements: [...s.achievements],
     builder: { ...s.builder },
+    sites: s.sites.map((x) => ({ ...x })),
     npcs: s.npcs.map((n) => ({
       ...n,
       owesMe: n.owesMe.map((l) => ({ ...l })),
@@ -954,7 +981,7 @@ export function stats(s: Sim): CityStats {
   for (const b of s.buildings) {
     const d = CATALOG[b.kind];
     const lv = b.level;
-    pop += d.pop * lv * 2;
+    pop += d.pop * homesPerLevel(lv) * 2;
     powerUse += d.powerUse * lv;
     waterUse += d.waterUse * lv;
     powerGive += Math.round(d.powerGive * (1 + (lv - 1) * 0.45));
@@ -1113,7 +1140,14 @@ export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
   if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع الطريق في البحر") };
-  if (s.district && s.district !== "free" && isDistrictLand(s.district, cellKey(c, r)))
+  const fence = fenced(s, c, r);
+  if (fence) return { ok: false, msg: fence };
+  if (
+    !developing &&
+    s.district &&
+    s.district !== "free" &&
+    isDistrictLand(s.district, cellKey(c, r))
+  )
     return { ok: false, msg: t("المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة") };
   if (s.buildings.some((b) => b.c === c && b.r === r)) return { ok: false, msg: t("في مبنى هنا") };
   const k = cellKey(c, r);
@@ -1126,6 +1160,8 @@ export function placeRoad(s: Sim, c: number, r: number): Act {
 }
 
 export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: number): Act {
+  const fence = fenced(s, c, r);
+  if (fence) return { ok: false, msg: fence };
   if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع البناء في البحر") };
   if (s.roads.includes(cellKey(c, r)) || s.buildings.some((b) => b.c === c && b.r === r)) {
     return { ok: false, msg: t("الأرض مشغولة") };
@@ -1485,6 +1521,7 @@ export function findModelSite(s: Sim, w: number, h: number) {
   const taken = new Set(s.roads);
   for (const b of s.buildings) taken.add(cellKey(b.c, b.r));
   const free = (c: number, r: number) => {
+    if (s.sites.length && siteAt(s.sites, c, r)) return false;
     const k = cellKey(c, r);
     if (!isLand(c, r) || taken.has(k)) return false;
     if (s.district && s.district !== "free" && isDistrictLand(s.district, k)) return false;
@@ -1565,7 +1602,140 @@ export function placePackage(
   return built;
 }
 
+// ---------------------------------------------------------------- developer projects
+
+/** Why a site can't host this development at (c, r) top-left, or null if it can. */
+export function developmentBlocker(s: Sim, kind: DevelopmentKind, c: number, r: number) {
+  const def = DEVELOPMENTS[kind];
+  const taken = new Set(s.roads);
+  for (const b of s.buildings) taken.add(cellKey(b.c, b.r));
+  let shore = false;
+  for (let y = r; y < r + def.h; y += 1)
+    for (let x = c; x < c + def.w; x += 1) {
+      if (!isLand(x, y)) return t("الموقع يدخل البحر أو خارج الخريطة");
+      const k = cellKey(x, y);
+      if (taken.has(k)) return t("الموقع فيه مبانٍ أو طرق");
+      if (s.district && s.district !== "free" && isDistrictLand(s.district, k))
+        return t("الموقع داخل قطع الحي المرقّمة");
+      if (siteAt(s.sites, x, y)) return t("الموقع داخل مشروع آخر");
+      if (coastal(x, y)) shore = true;
+    }
+  if (def.coast && !shore) return t("هذا المشروع لازم يكون على البحر");
+  return null;
+}
+
+/** The nearest valid site to the city (or to a tapped cell). */
+export function findDevelopmentSite(
+  s: Sim,
+  kind: DevelopmentKind,
+  near?: { c: number; r: number },
+) {
+  const def = DEVELOPMENTS[kind];
+  const mid = near ?? cityCenter(s);
+  let best: { c: number; r: number; d: number } | null = null;
+  for (let r = 0; r + def.h <= ROWS; r += 1)
+    for (let c = 0; c + def.w <= COLS; c += 1) {
+      const d = Math.abs(c + def.w / 2 - mid.c) + Math.abs(r + def.h / 2 - mid.r);
+      if (best && d >= best.d) continue;
+      if (!developmentBlocker(s, kind, c, r)) best = { c, r, d };
+    }
+  return best ? { c: best.c, r: best.r } : null;
+}
+
+/**
+ * Invest with the developer: the money goes now, the site is fenced off, and the
+ * finished neighbourhood is handed over when the months are up.
+ */
+export function startDevelopment(
+  s: Sim,
+  kind: DevelopmentKind,
+  at?: { c: number; r: number },
+): ({ ok: true; site: Site } | { ok: false; msg: string }) {
+  const def = DEVELOPMENTS[kind];
+  if (s.finance.down.developer > s.day)
+    return { ok: false, msg: t("الشركة مغلقة بعد إفلاسها") };
+  if (s.coins < def.cost) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: def.cost }) };
+  let spot = at ? { c: at.c - Math.floor(def.w / 2), r: at.r - Math.floor(def.h / 2) } : null;
+  if (spot) {
+    const why = developmentBlocker(s, kind, spot.c, spot.r);
+    if (why) {
+      // Slide to the nearest valid spot around the tap before giving up.
+      const near = findDevelopmentSite(s, kind, at);
+      if (!near || Math.abs(near.c - spot.c) + Math.abs(near.r - spot.r) > 8)
+        return { ok: false, msg: why };
+      spot = near;
+    }
+  } else spot = findDevelopmentSite(s, kind);
+  if (!spot) return { ok: false, msg: t("ما في أرض فاضية تكفي المشروع") };
+  s.coins -= def.cost;
+  s.ytd.spend += def.cost;
+  const site: Site = {
+    id: `${Math.floor(s.day)}-${Math.random().toString(36).slice(2, 7)}`,
+    kind,
+    c: spot.c,
+    r: spot.r,
+    w: def.w,
+    h: def.h,
+    amount: def.cost,
+    started: s.day,
+    completes: s.day + def.months * 30,
+  };
+  s.sites.push(site);
+  pushLog(s, msg("بدأت شركة المرسى العقارية بناء {name}", { name: def.name }));
+  return { ok: true, site };
+}
+
+/** Hands over finished developments; abandons sites if the developer went bankrupt. */
+export function developmentMonth(s: Sim) {
+  if (!s.sites.length) return;
+  if (s.finance.down.developer > s.day) {
+    for (const site of s.sites) {
+      const back = site.amount * 0.2;
+      s.coins += back;
+      s.finance.lost += site.amount - back;
+      pushLog(
+        s,
+        msg("توقف بناء {name} بعد إفلاس المطور. استرجعت {amount} د.ك فقط", {
+          name: DEVELOPMENTS[site.kind].name,
+          amount: Math.round(back),
+        }),
+      );
+    }
+    s.sites = [];
+    return;
+  }
+  for (const site of [...s.sites]) {
+    if (s.day < site.completes) continue;
+    const def = DEVELOPMENTS[site.kind];
+    const plan = def.plan(site.w, site.h);
+    let built = 0;
+    developing = true;
+    prepaid = true;
+    try {
+      s.sites = s.sites.filter((x) => x.id !== site.id);
+      for (const [dc, dr] of plan.roads) placeRoad(s, site.c + dc, site.r + dr);
+      for (const lot of plan.lots) {
+        let act = placeBuilding(s, lot.kind, site.c + lot.dc, site.r + lot.dr, 0);
+        // A chalet lot that ended up a step from the water becomes a seaside garden.
+        if (!act.ok && lot.kind === "chalet")
+          act = placeBuilding(s, "park", site.c + lot.dc, site.r + lot.dr, 0);
+        if (!act.ok) continue;
+        const b = s.buildings[s.buildings.length - 1]!;
+        b.level = Math.min(maxLevelOf(b.kind), lot.level);
+        built += 1;
+      }
+    } finally {
+      developing = false;
+      prepaid = false;
+    }
+    if (!s.flags.includes("development")) s.flags.push("development");
+    pushLog(s, msg("اكتمل {name}: {count} مبنى جاهز ومسكون", { name: def.name, count: built }));
+  }
+}
+
 export function bulldoze(s: Sim, c: number, r: number): Act {
+  const fence = fenced(s, c, r);
+  if (fence) return { ok: false, msg: fence };
   const i = s.buildings.findIndex((b) => b.c === c && b.r === r);
   if (i >= 0) {
     const b = s.buildings[i]!;
@@ -1756,6 +1926,7 @@ export function advanceDays(s: Sim, days: number) {
       war: crisis === "war",
       random: Math.random,
     });
+    developmentMonth(s);
     const works = builderMonth(s);
     if (works) pushLog(s, msg("مستشار البناء: {works}", { works }));
     for (const line of npcMonth(s)) pushLog(s, line);
@@ -2042,6 +2213,7 @@ export function loadSim(district?: DistrictId | null): Sim {
       };
     s.finance = loadFinance(p.finance);
     s.builder = loadBuilder(p.builder);
+    s.sites = loadSites(p.sites);
     s.npcs = loadNpcs(p.npcs);
     s.flags = Array.isArray(p.flags) ? p.flags.filter((x) => typeof x === "string") : [];
     s.achievements = Array.isArray(p.achievements)
@@ -2188,6 +2360,7 @@ export function saveSim(s: Sim) {
     ytd: s.ytd,
     finance: s.finance,
     builder: s.builder,
+    sites: s.sites,
     npcs: s.npcs,
     flags: s.flags,
     achievements: s.achievements,

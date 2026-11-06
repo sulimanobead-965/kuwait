@@ -21,6 +21,8 @@ import {
 } from "./camera.ts";
 import { lightingAt, type DayMode } from "./day-night.ts";
 import { createBuildingObject } from "./models.ts";
+import { createSiteObject, disposeSiteObject, updateSiteObject, type SiteObject } from "./construction.ts";
+import { progressOf } from "../developments.ts";
 import { CityFx, type FxCell, type FxInput } from "./fx.ts";
 import { PALETTE, cityMaterials } from "./palette.ts";
 import { mountDinarCoin } from "@/game/coin-face";
@@ -77,10 +79,10 @@ type BuildingRecord = {
 
 /** Finger travel (px) before a build tap turns into a map drag. */
 const PLACE_SLOP = 14;
-/** Farthest zoom-out: a desktop sees the whole 150×134 map, a phone its full height. */
-const MAX_VIEW = 280;
+/** Farthest zoom-out: a desktop sees the whole 210×203 map, a phone its full height. */
+const MAX_VIEW = 410;
 /** Start-screen showcase sits on the real Sharq waterfront just south of Kuwait Towers (see land.ts). */
-const PREVIEW_SHIFT = { c: 66, r: 10 } as const;
+const PREVIEW_SHIFT = { c: 114, r: 25 } as const;
 export const PREVIEW_FOCUS = { c: 26 + PREVIEW_SHIFT.c, r: 24 + PREVIEW_SHIFT.r } as const;
 
 export class CityWorld {
@@ -140,6 +142,8 @@ export class CityWorld {
   private districtId: Sim["district"] = null;
   private districtNumbers: THREE.Group | null = null;
   private buildings = new Map<string, BuildingRecord>();
+  /** Fenced developer construction sites, by site id. */
+  private sites = new Map<string, SiteObject>();
   private palms: THREE.InstancedMesh;
   private cars: THREE.InstancedMesh;
   private highlight: THREE.Mesh;
@@ -230,7 +234,7 @@ export class CityWorld {
     this.scene.fog = new THREE.Fog("#a5cbd2", CAMERA_DISTANCE + 120, CAMERA_DISTANCE + 620);
     this.scene.background = new THREE.Color("#a5cbd2");
     const water = new THREE.Mesh(
-      new THREE.BoxGeometry(COLS * CELL_SIZE + 48, 0.3, ROWS * CELL_SIZE + 48),
+      new THREE.BoxGeometry(COLS * CELL_SIZE + 1200, 0.3, ROWS * CELL_SIZE + 1200),
       new THREE.MeshStandardMaterial({ color: PALETTE.gulf, roughness: 0.24, metalness: 0.22 }),
     );
     water.position.y = -0.34;
@@ -943,6 +947,7 @@ export class CityWorld {
         this.fx.setWater(sim.roads, new Set(sim.buildings.map((b) => cellKey(b.c, b.r))));
       }
     }
+    this.syncSites(sim, now);
     if (this.cars.count === 0) this.dbg.instancedCars = 0;
     if (force) {
       this.dirtyShadows = true;
@@ -1170,7 +1175,33 @@ export class CityWorld {
     this.coinSprites.delete(id);
   }
 
+  private syncSites(sim: Sim, now: number) {
+    const live = new Set<string>();
+    for (const site of sim.sites ?? []) {
+      live.add(site.id);
+      const progress = progressOf(sim.day, site);
+      let obj = this.sites.get(site.id);
+      if (!obj) {
+        obj = createSiteObject(site, progress);
+        this.scene.add(obj.group);
+        this.sites.set(site.id, obj);
+        this.dirtyShadows = true;
+      }
+      const before = obj.progress;
+      updateSiteObject(obj, progress, now);
+      if (Math.abs(before - obj.progress) > 0.02) this.dirtyShadows = true;
+    }
+    for (const [id, obj] of this.sites) {
+      if (live.has(id)) continue;
+      disposeSiteObject(obj);
+      this.sites.delete(id);
+      this.dirtyShadows = true;
+    }
+  }
+
   dispose() {
+    for (const obj of this.sites.values()) disposeSiteObject(obj);
+    this.sites.clear();
     this.scene.remove(this.fx.group);
     this.fx.dispose();
     const w = window as unknown as { __cityFx?: unknown };

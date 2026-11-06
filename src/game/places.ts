@@ -10,15 +10,17 @@ export interface Place {
 }
 
 /**
- * Approximate label anchors (degrees, WGS84), on land except for the bay. Al Ahmadi
- * and Fahaheel sit just south of the map, so their labels are nudged onto its edge.
+ * Approximate label anchors (degrees, WGS84), on land except for the bay. Listed by
+ * priority: when zoomed far out, a label that would overlap an earlier one is hidden.
  */
 export const PLACES: readonly Place[] = [
   { name: "جون الكويت", lon: 47.86, lat: 29.42, major: true },
   { name: "مدينة الكويت", lon: 47.985, lat: 29.375, major: true },
   { name: "الشويخ", lon: 47.94, lat: 29.345 },
   { name: "الدوحة", lon: 47.81, lat: 29.36 },
-  { name: "الجهراء", lon: 47.73, lat: 29.33 },
+  { name: "الجهراء", lon: 47.66, lat: 29.34 },
+  { name: "الصليبية", lon: 47.8, lat: 29.29 },
+  { name: "كبد", lon: 47.78, lat: 29.18 },
   { name: "السالمية", lon: 48.075, lat: 29.335 },
   { name: "حولي", lon: 48.03, lat: 29.338 },
   { name: "الرميثية", lon: 48.075, lat: 29.31 },
@@ -27,8 +29,9 @@ export const PLACES: readonly Place[] = [
   { name: "الفروانية", lon: 47.955, lat: 29.278 },
   { name: "المطار", lon: 47.975, lat: 29.24 },
   { name: "الظهر", lon: 48.045, lat: 29.155 },
-  { name: "الأحمدي", lon: 48.075, lat: 29.115 },
-  { name: "الفحيحيل", lon: 48.13, lat: 29.13 },
+  { name: "الأحمدي", lon: 48.08, lat: 29.08 },
+  { name: "الفحيحيل", lon: 48.13, lat: 29.08 },
+  { name: "المنقف", lon: 48.13, lat: 29.1 },
 ];
 
 /** Fractional fine-grid cell (column, row) of a longitude/latitude inside MAP_BOUNDS. */
