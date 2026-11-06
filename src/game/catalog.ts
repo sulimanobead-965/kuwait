@@ -21,9 +21,12 @@ export type Kind =
   | "avenues"
   | "opera"
   | "mubarakiya"
-  | "stadium";
+  | "stadium"
+  | "port"
+  | "refinery"
+  | "factory";
 
-export type Category = "housing" | "commerce" | "services" | "landmarks";
+export type Category = "housing" | "commerce" | "services" | "landmarks" | "industry";
 
 export type Def = {
   kind: Kind;
@@ -58,6 +61,8 @@ export const maxLevelOf = (kind: Kind) => CATALOG[kind].maxLevel ?? MAX_LEVEL;
 export const isLandmark = (kind: Kind) => CATALOG[kind].cat === "landmarks";
 
 export const ROAD_COST = 40;
+/** One cell of bridge over the sea. */
+export const BRIDGE_COST = 600;
 
 export const CATALOG: Record<Kind, Def> = {
   villa: {
@@ -486,6 +491,66 @@ export const CATALOG: Record<Kind, Def> = {
     era: 1,
     scale: 1.4,
   },
+  // Industry: big earners whose whole income goes to the city treasury, at the cost
+  // of pollution and some unhappiness nearby. They also provide many jobs.
+  factory: {
+    kind: "factory",
+    name: "مصنع",
+    blurb: "إنتاج ووظائف، ودخل يدخل خزينتك",
+    cost: 1800,
+    cat: "industry",
+    pop: 0,
+    income: 9,
+    powerUse: 4,
+    powerGive: 0,
+    waterUse: 2,
+    waterGive: 0,
+    happy: -4,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    jobs: 40,
+    scale: 1.2,
+  },
+  port: {
+    kind: "port",
+    name: "ميناء تجاري",
+    blurb: "رصيف ورافعات وحاويات على البحر، دخل الجمارك والشحن لك",
+    cost: 5000,
+    cat: "industry",
+    pop: 0,
+    income: 22,
+    powerUse: 4,
+    powerGive: 0,
+    waterUse: 2,
+    waterGive: 0,
+    happy: -2,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    needsCoast: true,
+    jobs: 70,
+    scale: 1.3,
+  },
+  refinery: {
+    kind: "refinery",
+    name: "مصفاة نفط",
+    blurb: "أكبر دخل في المدينة من تكرير النفط، لكنها تلوّث",
+    cost: 7500,
+    cat: "industry",
+    pop: 0,
+    income: 35,
+    powerUse: 6,
+    powerGive: 0,
+    waterUse: 4,
+    waterGive: 0,
+    happy: -8,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    jobs: 55,
+    scale: 1.35,
+  },
 };
 
 export const CATEGORIES: { id: Category; label: string }[] = [
@@ -493,6 +558,7 @@ export const CATEGORIES: { id: Category; label: string }[] = [
   { id: "commerce", label: "تجارة" },
   { id: "services", label: "خدمات" },
   { id: "landmarks", label: "معالم" },
+  { id: "industry", label: "صناعة" },
 ];
 
 export const KINDS = Object.keys(CATALOG) as Kind[];

@@ -1,4 +1,4 @@
-import { CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
+import { BRIDGE_COST, CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
 import {
   claim,
   consulting,
@@ -10,6 +10,7 @@ import {
 import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
+import { loadVoices, voicesMonth, type Voice } from "./voices";
 import {
   DEVELOPERS,
   DEVELOPER_IDS,
@@ -20,7 +21,7 @@ import {
   type DevelopmentKind,
   type Site,
 } from "./developments";
-import { COLS, GRID_GEN, LAND, ROWS } from "./land";
+import { COLS, GRID_GEN, ISLAND, ISLAND_CELLS, isIsland, LAND, ROWS } from "./land";
 import { msg, t, tx } from "../i18n/index.ts";
 export { districtById, isDistrictLand } from "./districts";
 import {
@@ -103,6 +104,10 @@ export type Sim = {
   builder: BuilderState;
   /** Virtual players: chats and loans in both directions. */
   npcs: NpcState[];
+  /** What residents say: complaints, thanks and ideas, newest first. */
+  voices: Voice[];
+  /** Day the player last read the residents' voices. */
+  voicesSeen: number;
   /** Fenced developer construction sites inside the city. */
   sites: Site[];
   /** One-off story markers (event held, loan repaid, crisis survived…). */
@@ -823,8 +828,19 @@ export function routeOnLand(c0: number, r0: number, c1: number, r1: number) {
     seen.add(cellKey(c, r));
     out.push({ c, r });
   };
-  if (!isLand(c0, r0)) {
-    if (isLand(c1, r1)) push(c1, r1);
+  if (!isLand(c0, r0) || !isLand(c1, r1)) {
+    // Over the sea (a bridge): a straight, square path, one cell at a time.
+    const inside = (c: number, r: number) => c >= 0 && r >= 0 && c < COLS && r < ROWS;
+    let c = c0,
+      r = r0;
+    if (inside(c, r)) out.push({ c, r });
+    let guard = 0;
+    while ((c !== c1 || r !== r1) && guard < 120) {
+      guard += 1;
+      if (Math.abs(c1 - c) >= Math.abs(r1 - r)) c += Math.sign(c1 - c);
+      else r += Math.sign(r1 - r);
+      if (inside(c, r)) out.push({ c, r });
+    }
     return out;
   }
   let c = c0;
@@ -908,6 +924,8 @@ export function createInitial(): Sim {
     sites: [],
     builder: emptyBuilder(),
     npcs: emptyNpcs(),
+    voices: [],
+    voicesSeen: -1,
     flags: [],
     achievements: [],
     collected: 0,
@@ -938,6 +956,7 @@ export function cloneSim(s: Sim): Sim {
     achievements: [...s.achievements],
     builder: { ...s.builder },
     sites: s.sites.map((x) => ({ ...x })),
+    voices: [...(s.voices ?? [])],
     npcs: s.npcs.map((n) => ({
       ...n,
       owesMe: n.owesMe.map((l) => ({ ...l })),
@@ -1246,8 +1265,62 @@ export function roadSet(s: Sim) {
 export function cellTaken(s: Sim, c: number, r: number) {
   const ix = cityIndex(s);
   const k = cellKey(c, r);
-  return ix.roads.has(k) || ix.lots.has(k);
+  // The island is off-limits until a bridge links it to the mainland.
+  return ix.roads.has(k) || ix.lots.has(k) || (isIsland(c, r) && !islandLinked(s));
 }
+
+/** A road cell laid over the sea: a bridge. */
+export function isBridge(key: string) {
+  const comma = key.indexOf(",");
+  return !isLand(+key.slice(0, comma), +key.slice(comma + 1));
+}
+
+const linkCache = new WeakMap<Sim, { n: number; last: string; linked: boolean }>();
+
+/**
+ * Is the island linked to the mainland? True once a chain of roads and bridges runs
+ * from a mainland road to a bridge cell touching the island.
+ */
+export function islandLinked(s: Sim) {
+  const last = s.roads[s.roads.length - 1] ?? "";
+  const hit = linkCache.get(s);
+  if (hit && hit.n === s.roads.length && hit.last === last) return hit.linked;
+  const roads = new Set(s.roads);
+  const queue: string[] = [];
+  const seen = new Set<string>();
+  for (const k of roads) {
+    const [c, r] = k.split(",").map(Number) as [number, number];
+    // Start from bridge cells that touch the mainland shore.
+    if (isLand(c, r)) continue;
+    if (DIRS.some(([dc, dr]) => isLand(c + dc, r + dr) && !isIsland(c + dc, r + dr))) {
+      queue.push(k);
+      seen.add(k);
+    }
+  }
+  let linked = false;
+  while (queue.length && !linked) {
+    const k = queue.pop()!;
+    const [c, r] = k.split(",").map(Number) as [number, number];
+    for (const [dc, dr] of DIRS) {
+      const nc = c + dc,
+        nr = r + dr;
+      if (!isLand(c, r) && isIsland(nc, nr)) {
+        linked = true;
+        break;
+      }
+      const nk = cellKey(nc, nr);
+      if (seen.has(nk) || !roads.has(nk) || isLand(nc, nr)) continue;
+      seen.add(nk);
+      queue.push(nk);
+    }
+  }
+  linkCache.set(s, { n: s.roads.length, last, linked });
+  return linked;
+}
+
+/** Cells of the island, for the renderer and the HUD. */
+export const islandCells = ISLAND_CELLS;
+export const ISLAND_NAME = ISLAND.name;
 
 export function buildingAt(s: Sim, c: number, r: number) {
   return cityIndex(s).lots.get(cellKey(c, r)) ?? null;
@@ -1281,6 +1354,8 @@ function placeFactor(s: Sim, b: Building) {
   else {
     value *= neighborMult(s, b);
     if (d.coastBoost && coastal(b.c, b.r)) value *= 1.15;
+    // The island is a prestige address: everything there earns more.
+    if (isIsland(b.c, b.r)) value *= 1.3;
   }
   cache.map.set(b.id, { kind: b.kind, value });
   return value;
@@ -1302,6 +1377,8 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
   if (CATALOG[b.kind].cat === "landmarks") v *= 1 + lawEffect(s, "landmarks");
   if (d.coastBoost && coastal(b.c, b.r)) v *= 1 + lawEffect(s, "coast");
   v *= 1 + lawEffect(s, "all");
+  // Oil and shipping follow the world economy.
+  if (d.cat === "industry" && crisisOf(s) === "economic") v *= b.kind === "refinery" ? 0.55 : 0.75;
   const tax = 0.55 + (clamp(s.tax, 0, 300) / 100) * 1.2;
   return v * st.mult * tax;
 }
@@ -1361,7 +1438,9 @@ function spent(b: Building) {
 export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
-  if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع الطريق في البحر") };
+  if (!isLand(c, r)) return placeBridge(s, c, r);
+  if (isIsland(c, r) && !islandLinked(s))
+    return { ok: false, msg: t("ابنِ جسراً يربط الجزيرة باليابسة أولاً") };
   const fence = fenced(s, c, r);
   if (fence) return { ok: false, msg: fence };
   if (
@@ -1382,15 +1461,52 @@ export function placeRoad(s: Sim, c: number, r: number): Act {
   return { ok: true, fresh: true };
 }
 
+/**
+ * A bridge: a road laid over the sea. It must start from the shore or continue an
+ * existing bridge, and costs much more than a road.
+ */
+export function placeBridge(s: Sim, c: number, r: number): Act {
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return { ok: false, msg: t("خارج الخريطة") };
+  const k = cellKey(c, r);
+  const roads = roadSet(s);
+  if (roads.has(k)) return { ok: true, fresh: false };
+  const anchored = DIRS.some(([dc, dr]) => {
+    const nc = c + dc,
+      nr = r + dr;
+    return isLand(nc, nr) || roads.has(cellKey(nc, nr));
+  });
+  if (!anchored) return { ok: false, msg: t("الجسر لازم يبدأ من الشاطئ أو يكمل جسراً قائماً") };
+  const cost = priceOf(BRIDGE_COST, s);
+  if (cost > 0 && s.coins < cost)
+    return { ok: false, msg: t("الجسر يكلف {amount} د.ك للخلية", { amount: cost }) };
+  const linked = islandLinked(s);
+  s.coins -= cost;
+  s.roads.push(k);
+  indexRoadAdded(s, k);
+  if (!linked && islandLinked(s)) {
+    pushLog(s, msg("اكتمل الجسر! {name} صارت متصلة وجاهزة للبناء", { name: ISLAND_NAME }));
+    if (!s.flags.includes("bridge")) s.flags.push("bridge");
+  }
+  return { ok: true, fresh: true };
+}
+
 export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: number): Act {
   const fence = fenced(s, c, r);
   if (fence) return { ok: false, msg: fence };
   if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع البناء في البحر") };
+  if (isIsland(c, r) && !islandLinked(s))
+    return { ok: false, msg: t("ابنِ جسراً يربط الجزيرة باليابسة أولاً") };
   if (cellTaken(s, c, r)) {
     return { ok: false, msg: t("الأرض مشغولة") };
   }
   if (CATALOG[kind].needsCoast && !coastal(c, r))
-    return { ok: false, msg: t("الشاليه لازم يكون على البحر مباشرة") };
+    return {
+      ok: false,
+      msg:
+        kind === "chalet"
+          ? t("الشاليه لازم يكون على البحر مباشرة")
+          : t("{name} لازم يكون على البحر مباشرة", { name: t(CATALOG[kind].name) }),
+    };
   if (!prepaid && !isUnlocked(s, kind))
     return { ok: false, msg: t("يُفتح في حقبة {era}", { era: ERAS[CATALOG[kind].era ?? 0]! }) };
   const cost = priceOf(CATALOG[kind].cost, s);
@@ -1748,6 +1864,7 @@ function areaTables(s: Sim, blockParcels: boolean, blockSchematic: boolean) {
   const blocked = new Int32Array(W * (ROWS + 1));
   const shore = new Int32Array(W * (ROWS + 1));
   const ix = cityIndex(s);
+  const linked = islandLinked(s);
   for (let r = 0; r < ROWS; r += 1) {
     let rowB = 0;
     let rowS = 0;
@@ -1755,6 +1872,7 @@ function areaTables(s: Sim, blockParcels: boolean, blockSchematic: boolean) {
       const k = cellKey(c, r);
       const bad =
         !isLand(c, r) ||
+        (!linked && isIsland(c, r)) ||
         ix.roads.has(k) ||
         ix.lots.has(k) ||
         (s.sites.length > 0 && siteAt(s.sites, c, r) !== null) ||
@@ -2009,7 +2127,7 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
   const ri = s.roads.indexOf(k);
   if (ri >= 0) {
     s.roads.splice(ri, 1);
-    s.coins += Math.round(priceOf(ROAD_COST, s) * 0.5);
+    s.coins += Math.round(priceOf(isLand(c, r) ? ROAD_COST : BRIDGE_COST, s) * 0.5);
     return { ok: true };
   }
   return { ok: false, msg: t("ما في شيء تهدّه هنا") };
@@ -2043,7 +2161,7 @@ export function demolishPreview(s: Sim, c0: number, r0: number, c1: number, r1: 
     }
     roads += 1;
     roadKeys.push(k);
-    refund += Math.round(priceOf(ROAD_COST, s) * 0.5);
+    refund += Math.round(priceOf(isLand(c, r) ? ROAD_COST : BRIDGE_COST, s) * 0.5);
   }
   return { c0: ca, r0: ra, c1: cb, r1: rb, buildings, roads, refund, kept, roadKeys };
 }
@@ -2130,12 +2248,19 @@ export function metrics(s: Sim, st = stats(s)): Sample {
   const parks = countKind(s, "park");
   const police = countKind(s, "police");
   const clinics = countKind(s, "clinic");
-  const industryN = countKind(s, "power") + countKind(s, "water");
+  const industryN =
+    countKind(s, "power") +
+    countKind(s, "water") +
+    countKind(s, "factory") * 0.8 +
+    countKind(s, "port") * 0.6 +
+    countKind(s, "refinery") * 1.6;
   const power = st.powerUse <= 0 ? 100 : clamp((st.powerGive / st.powerUse) * 100, 0, 100);
   const water = st.waterUse <= 0 ? 100 : clamp((st.waterGive / st.waterUse) * 100, 0, 100);
   let coast = 0;
   for (const b of s.buildings) if (coastal(b.c, b.r)) coast += 1;
-  const jobs = shops * 18 + towers * 26;
+  let extraJobs = 0;
+  for (const b of s.buildings) extraJobs += (CATALOG[b.kind].jobs ?? 0) * b.level;
+  const jobs = shops * 18 + towers * 26 + extraJobs;
   const unemployment = clamp(
     (st.pop <= 0 ? 0 : ((st.pop - jobs) / Math.max(st.pop, 1)) * 100) + lawEffect(s, "unemployment"),
     0,
@@ -2186,13 +2311,14 @@ export function demand(s: Sim, st = stats(s)) {
   const houses = s.buildings.filter((b) => CATALOG[b.kind].pop > 0).length;
   const shops = countKind(s, "shop") + countKind(s, "tower");
   const plants = countKind(s, "power") + countKind(s, "water");
+  const works = countKind(s, "factory") + countKind(s, "port") + countKind(s, "refinery");
   const r = clamp(
     (shops * 28 - st.pop) * 0.7 + (st.happy - 55) + (st.short ? -35 : 18) + (houses < 2 ? 20 : 0),
     -100,
     100,
   );
   const c = clamp((st.pop - shops * 32) * 0.85 + (st.happy > 60 ? 12 : -8), -100, 100);
-  const i = clamp(st.pop / 3 - plants * 22 - (st.short ? 10 : 0), -100, 100);
+  const i = clamp(st.pop / 3 - plants * 22 - works * 30 - (st.short ? 10 : 0), -100, 100);
   return { r, c, i };
 }
 
@@ -2210,6 +2336,9 @@ const UPKEEP: Partial<Record<Kind, number>> = {
   school: 9,
   fire: 9,
   park: 2,
+  factory: 6,
+  port: 12,
+  refinery: 18,
 };
 
 /** Pre-tax monthly income the "percent" mode is measured against. */
@@ -2340,6 +2469,7 @@ export function advanceDays(s: Sim, days: number) {
     const works = builderMonth(s);
     if (works) pushLog(s, msg("مستشار البناء: {works}", { works }));
     for (const line of npcMonth(s)) pushLog(s, line);
+    residentsSpeak(s);
     s.coins = Math.max(-5_000_000, s.coins);
     // People move in when they are happy and served, and leave when they are not.
     const ev = activeEvent(s);
@@ -2479,10 +2609,49 @@ export function triggerDisaster(
   return { ok: true, msg: tx(entry) };
 }
 
+/** Let residents comment on how the city is doing this month. */
+export function residentsSpeak(s: Sim, random: () => number = Math.random) {
+  const st = stats(s);
+  const m = metrics(s, st);
+  return voicesMonth(
+    s,
+    {
+      pop: st.pop,
+      happy: st.happy,
+      traffic: m.traffic,
+      pollution: m.pollution,
+      crime: m.crime,
+      power: m.power,
+      water: m.water,
+      unemployment: m.unemployment,
+      health: m.health,
+      education: m.education,
+      costIndex: costIndex(s),
+      tax: s.tax,
+      service: st.service,
+      coins: s.coins,
+      crisis: crisisOf(s) !== null,
+      disaster: Boolean(s.disaster),
+      event: Boolean(activeEvent(s)),
+      parks: countKind(s, "park"),
+      landmarks: s.buildings.filter((b) => isLandmark(b.kind)).length,
+      industry: countKind(s, "factory") + countKind(s, "port") + countKind(s, "refinery"),
+      refinery: countKind(s, "refinery") > 0,
+      port: countKind(s, "port") > 0,
+      islandLinked: islandLinked(s),
+      islandBuilt: s.buildings.filter((b) => isIsland(b.c, b.r)).length,
+    },
+    random,
+  );
+}
+
 export function bulletin(s: Sim, st = stats(s)) {
   const m = metrics(s, st);
   // Stored log entries plus live advice, all shown in the current language.
   const lines = s.log.map((entry) => tx(entry));
+  // The latest things residents said, between the news.
+  for (const v of (s.voices ?? []).slice(0, 3).reverse())
+    lines.splice(Math.min(1, lines.length), 0, `💬 ${t(v.name)}: ${tx(v.text)}`);
   const add = (key: string, params?: Parameters<typeof t>[1]) => lines.push(t(key, params));
   if (s.speed === 0 && s.started) add("الزمن واقف. اضغط تشغيل");
   if (m.pollution >= 42) add("شيء في الهواء: التلوث متوسط");
@@ -2636,6 +2805,8 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.builder = loadBuilder(p.builder);
     s.sites = loadSites(p.sites);
     s.npcs = loadNpcs(p.npcs);
+    s.voices = loadVoices(p.voices);
+    s.voicesSeen = Number.isFinite(Number(p.voicesSeen)) ? Number(p.voicesSeen) : -1;
     s.flags = Array.isArray(p.flags) ? p.flags.filter((x) => typeof x === "string") : [];
     s.achievements = Array.isArray(p.achievements)
       ? p.achievements.filter((x) => typeof x === "string")
@@ -2699,7 +2870,8 @@ export function loadSim(district?: DistrictId | null): Sim {
     for (const k of roads) {
       if (typeof k !== "string") continue;
       const [c, r] = k.split(",").map(Number);
-      if (isLand(c, r)) roadCells.push(cellKey(c, r));
+      // Roads on land, and bridges over the sea.
+      if (c! >= 0 && r! >= 0 && c! < COLS && r! < ROWS) roadCells.push(cellKey(c!, r!));
     }
     if (s.district) roadCells.push(...districtRoads(districtById(s.district)!));
     s.roads = [...new Set(roadCells)];
@@ -2793,6 +2965,8 @@ export function saveSim(s: Sim) {
     builder: s.builder,
     sites: s.sites,
     npcs: s.npcs,
+    voices: s.voices,
+    voicesSeen: s.voicesSeen,
     flags: s.flags,
     achievements: s.achievements,
     collected: s.collected,

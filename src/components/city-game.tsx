@@ -63,6 +63,7 @@ import {
   planZone,
   rollLuck,
   routeOnLand,
+  isLand,
   saveSim,
   stats,
   tick,
@@ -361,7 +362,7 @@ export function CityGame() {
         for (const step of path) {
           const act = placeRoad(sim, step.c, step.r);
           if (!act.ok) {
-            if (act.msg === t("الرصيد ما يكفي للطريق") || !from) {
+            if (act.msg === t("الرصيد ما يكفي للطريق") || !from || !isLand(step.c, step.r)) {
               audio.play("error", sim.mute);
               toastRef.current(act.msg);
             }
@@ -1060,6 +1061,10 @@ export function CityGame() {
         onZoom={onZoom}
         zone={zone}
         onZoneApply={onZoneApply}
+        onVoicesSeen={() => {
+          simRef.current.voicesSeen = simRef.current.day;
+          sync();
+        }}
         onDemolishApply={onDemolishApply}
         onZoneCancel={onZoneCancel}
       />

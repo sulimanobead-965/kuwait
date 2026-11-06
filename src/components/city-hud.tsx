@@ -25,6 +25,7 @@ import {
   SunMoon,
   Home,
   Eraser,
+  Factory,
 } from "lucide-react";
 import { CATALOG, kindsIn, maxLevelOf, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
@@ -52,6 +53,7 @@ import {
   TutorialCard,
   WeatherOverlay,
   YearReport,
+  Voices,
   type Celebration,
   type MoreAction,
 } from "@/components/hud-panels";
@@ -131,7 +133,8 @@ type Panel =
   | "companies"
   | "report"
   | "achievements"
-  | "people";
+  | "people"
+  | "voices";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -352,6 +355,7 @@ export function CityHud({
   dayMode,
   zone,
   onZoneApply,
+  onVoicesSeen,
   onDemolishApply,
   onZoneCancel,
 }: {
@@ -428,6 +432,7 @@ export function CityHud({
   dayMode: DayMode;
   zone: { c0: number; r0: number; c1: number; r1: number } | null;
   onZoneApply: (pick: ZonePick) => void;
+  onVoicesSeen: () => void;
   onDemolishApply: () => void;
   onZoneCancel: () => void;
 }) {
@@ -453,6 +458,10 @@ export function CityHud({
   const lines = bulletin(snap, st);
   const dem = demand(snap, st);
   const line = lines[ticker % lines.length] ?? "";
+  const unseenVoices = (snap.voices ?? []).some((v) => v.day > (snap.voicesSeen ?? -1));
+  useEffect(() => {
+    if (panel === "voices" && unseenVoices) onVoicesSeen();
+  }, [panel, unseenVoices, onVoicesSeen]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTicker((n) => n + 1), 3400);
@@ -515,6 +524,13 @@ export function CityHud({
               onClick={() => openCat("landmarks")}
             >
               <Landmark size={18} />
+            </Round>
+            <Round
+              label={t("صناعة وميناء ومصفاة")}
+              on={tray && cat === "industry"}
+              onClick={() => openCat("industry")}
+            >
+              <Factory size={18} />
             </Round>
             <Round label={t("هدم")} on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
               <Trash2 size={18} />
@@ -638,6 +654,7 @@ export function CityHud({
                   {panel === "report" && t("التقرير السنوي")}
                   {panel === "achievements" && t("الحقب والإنجازات")}
                   {panel === "people" && t("اللاعبون والمحادثات")}
+                  {panel === "voices" && t("آراء الناس")}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -690,6 +707,7 @@ export function CityHud({
                   />
                 )}
                 {panel === "report" && <YearReport snap={snap} />}
+                {panel === "voices" && <Voices snap={snap} />}
                 {panel === "achievements" && <Achievements snap={snap} />}
                 {panel === "people" && (
                   <People
@@ -1024,9 +1042,15 @@ export function CityHud({
                 <span dir="ltr">{money(st.residents)}</span>
               </span>
             </div>
-            <p className="hud-ticker sc-ticker flex items-center px-3 text-sm" dir={dir}>
+            <button
+              type="button"
+              className="hud-ticker sc-ticker flex w-full items-center px-3 text-start text-sm"
+              dir={dir}
+              data-testid="ticker"
+              onClick={() => togglePanel("voices")}
+            >
               <span className="truncate">{line}</span>
-            </p>
+            </button>
           </footer>
         )}
         {snap.started && tutorial >= 0 && !panel && (

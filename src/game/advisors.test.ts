@@ -427,3 +427,69 @@ test("a selected area is demolished in one go, protected cells stay", async () =
   assert.equal(s.coins, coins + p.refund);
   assert.equal(bulldozeArea(s, 0, 0, 999, 999).ok, false, "nothing left to demolish");
 });
+
+test("the island is locked until a bridge links it, then it can be built on", async () => {
+  const sim = await import("./sim.ts");
+  const { ISLAND, isIsland } = await import("./land.ts");
+  const s = town();
+  s.coins = 10_000_000;
+  // Find the island's southern tip and the mainland shore straight below it.
+  const c = ISLAND.c;
+  let top = ISLAND.r;
+  while (isIsland(c, top + 1)) top += 1;
+  let shore = top + 1;
+  while (!sim.isLand(c, shore)) shore += 1;
+  assert.equal(sim.islandLinked(s), false);
+  assert.equal(sim.placeBuilding(s, "villa", c, top, 0).ok, false, "locked before the bridge");
+  // Lay the bridge from the shore up to the island.
+  for (let r = shore - 1; r > top; r -= 1) assert.equal(sim.placeRoad(s, c, r).ok, true);
+  assert.equal(sim.islandLinked(s), true);
+  assert.ok(s.roads.some((k) => sim.isBridge(k)));
+  assert.equal(sim.placeRoad(s, c, top).ok, true, "island roads open");
+  assert.equal(sim.placeBuilding(s, "villa", c + 1, top, 0).ok, true, "island lots open");
+  // A bridge cannot start in open sea.
+  assert.equal(sim.placeRoad(s, 205, 5).ok, false);
+});
+
+test("port, refinery and factories earn money for the treasury", async () => {
+  const sim = await import("./sim.ts");
+  const s = town();
+  s.coins = 10_000_000;
+  const before = sim.monthlyIncome(s);
+  // A free lot (on the shore for the port) with a road laid beside it.
+  const lot = (needsCoast: boolean) => {
+    for (let r = 0; r < 202; r += 1)
+      for (let c = 0; c < 210; c += 1) {
+        if (!sim.isLand(c, r) || !sim.isLand(c, r + 1)) continue;
+        if (sim.cellTaken(s, c, r) || sim.cellTaken(s, c, r + 1)) continue;
+        if (needsCoast !== sim.coastal(c, r)) continue;
+        if (sim.placeRoad(s, c, r + 1).ok) return { c, r };
+      }
+    throw new Error("no lot");
+  };
+  for (const [kind, coast] of [
+    ["factory", false],
+    ["refinery", false],
+    ["port", true],
+  ] as const) {
+    const at = lot(coast);
+    const act = sim.placeBuilding(s, kind, at.c, at.r, 0);
+    assert.equal(act.ok, true, kind);
+  }
+  assert.ok(sim.monthlyIncome(s) > before + 40, "industry adds income");
+  assert.ok(sim.metrics(s).pollution > 0);
+});
+
+test("residents speak up about real problems every month", async () => {
+  const sim = await import("./sim.ts");
+  const s = town();
+  s.tax = 200;
+  const said = sim.residentsSpeak(s, () => 0);
+  assert.ok(said.length >= 2);
+  assert.ok(s.voices.length >= 2);
+  assert.ok(s.voices.every((v) => v.name && v.text));
+  // The ticker shows the latest voices.
+  assert.ok(sim.bulletin(s).some((line) => line.startsWith("💬")));
+  for (let i = 0; i < 60; i += 1) sim.residentsSpeak(s);
+  assert.ok(s.voices.length <= 80);
+});

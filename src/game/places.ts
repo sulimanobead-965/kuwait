@@ -16,6 +16,7 @@ export interface Place {
 export const PLACES: readonly Place[] = [
   { name: "جون الكويت", lon: 47.86, lat: 29.42, major: true },
   { name: "مدينة الكويت", lon: 47.985, lat: 29.375, major: true },
+  { name: "جزيرة اللؤلؤة", lon: 47.985, lat: 29.425 },
   { name: "الشويخ", lon: 47.94, lat: 29.345 },
   { name: "الدوحة", lon: 47.81, lat: 29.36 },
   { name: "الجهراء", lon: 47.66, lat: 29.34 },

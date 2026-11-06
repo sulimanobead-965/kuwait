@@ -347,6 +347,29 @@ for (let r = 0; r < ROWS; r += 1) {
   }
 }
 
+/**
+ * A buildable island in Kuwait Bay, a few cells off the Kuwait City headland. It
+ * starts cut off: a bridge (roads laid over the water) must link it to the mainland
+ * before anything there can be built.
+ */
+export const ISLAND = { name: "جزيرة اللؤلؤة", c: 140, r: 29, rc: 12.5, rr: 5.6 } as const;
+const islandCells = new Set<string>();
+for (let r = Math.floor(ISLAND.r - ISLAND.rr); r <= Math.ceil(ISLAND.r + ISLAND.rr); r += 1)
+  for (let c = Math.floor(ISLAND.c - ISLAND.rc); c <= Math.ceil(ISLAND.c + ISLAND.rc); c += 1) {
+    const dx = (c - ISLAND.c) / ISLAND.rc;
+    const dy = (r - ISLAND.r) / ISLAND.rr;
+    // A soft, slightly lopsided outline so it reads as a natural island.
+    if (dx * dx + dy * dy > 1 - 0.08 * Math.sin(c * 0.9 + r * 0.6)) continue;
+    if (r < 0 || c < 0 || r >= ROWS || c >= COLS || LAND[r]![c]) continue;
+    LAND[r]![c] = 1;
+    islandCells.add(`${c},${r}`);
+  }
+
+export function isIsland(c: number, r: number) {
+  return islandCells.has(`${c},${r}`);
+}
+export const ISLAND_CELLS: ReadonlySet<string> = islandCells;
+
 /** Scaled land cells that came from one source mask cell. */
 export function cellsFromSource(c: number, r: number) {
   return blocks.get(`${c},${r}`) ?? [];

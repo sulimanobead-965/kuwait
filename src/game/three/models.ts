@@ -1559,6 +1559,78 @@ function stadium(p: ModelParts, detail: number) {
   }
 }
 
+function factory(p: ModelParts, detail: number) {
+  // Sawtooth-roof factory hall, office block, chimney and a loading yard.
+  box(p, 0, 0.05, 0, 2.0, 0.1, 1.9, P.pavement);
+  box(p, -0.15, 0.42, -0.2, 1.5, 0.64, 1.1, P.paleStone);
+  const teeth = detail === 0 ? 4 : 2;
+  for (let i = 0; i < teeth; i += 1) {
+    const x = -0.8 + (i + 0.5) * (1.3 / teeth);
+    box(p, x, 0.82, -0.2, 1.3 / teeth - 0.04, 0.16, 1.1, P.silver, "metal");
+    box(p, x + 0.12, 0.84, -0.2, 0.05, 0.14, 1.04, P.skylight, "glass");
+  }
+  box(p, 0.72, 0.36, 0.45, 0.46, 0.52, 0.5, P.plaster);
+  box(p, 0.72, 0.4, 0.705, 0.36, 0.2, 0.02, P.glass, "glass");
+  cyl(p, -0.72, 1.0, 0.55, 0.11, 1.8, P.red, 0.14, 10);
+  cyl(p, -0.72, 1.86, 0.55, 0.115, 0.12, P.white, 0.115, 10);
+  box(p, -0.15, 0.3, 0.355, 0.5, 0.42, 0.02, P.dark);
+  if (detail < 2) {
+    for (const x of [0.1, 0.42]) box(p, x, 0.2, 0.7, 0.26, 0.2, 0.18, P.blue, "metal");
+    box(p, 0.25, 0.32, 0.7, 0.2, 0.06, 0.18, P.gold, "metal");
+  }
+}
+
+function port(p: ModelParts, detail: number) {
+  // Concrete quay with a gantry crane, stacked containers and a warehouse.
+  box(p, 0, 0.06, 0, 2.06, 0.12, 2.06, P.paleStone);
+  box(p, 0, 0.13, -0.85, 2.06, 0.02, 0.1, P.gold);
+  const colors = [P.red, P.blue, P.gulf, P.gold, P.white];
+  const rows = detail === 0 ? 3 : 2;
+  for (let i = 0; i < rows; i += 1)
+    for (let j = 0; j < 3; j += 1)
+      for (let k = 0; k < (i + j) % 3 + 1; k += 1)
+        box(p, -0.6 + j * 0.42, 0.22 + k * 0.19, 0.05 + i * 0.26, 0.38, 0.18, 0.22, colors[(i * 3 + j + k) % 5]!);
+  box(p, 0.65, 0.34, 0.55, 0.62, 0.46, 0.75, P.silver, "metal");
+  box(p, 0.65, 0.6, 0.55, 0.66, 0.06, 0.8, P.blue, "metal");
+  // Gantry crane over the quay edge.
+  for (const x of [-0.55, 0.15])
+    for (const z of [-0.95, -0.45]) box(p, x, 0.75, z, 0.07, 1.3, 0.07, P.gold, "metal");
+  box(p, -0.2, 1.42, -0.7, 0.9, 0.09, 0.62, P.gold, "metal");
+  box(p, -0.2, 1.48, -1.05, 0.12, 0.08, 1.3, P.gold, "metal");
+  box(p, -0.2, 1.3, -1.25, 0.18, 0.14, 0.18, P.dark, "metal");
+  if (detail === 0) {
+    for (const x of [-0.9, 0.9]) cyl(p, x, 0.18, -0.92, 0.05, 0.1, P.dark, 0.05, 8);
+  }
+}
+
+function refinery(p: ModelParts, detail: number) {
+  // Distillation columns, storage tanks, pipe rack and a flare stack.
+  box(p, 0, 0.05, 0, 2.06, 0.1, 2.06, P.pavement);
+  for (const [x, z, r, h] of [
+    [-0.55, -0.5, 0.15, 1.9],
+    [-0.2, -0.55, 0.11, 1.5],
+    [0.1, -0.5, 0.09, 1.2],
+  ] as const) {
+    cyl(p, x, 0.1 + h / 2, z, r, h, P.silver, r, 12, "metal");
+    if (detail < 2)
+      for (let y = 0.4; y < h; y += 0.35) cyl(p, x, 0.1 + y, z, r + 0.02, 0.03, P.dark, r + 0.02, 12, "metal");
+  }
+  for (const [x, z] of [
+    [0.45, 0.4],
+    [-0.05, 0.5],
+    [0.55, -0.15],
+  ] as const) {
+    cyl(p, x, 0.3, z, 0.27, 0.4, P.white, 0.27, detail === 0 ? 18 : 10, "metal");
+    cyl(p, x, 0.51, z, 0.24, 0.03, P.silver, 0.27, detail === 0 ? 18 : 10, "metal");
+  }
+  box(p, -0.25, 0.55, 0.05, 1.1, 0.05, 0.08, P.gold, "metal");
+  box(p, -0.25, 0.45, 0.13, 1.1, 0.04, 0.04, P.dark, "metal");
+  for (const x of [-0.75, -0.25, 0.25]) box(p, x, 0.32, 0.05, 0.04, 0.46, 0.06, P.dark, "metal");
+  // Flare stack with a flame.
+  cyl(p, -0.82, 1.15, 0.72, 0.04, 2.1, P.red, 0.06, 8, "metal");
+  cone(p, -0.82, 2.32, 0.72, 0.08, 0.26, P.gold, 8);
+}
+
 const cache = new Map<string, BuildingModel>();
 
 export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): BuildingModel {
@@ -1632,6 +1704,15 @@ export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): Bui
       break;
     case "stadium":
       stadium(p, detail);
+      break;
+    case "factory":
+      factory(p, detail);
+      break;
+    case "port":
+      port(p, detail);
+      break;
+    case "refinery":
+      refinery(p, detail);
       break;
   }
   const merge = (list: Geo[]) => {

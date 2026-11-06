@@ -21,6 +21,7 @@ import {
   Languages,
   X,
   ShieldCheck,
+  MessageSquare,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
@@ -59,6 +60,7 @@ import {
   type ProjectOrder,
 } from "@/game/finance";
 import { NumberField } from "@/components/hud-social";
+import { unreadVoices, type VoiceMood } from "@/game/voices";
 import {
   DEVELOPER_IDS,
   DEVELOPERS,
@@ -134,6 +136,7 @@ export type MoreAction =
   | "reset"
   | "profile"
   | "people"
+  | "voices"
   | "language";
 
 export function MoreSheet({
@@ -167,6 +170,14 @@ export function MoreSheet({
       id: "mute",
       label: t(snap.mute ? "تشغيل الأصوات" : "كتم الأصوات"),
       icon: snap.mute ? <VolumeX size={20} /> : <Volume2 size={20} />,
+    },
+    {
+      id: "voices",
+      label:
+        unreadVoices(snap) > 0
+          ? t("آراء الناس ({n})", { n: unreadVoices(snap) })
+          : t("آراء الناس"),
+      icon: <MessageSquare size={20} />,
     },
     { id: "people", label: t("اللاعبون"), icon: <Users size={20} /> },
     { id: "profile", label: t("ملفي"), icon: <Award size={20} /> },
@@ -916,6 +927,69 @@ function Company({
 }
 
 // ------------------------------------------------------------------ yearly report
+
+/** Everything residents said, newest first, with a filter by kind. */
+export function Voices({ snap }: { snap: Sim }) {
+  const [filter, setFilter] = useState<"all" | VoiceMood>("all");
+  const list = (snap.voices ?? []).filter((v) => filter === "all" || v.mood === filter);
+  const counts = {
+    complaint: (snap.voices ?? []).filter((v) => v.mood === "complaint").length,
+    praise: (snap.voices ?? []).filter((v) => v.mood === "praise").length,
+    idea: (snap.voices ?? []).filter((v) => v.mood === "idea").length,
+  };
+  const tabs: { id: "all" | VoiceMood; label: string }[] = [
+    { id: "all", label: t("الكل") },
+    { id: "complaint", label: t("شكاوى ({n})", { n: counts.complaint }) },
+    { id: "praise", label: t("شكر ({n})", { n: counts.praise }) },
+    { id: "idea", label: t("اقتراحات ({n})", { n: counts.idea }) },
+  ];
+  const tone = (m: VoiceMood) =>
+    m === "complaint" ? "border-coral" : m === "praise" ? "border-sc-green" : "border-sc-sky";
+  const badge = (m: VoiceMood) =>
+    m === "complaint" ? t("شكوى") : m === "praise" ? t("شكر") : t("اقتراح");
+  return (
+    <div className="space-y-2" dir={dirOf()} data-testid="voices">
+      <p className="text-xs leading-relaxed">
+        {t("ما يقوله سكان مدينتك كل شهر. الشكاوى تتبع مشاكل حقيقية في المدينة: حلّها وتتحول إلى شكر.")}
+      </p>
+      <div className="flex flex-wrap gap-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            aria-pressed={filter === tab.id}
+            onClick={() => setFilter(tab.id)}
+            className={`sc-menu px-3 text-xs ${filter === tab.id ? "sc-on" : ""}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {list.length === 0 ? (
+        <p className="sc-lcd text-sm">{t("ما في آراء بعد. شغّل الوقت وبيتكلم الناس كل شهر.")}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {list.map((v) => (
+            <li
+              key={v.id}
+              className={`rounded-md border-s-4 bg-sc-mint p-2 text-sc-ink ${tone(v.mood)}`}
+            >
+              <div className="flex items-center justify-between gap-2 text-xs font-extrabold">
+                <span>
+                  {t(v.name)} · <span className="font-medium">{t(v.area)}</span>
+                </span>
+                <span className="shrink-0 opacity-70">
+                  {badge(v.mood)} · {formatCityDate(v.day)}
+                </span>
+              </div>
+              <p className="mt-1 text-sm">{tx(v.text)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function YearReport({ snap }: { snap: Sim }) {
   const rows = [...snap.years].reverse();

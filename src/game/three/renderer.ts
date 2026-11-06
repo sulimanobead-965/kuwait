@@ -416,6 +416,7 @@ export class CityWorld {
         this.phaseOverride = null;
       },
       mood: () => ({ ...this.fx.mood }),
+      focus: (c: number, r: number, height = 30) => this.focus({ c, r }, height),
       probe: (id: string) => {
         const rec = this.records.get(id);
         return { y: rec?.rise ?? -1, x: rec?.spread ?? -1, ...this.fx.particleCounts() };

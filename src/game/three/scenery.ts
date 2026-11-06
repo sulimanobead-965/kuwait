@@ -364,6 +364,20 @@ export function createRoads(roadKeys: readonly string[], all?: ReadonlySet<strin
     const { x, z } = cellWorld(c!, r!);
     // Continuous charcoal asphalt: interior paint only, never perimeter curbs/borders.
     addBox(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
+    if (LAND[r!]?.[c!] !== 1) {
+      // A bridge over the sea: concrete deck, piers down into the water, and railings
+      // along the sides that do not continue the bridge.
+      addBox(asphalt, x, LAND_HEIGHT - 0.09, z, CELL_SIZE, 0.18, CELL_SIZE, P.paleStone);
+      if ((c! + r!) % 2 === 0) addBox(asphalt, x, LAND_HEIGHT / 2 - 0.35, z, 0.42, LAND_HEIGHT + 0.6, 0.42, P.paleStone);
+      const along = (dc: number, dr: number) => roads.has(`${c! + dc},${r! + dr}`) || LAND[r! + dr]?.[c! + dc] === 1;
+      const rail = (dx: number, dz: number, w: number, d: number) =>
+        addBox(asphalt, x + dx, LAND_HEIGHT + 0.12, z + dz, w, 0.2, d, P.white);
+      const edge = CELL_SIZE / 2 - 0.05;
+      if (!along(0, -1)) rail(0, -edge, CELL_SIZE, 0.08);
+      if (!along(0, 1)) rail(0, edge, CELL_SIZE, 0.08);
+      if (!along(-1, 0)) rail(-edge, 0, 0.08, CELL_SIZE);
+      if (!along(1, 0)) rail(edge, 0, 0.08, CELL_SIZE);
+    }
     for (const mark of roadMarkingsAt(roads, c!, r!)) {
       const along = mark.axis === "x";
       const xShift = mark.type === "stop" ? mark.dc * CELL_SIZE * 0.35 : 0;
