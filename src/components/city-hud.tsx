@@ -23,6 +23,7 @@ import {
   Zap,
   ZapOff,
   SunMoon,
+  Home,
 } from "lucide-react";
 import { CATALOG, kindsIn, maxLevelOf, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
@@ -77,6 +78,8 @@ import {
   rankOf,
   GOVERNOR_UPGRADE_SHARE,
   upgradeDeveloper,
+  housingAidCost,
+  effectiveHousing,
   ERAS,
   isUnlocked,
   neighborEffect,
@@ -176,6 +179,8 @@ export function CityHud({
   onMudarabaWithdraw,
   onSukuk,
   onMurabaha,
+  onHousingAid,
+  onGiveAid,
   onDevelop,
   onPickSite,
   onCrisis,
@@ -256,6 +261,8 @@ export function CityHud({
   onMudarabaWithdraw: () => void;
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
   onMurabaha: (amount: number, profit: number, months: number) => void;
+  onHousingAid: (pct: number) => void;
+  onGiveAid: (amount: number) => void;
   onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onCrisis: (kind: CrisisKind) => void;
@@ -507,6 +514,8 @@ export function CityHud({
                     onCost={onCost}
                     onAutoRaise={onAutoRaise}
                     onMurabaha={onMurabaha}
+                    onHousingAid={onHousingAid}
+                    onGiveAid={onGiveAid}
                     onLoan={onLoan}
                     onRepay={onRepay}
                   />
@@ -1081,6 +1090,8 @@ function Budget({
   onCost,
   onAutoRaise,
   onMurabaha,
+  onHousingAid,
+  onGiveAid,
   onLoan,
   onRepay,
 }: {
@@ -1089,13 +1100,15 @@ function Budget({
   onCost: (key: CostKey, value: number) => void;
   onAutoRaise: (pct: number) => void;
   onMurabaha: (amount: number, profit: number, months: number) => void;
+  onHousingAid: (pct: number) => void;
+  onGiveAid: (amount: number) => void;
   onLoan: (amount: number, rate: number) => void;
   onRepay: (amount: number) => void;
 }) {
   const st = stats(snap);
   const income = monthlyIncome(snap) + feeRevenue(snap, st);
   const due = loanInstallment(snap);
-  const cost = monthlyUpkeep(snap) + due;
+  const cost = monthlyUpkeep(snap) + due + housingAidCost(snap, st);
   const limit = loanLimit(snap, st);
   const floor = minLoanRate(snap, st);
   const [loanAmount, setLoanAmount] = useState(10_000);
@@ -1135,6 +1148,7 @@ function Budget({
         />
       </label>
       <CostSliders snap={snap} onCost={onCost} onAutoRaise={onAutoRaise} />
+      <HousingAid snap={snap} onHousingAid={onHousingAid} onGiveAid={onGiveAid} />
       <Murabaha snap={snap} onMurabaha={onMurabaha} />
       <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
         <p className="flex items-center gap-1 text-sm font-extrabold">
@@ -1187,6 +1201,85 @@ function Budget({
             {t("سدّد ما تقدر عليه")}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function HousingAid({
+  snap,
+  onHousingAid,
+  onGiveAid,
+}: {
+  snap: Sim;
+  onHousingAid: (pct: number) => void;
+  onGiveAid: (amount: number) => void;
+}) {
+  const st = stats(snap);
+  const [grant, setGrant] = useState(Math.max(1000, Math.round(st.pop * 5)));
+  const aid = snap.housingAid ?? 0;
+  const active = (snap.aidUntil ?? 0) > snap.day;
+  return (
+    <div className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="housing-aid">
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <Home size={16} /> {t("دعم السكن والإعانات")}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed">
+        {t(
+          "تدفع البلدية جزءاً من إيجار كل أسرة كل شهر. ١٠٠٪ يعني سكن مجاني، وأكثر من ١٠٠٪ يعني إعانة نقدية فوق الإيجار. الدعم يرفع الرضا ويجذب السكان، ويُصرف من الميزانية.",
+        )}
+      </p>
+      <div className="mt-1 flex items-end gap-1" dir="ltr">
+        {[0, 25, 50, 100].map((p) => (
+          <button
+            key={p}
+            type="button"
+            aria-pressed={aid === p}
+            onClick={() => onHousingAid(p)}
+            className={`sc-menu px-2 text-xs ${aid === p ? "sc-on" : ""}`}
+          >
+            {p}
+            {percentSign()}
+          </button>
+        ))}
+        <NumberField
+          label=""
+          value={aid}
+          onChange={(v) => onHousingAid(v)}
+          suffix={percentSign()}
+          testid="housing-aid-pct"
+        />
+      </div>
+      <p className="mt-1 text-xs font-extrabold">
+        {t("تكلفة الدعم: {amount} د.ك شهرياً · الإيجار الذي يشعر به الناس: {rent}٪", {
+          amount: fmt(housingAidCost(snap, st)),
+          rent: Math.round(effectiveHousing(snap)),
+        })}
+      </p>
+      <p className="mt-2 text-xs font-extrabold">{t("مساعدة عاجلة لمرة واحدة")}</p>
+      <p className="text-[11px] opacity-80">
+        {t("ترفع الرضا لستة أشهر، مفيدة وقت الأزمات والكوارث.")}
+        {active
+          ? " " + t("مساعدة سارية: الرضا +{n}", { n: snap.aidHappy ?? 0 })
+          : ""}
+      </p>
+      <div className="mt-1 flex items-end gap-1">
+        <NumberField
+          label=""
+          value={grant}
+          onChange={setGrant}
+          suffix={currency()}
+          testid="aid-amount"
+        />
+        <button
+          type="button"
+          data-testid="aid-give"
+          disabled={snap.coins < grant || grant <= 0}
+          onClick={() => onGiveAid(grant)}
+          className="sc-menu sc-on shrink-0 px-3 text-xs disabled:opacity-40"
+        >
+          {t("اصرف المساعدة")}
+        </button>
       </div>
     </div>
   );

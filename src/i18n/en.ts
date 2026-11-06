@@ -880,4 +880,16 @@ export const EN: Record<string, string> = {
   "إفلاس {company}! مشاريعها متوقفة": "{company} went bankrupt! Its projects have stopped",
   "توقف بناء {name} بعد إفلاس {company}. استرجعت {amount} د.ك فقط":
     "{name} stopped after {company} went bankrupt. You recovered only {amount} KD",
+  "دعم السكن والإعانات": "Housing support & aid",
+  "تدفع البلدية جزءاً من إيجار كل أسرة كل شهر. ١٠٠٪ يعني سكن مجاني، وأكثر من ١٠٠٪ يعني إعانة نقدية فوق الإيجار. الدعم يرفع الرضا ويجذب السكان، ويُصرف من الميزانية.":
+    "The city pays part of every family's rent each month. 100% means free housing; above 100% adds cash support on top. Support raises approval and attracts residents, and comes out of the budget.",
+  "تكلفة الدعم: {amount} د.ك شهرياً · الإيجار الذي يشعر به الناس: {rent}٪":
+    "Support costs {amount} KD a month · rent people actually feel: {rent}%",
+  "مساعدة عاجلة لمرة واحدة": "One-off emergency aid",
+  "ترفع الرضا لستة أشهر، مفيدة وقت الأزمات والكوارث.":
+    "Raises approval for six months; useful in crises and disasters.",
+  "مساعدة سارية: الرضا +{n}": "Aid active: approval +{n}",
+  "اصرف المساعدة": "Give aid",
+  "صرفت مساعدة للسكان بقيمة {amount} د.ك": "You gave residents {amount} KD in aid",
+  "وصلت المساعدة للسكان: الرضا +{n} لستة أشهر": "Aid delivered: approval +{n} for six months",
 };

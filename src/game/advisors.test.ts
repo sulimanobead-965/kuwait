@@ -5,6 +5,8 @@ import { CATALOG, maxLevelOf } from "./catalog.ts";
 import { LAND } from "./land.ts";
 import {
   developmentMonth,
+  giveAid,
+  housingAidCost,
   upgradeDeveloper,
   upgrade,
   upgradeCost,
@@ -264,4 +266,29 @@ test("several developers: each builds its own projects and fails on its own", ()
   assert.equal(s.sites[0]!.developer, "jazeera");
   assert.equal(startDevelopment(s, "compound", undefined, "khaleej").ok, false);
   assert.equal(startDevelopment(s, "compound", undefined, "national").ok, true);
+});
+
+test("housing support: the city pays part of the rent, people are happier and stay", () => {
+  const a = town();
+  const b = town();
+  a.costs.housing = 200;
+  b.costs.housing = 200;
+  b.housingAid = 100; // rent-free
+  assert.ok(housingAidCost(b) > 0);
+  assert.equal(housingAidCost(a), 0);
+  assert.ok(stats(b).happy > stats(a).happy, "support lifts approval");
+  const coinsA = a.coins;
+  const coinsB = b.coins;
+  advanceDays(a, 361);
+  advanceDays(b, 361);
+  assert.ok(b.occupancy >= a.occupancy, "fewer people leave");
+  assert.ok(coinsB - b.coins > coinsA - a.coins - 1, "and it is paid from the budget");
+  // One-off emergency aid.
+  const c = town();
+  c.coins = 100_000;
+  const before = stats(c).happy;
+  assert.equal(giveAid(c, 50_000).ok, true);
+  assert.equal(c.coins, 50_000);
+  assert.ok(stats(c).happy > before);
+  assert.equal(giveAid(c, 1e9).ok, false);
 });

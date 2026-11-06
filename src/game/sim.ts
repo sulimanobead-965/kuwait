@@ -59,6 +59,14 @@ export type Sim = {
   costs: Costs;
   /** Automatic yearly raise of every cost item, in percent (0 = frozen). */
   autoRaise: number;
+  /**
+   * Housing support: the share of every family's rent the city pays each month, in
+   * percent (0 = none, 100 = rent-free, above 100 = rent paid plus extra cash help).
+   */
+  housingAid: number;
+  /** A one-off emergency grant: extra happiness until this day. */
+  aidUntil: number;
+  aidHappy: number;
   /** Year-end measurements (most recent last). */
   years: YearRow[];
   /** Running totals for the current year. */
@@ -436,7 +444,41 @@ export function defaultCosts(): Costs {
 
 /** Weighted cost-of-living index (100 = normal). */
 export function costIndex(s: Sim) {
-  return Math.round(COST_KEYS.reduce((n, k) => n + COST_ITEMS[k].weight * s.costs[k], 0));
+  return Math.round(
+    COST_KEYS.reduce(
+      (n, k) => n + COST_ITEMS[k].weight * (k === "housing" ? effectiveHousing(s) : s.costs[k]),
+      0,
+    ),
+  );
+}
+
+/** What families really feel for rent after the city's housing support (may go below 0). */
+export function effectiveHousing(s: Sim) {
+  return s.costs.housing * (1 - (s.housingAid ?? 0) / 100);
+}
+
+/**
+ * Monthly cost of housing support: the city pays `housingAid٪` of the normal rent
+ * bill for every resident (based on the rent residents would owe at today's price).
+ */
+export function housingAidCost(s: Sim, st = stats(s)) {
+  const rent = st.residents * COST_ITEMS.housing.perResident * (s.costs.housing / 100);
+  return Math.round(rent * ((s.housingAid ?? 0) / 100));
+}
+
+/** One-off emergency aid: money now, happiness for six months (bigger grants, more). */
+export function giveAid(s: Sim, amount: number) {
+  if (!(amount > 0)) return { ok: false as const, msg: t("مبلغ غير صحيح") };
+  if (s.coins < amount) return { ok: false as const, msg: t("الرصيد ما يكفي") };
+  const st = stats(s);
+  const perFamily = amount / Math.max(1, st.pop);
+  const boost = Math.min(25, Math.round(4 + perFamily * 2));
+  s.coins -= amount;
+  s.ytd.spend += amount;
+  s.aidUntil = s.day + 180;
+  s.aidHappy = Math.max(s.aidUntil > s.day ? s.aidHappy : 0, boost);
+  pushLog(s, msg("صرفت مساعدة للسكان بقيمة {amount} د.ك", { amount: Math.round(amount) }));
+  return { ok: true as const, msg: t("وصلت المساعدة للسكان: الرضا +{n} لستة أشهر", { n: boost }) };
 }
 
 /** Monthly revenue per cost item and in total. */
@@ -775,6 +817,9 @@ export function createInitial(): Sim {
     district: null,
     costs: defaultCosts(),
     autoRaise: 0,
+    housingAid: 0,
+    aidUntil: 0,
+    aidHappy: 0,
     years: [],
     ytd: { income: 0, spend: 0, residents0: 0 },
     occupancy: 0.85,
@@ -1020,7 +1065,10 @@ export function stats(s: Sim): CityStats {
   const weight = clamp((capacity - 60) / 400, 0, 1) * 9;
   for (const v of Object.values(cover)) happy -= Math.round((1 - v) * weight);
   // Living costs above the normal tariff anger people; below it pleases them.
-  happy -= Math.round(Math.min(120, (costIndex(s) - 100) / 6));
+  happy -= Math.round(Math.min(120, Math.max(-12, (costIndex(s) - 100) / 6)));
+  // Support beyond free rent is cash in hand: a little more goodwill, capped.
+  if ((s.housingAid ?? 0) > 100) happy += Math.min(6, Math.round(((s.housingAid ?? 0) - 100) / 25));
+  if ((s.aidUntil ?? 0) > s.day) happy += s.aidHappy ?? 0;
   const crisis = crisisOf(s);
   if (crisis) {
     let hit2 = CRISES[crisis].happy;
@@ -1961,7 +2009,7 @@ export function advanceDays(s: Sim, days: number) {
   for (let m = before + 1; m <= after; m += 1) {
     const st = stats(s);
     const fees = feeRevenue(s, st);
-    const upkeep = monthlyUpkeep(s);
+    const upkeep = monthlyUpkeep(s) + housingAidCost(s, st);
     s.coins += fees;
     s.coins -= upkeep;
     s.ytd.income += fees;
@@ -2262,6 +2310,9 @@ export function loadSim(district?: DistrictId | null): Sim {
     for (const k of COST_KEYS)
       s.costs[k] = clamp(Number(rawCosts[k] ?? legacyFees ?? 100), 0, COST_MAX);
     s.autoRaise = clamp(Number(p.autoRaise) || 0, 0, COST_MAX);
+    s.housingAid = clamp(Number(p.housingAid) || 0, 0, COST_MAX);
+    s.aidUntil = Math.max(0, Number(p.aidUntil) || 0);
+    s.aidHappy = clamp(Number(p.aidHappy) || 0, 0, 30);
     if (Array.isArray(p.years)) s.years = p.years.filter((y) => y && typeof y === "object").slice(-60);
     if (p.ytd && typeof p.ytd === "object")
       s.ytd = {
@@ -2414,6 +2465,9 @@ export function saveSim(s: Sim) {
     luckAt: s.luckAt,
     costs: s.costs,
     autoRaise: s.autoRaise,
+    housingAid: s.housingAid,
+    aidUntil: s.aidUntil,
+    aidHappy: s.aidHappy,
     years: s.years,
     ytd: s.ytd,
     finance: s.finance,

@@ -30,6 +30,7 @@ import {
   bulldoze,
   buyModelArea,
   startDevelopment,
+  giveAid,
   checkPromotion,
   checkAchievements,
   COST_MAX,
@@ -901,6 +902,11 @@ export function CityGame() {
         onMudarabaWithdraw={() => finance(withdrawMudaraba(simRef.current))}
         onSukuk={(issuer, a, r, y) => finance(buySukuk(simRef.current, issuer, a, r, y))}
         onMurabaha={(a, p, m) => finance(takeMurabaha(simRef.current, a, p, m))}
+        onHousingAid={(pct) => {
+          simRef.current.housingAid = Math.max(0, Math.min(COST_MAX, Math.round(pct)));
+          sync();
+        }}
+        onGiveAid={(amount) => finance(giveAid(simRef.current, amount))}
         onDevelop={(kind, dev) => {
           const act = startDevelopment(simRef.current, kind, undefined, dev);
           if (!act.ok) pushToast(act.msg);
