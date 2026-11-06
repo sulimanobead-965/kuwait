@@ -120,6 +120,8 @@ function loadGraphicsLevel() {
     return 0;
   }
 }
+/** Shortest gap between two shadow-map redraws while the view keeps changing (ms). */
+const SHADOW_EVERY = 250;
 /** Render-resolution multiplier for each quality level. */
 const QUALITY_SCALE = [1, 0.8, 0.65, 0.5];
 
@@ -298,6 +300,7 @@ export class CityWorld {
   private hover: Cell | null = null;
   private zone: Cell | null = null;
   private dirtyShadows = true;
+  private shadowAt = 0;
   private dbg!: WorldDiagnostics;
   private readonly observer: ResizeObserver;
 
@@ -393,7 +396,9 @@ export class CityWorld {
     );
     this.zoneMesh.visible = false;
     this.scene.add(this.highlight, this.zoneMesh, this.fx.group);
-    if (import.meta.env.DEV) this.installFxDebug();
+    if (import.meta.env.DEV) {
+      this.installFxDebug();
+    }
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas);
     this.timer.connect(document);
@@ -577,7 +582,10 @@ export class CityWorld {
     }
     this.sun.castShadow = next < 3;
     this.dirtyShadows = true;
-    this.resize();
+    // Only the render resolution changes; the camera stays where the player put it.
+    const base = this.width < 600 ? 1 : this.pixelRatio;
+    this.renderer.setPixelRatio(Math.max(0.5, base * QUALITY_SCALE[next]!));
+    this.renderer.setSize(this.width, this.height, false);
   }
 
   /** Auto mode: step quality down when frames are slow, back up when there is room. */
@@ -1804,11 +1812,17 @@ export class CityWorld {
     this.updateFx(dt);
     this.updateHover();
     this.updateCoins();
-    if (this.dirtyShadows) this.renderer.shadowMap.needsUpdate = true;
+    // Re-drawing the shadow map is the most expensive pass. While the map is moving,
+    // redo it at most every SHADOW_EVERY ms; the last change is always drawn.
+    const shadowNow = this.dirtyShadows && started - this.shadowAt >= SHADOW_EVERY;
+    if (shadowNow) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowAt = started;
+    }
     this.renderer.render(this.scene, this.camera);
     this.dbg.drawCalls = this.renderer.info.render.calls;
     this.dbg.triangles = this.renderer.info.render.triangles;
-    if (this.dirtyShadows) this.dirtyShadows = false;
+    if (shadowNow) this.dirtyShadows = false;
     this.dbg.frameMs = performance.now() - started;
     this.dbg.quality = this.quality;
     this.dbg.graphics = this.qualityMode;

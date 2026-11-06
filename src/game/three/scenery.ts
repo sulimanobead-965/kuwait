@@ -122,9 +122,18 @@ function buildBoxes(batch: BoxBatch) {
   return geo;
 }
 
+/** Terrain is split into squares of this many cells, so off-screen land is skipped. */
+const TERRAIN_CHUNK = 64;
+
 export function createTerrain() {
-  const tiles: BoxBatch = [];
-  const coast: BoxBatch = [];
+  // One batch of land boxes and one of shore walls per chunk.
+  const chunks = new Map<number, { tiles: BoxBatch; coast: BoxBatch }>();
+  const chunkOf = (c: number, r: number) => {
+    const id = Math.floor(r / TERRAIN_CHUNK) * 1000 + Math.floor(c / TERRAIN_CHUNK);
+    let ch = chunks.get(id);
+    if (!ch) chunks.set(id, (ch = { tiles: [], coast: [] }));
+    return ch;
+  };
   for (let r = 0; r < ROWS; r += 1) {
     let c = 0;
     while (c < COLS) {
@@ -134,8 +143,11 @@ export function createTerrain() {
       }
       const start = c;
       const kind = LAND[r]![c];
+      const block = Math.floor(start / TERRAIN_CHUNK);
+      const { tiles, coast } = chunkOf(start, r);
       let shore = false;
-      while (c < COLS && LAND[r]![c] === kind) {
+      // A run stops at the edge of its chunk.
+      while (c < COLS && LAND[r]![c] === kind && Math.floor(c / TERRAIN_CHUNK) === block) {
         shore ||= [
           [1, 0],
           [-1, 0],
@@ -190,18 +202,26 @@ export function createTerrain() {
     }
   }
   const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.92,
-    metalness: 0,
-  });
-  const land = new THREE.Mesh(buildBoxes(tiles), material);
-  land.receiveShadow = true;
-  group.add(land);
-  const shore = new THREE.Mesh(buildBoxes(coast), material);
-  shore.castShadow = true;
-  shore.receiveShadow = true;
-  group.add(shore);
+  // Flat, matte ground: Lambert shading looks the same here and is much cheaper per
+  // pixel than the physically based material, and land fills most of the screen.
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // Separate meshes per chunk: the camera only draws the chunks it can see, and
+  // the shadow pass only those near the player. The low shore walls cast no shadow
+  // worth its cost.
+  for (const { tiles, coast } of chunks.values()) {
+    if (tiles.length) {
+      const land = new THREE.Mesh(buildBoxes(tiles), material);
+      land.receiveShadow = true;
+      land.name = "land";
+      group.add(land);
+    }
+    if (coast.length) {
+      const shore = new THREE.Mesh(buildBoxes(coast), material);
+      shore.receiveShadow = true;
+      shore.name = "shore";
+      group.add(shore);
+    }
+  }
   return { group, material };
 }
 
