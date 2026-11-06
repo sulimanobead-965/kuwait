@@ -1344,4 +1344,10 @@ export const EN: Record<string, string> = {
   "يعمل ويدرّ عائداً": "Running and earning",
   "يودع فوق الاحتياطي بـ": "Deposits above the reserve by",
   "يوسّع الطرق إذا الزحمة فوق": "Widens roads if traffic is above",
+  "الرسوم: تلقائية": "Graphics: auto",
+  "الرسوم: عالية": "Graphics: high",
+  "الرسوم: خفيفة": "Graphics: light",
+  "الرسوم تلقائية: تخف وحدها إذا الجهاز بطيء": "Auto graphics: lighter on their own when the device is slow",
+  "الرسوم خفيفة: أسرع وأخف على الجهاز": "Light graphics: faster and easier on the device",
+  "الرسوم عالية: أجمل شكل، وقد تكون أبطأ": "High graphics: best looks, may be slower",
 };

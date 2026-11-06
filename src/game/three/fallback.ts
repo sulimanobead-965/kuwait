@@ -106,6 +106,11 @@ export class FallbackCityWorld {
   setZone(box: typeof this.zoneBox) {
     this.zoneBox = box;
   }
+  /** The 2D view has one quality level. */
+  setGraphicsMode(_mode: "auto" | "high" | "low") {}
+  graphicsMode(): "auto" | "high" | "low" {
+    return "auto";
+  }
   /** The 2D compatibility view keeps a fixed heading. */
   rotate(_degrees: number) {}
   northUp() {}

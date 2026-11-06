@@ -50,6 +50,9 @@ export type WorldCallbacks = {
 };
 
 export type WorldDiagnostics = {
+  /** Current graphics quality level (0 = full, 3 = lightest) and mode. */
+  quality?: number;
+  graphics?: string;
   renderer: "three.js-webgl" | "unavailable";
   orthographic: boolean;
   pitch: number;
@@ -104,6 +107,30 @@ type BuildingRecord = {
 };
 
 type CarSlot = { i: number; x: number; z: number; horizontal: boolean };
+
+export type GraphicsMode = "auto" | "high" | "low";
+const GRAPHICS_KEY = "omdat-graphics";
+const GRAPHICS_LEVEL_KEY = "omdat-graphics-level";
+
+function loadGraphicsLevel() {
+  try {
+    const v = Number(localStorage.getItem(GRAPHICS_LEVEL_KEY));
+    return Number.isFinite(v) ? Math.max(0, Math.min(3, Math.round(v))) : 0;
+  } catch {
+    return 0;
+  }
+}
+/** Render-resolution multiplier for each quality level. */
+const QUALITY_SCALE = [1, 0.8, 0.65, 0.5];
+
+function loadGraphicsMode(): GraphicsMode {
+  try {
+    const v = localStorage.getItem(GRAPHICS_KEY);
+    return v === "high" || v === "low" ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
 
 /** Half-size, in cells, of the tile grid drawn around the camera while a tool is out. */
 const GRID_RADIUS = 90;
@@ -206,6 +233,18 @@ export class CityWorld {
   private lodCounts: Record<string, number> = {};
   /** The view buildings were last bucketed for (LOD and on-screen culling). */
   private labelsYaw = NaN;
+  /**
+   * Graphics quality, 0 (full) … 3 (lightest). In "auto" mode the renderer measures
+   * its own frame rate and steps down (lower resolution, smaller then no shadows)
+   * until the game runs smoothly, and steps back up when there is headroom.
+   */
+  private qualityMode: GraphicsMode = loadGraphicsMode();
+  private quality = 0;
+  private qualityCeiling = 0;
+  private qualityAt = 0;
+  private qualityUpAt = 0;
+  private frameEma = 1 / 60;
+  private lastFrameAt = 0;
   private lodView = {
     yaw: 0,
     matrix: new THREE.Matrix4(),
@@ -360,6 +399,8 @@ export class CityWorld {
     this.timer.connect(document);
     this.bindEvents();
     this.resize();
+    if (this.qualityMode === "low") this.setQuality(3);
+    else if (this.qualityMode === "auto") this.setQuality(loadGraphicsLevel());
     this.dbg = {
       renderer: "three.js-webgl",
       orthographic: this.camera.isOrthographicCamera,
@@ -492,10 +533,72 @@ export class CityWorld {
     this.width = Math.max(1, rect.width);
     this.height = Math.max(1, rect.height);
     this.pixelRatio = Math.min(window.innerWidth < 700 ? 1.5 : 1.8, window.devicePixelRatio || 1);
-    this.renderer.setPixelRatio(this.width < 600 ? 1 : this.pixelRatio);
+    const base = this.width < 600 ? 1 : this.pixelRatio;
+    this.renderer.setPixelRatio(Math.max(0.5, base * QUALITY_SCALE[this.quality]!));
     this.renderer.setSize(this.width, this.height, false);
     this.updateProjection();
     if (this.districtId) this.frameDistrict();
+  }
+
+  /** Choose how the game balances looks and speed: adapt, always full, or always light. */
+  setGraphicsMode(mode: GraphicsMode) {
+    this.qualityMode = mode;
+    try {
+      localStorage.setItem(GRAPHICS_KEY, mode);
+    } catch {
+      /* private mode */
+    }
+    this.qualityCeiling = 0;
+    this.setQuality(mode === "low" ? 3 : 0);
+  }
+
+  graphicsMode() {
+    return this.qualityMode;
+  }
+
+  /** Apply a quality level: render resolution, then shadow detail. */
+  private setQuality(level: number) {
+    const next = Math.max(0, Math.min(3, level));
+    if (next === this.quality && this.qualityAt) return;
+    this.quality = next;
+    this.qualityAt = performance.now();
+    // Remember what this device can carry, so the next launch starts there.
+    if (this.qualityMode === "auto")
+      try {
+        localStorage.setItem(GRAPHICS_LEVEL_KEY, String(next));
+      } catch {
+        /* private mode */
+      }
+    const size = next >= 2 ? 512 : this.width < 600 ? 1024 : 2048;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.sun.castShadow = next < 3;
+    this.dirtyShadows = true;
+    this.resize();
+  }
+
+  /** Auto mode: step quality down when frames are slow, back up when there is room. */
+  private adaptQuality(now: number) {
+    if (this.lastFrameAt) {
+      const gap = (now - this.lastFrameAt) / 1000;
+      // Ignore pauses (tab hidden, debugger) so they don't count as slow frames.
+      if (gap < 0.5) this.frameEma = this.frameEma * 0.92 + gap * 0.08;
+    }
+    this.lastFrameAt = now;
+    if (this.qualityMode !== "auto" || now - this.qualityAt < 1200) return;
+    if (this.frameEma > 1 / 30 && this.quality < 3) {
+      // Slow again right after stepping up: that level is too much for this device.
+      if (now - this.qualityUpAt < 6000) this.qualityCeiling = this.quality + 1;
+      // Very slow (under 12 frames a second): skip a level so it recovers quickly.
+      this.setQuality(this.quality + (this.frameEma > 1 / 12 ? 2 : 1));
+      this.frameEma = 1 / 45;
+    } else if (this.frameEma < 1 / 52 && this.quality > this.qualityCeiling && now - this.qualityAt > 10000) {
+      this.qualityUpAt = now;
+      this.setQuality(this.quality - 1);
+    }
   }
 
   private updateProjection() {
@@ -1668,6 +1771,7 @@ export class CityWorld {
 
   private frame() {
     const started = performance.now();
+    this.adaptQuality(started);
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.08);
     this.elapsed += dt;
@@ -1706,6 +1810,8 @@ export class CityWorld {
     this.dbg.triangles = this.renderer.info.render.triangles;
     if (this.dirtyShadows) this.dirtyShadows = false;
     this.dbg.frameMs = performance.now() - started;
+    this.dbg.quality = this.quality;
+    this.dbg.graphics = this.qualityMode;
   }
 
   /**

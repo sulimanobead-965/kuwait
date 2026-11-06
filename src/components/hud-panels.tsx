@@ -24,6 +24,7 @@ import {
   MessageSquare,
   Briefcase,
   LineChart,
+  Gauge,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
@@ -142,16 +143,19 @@ export type MoreAction =
   | "voices"
   | "board"
   | "stocks"
+  | "graphics"
   | "language";
 
 export function MoreSheet({
   snap,
   music,
+  graphics,
   onPick,
   onClose,
 }: {
   snap: Sim;
   music: boolean;
+  graphics: "auto" | "high" | "low";
   onPick: (a: MoreAction) => void;
   onClose: () => void;
 }) {
@@ -191,6 +195,16 @@ export function MoreSheet({
       icon: <MessageSquare size={20} />,
     },
     { id: "people", label: t("اللاعبون"), icon: <Users size={20} /> },
+    {
+      id: "graphics",
+      label:
+        graphics === "auto"
+          ? t("الرسوم: تلقائية")
+          : graphics === "high"
+            ? t("الرسوم: عالية")
+            : t("الرسوم: خفيفة"),
+      icon: <Gauge size={20} />,
+    },
     { id: "profile", label: t("ملفي"), icon: <Award size={20} /> },
     // Always offers the other language, written in that language.
     { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },

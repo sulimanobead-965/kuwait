@@ -362,6 +362,8 @@ export function CityHud({
   onZoom,
   onRotate,
   heading,
+  graphics,
+  onGraphics,
   onDayMode,
   dayMode,
   zone,
@@ -449,6 +451,8 @@ export function CityHud({
   onZoom: (factor: number) => void;
   onRotate: (by: number | "north") => void;
   heading: number;
+  graphics: "auto" | "high" | "low";
+  onGraphics: (mode: "auto" | "high" | "low") => void;
   onDayMode: (mode: DayMode) => void;
   dayMode: DayMode;
   zone: { c0: number; r0: number; c1: number; r1: number } | null;
@@ -1021,6 +1025,7 @@ export function CityHud({
               <MoreSheet
                 snap={snap}
                 music={music}
+                graphics={graphics}
                 onClose={() => setMore(false)}
                 onPick={(action: MoreAction) => {
                   setMore(false);
@@ -1032,6 +1037,8 @@ export function CityHud({
                   else if (action === "reset") onAskReset();
                   else if (action === "profile") onEditPlayer();
                   else if (action === "language") setLang(lang === "ar" ? "en" : "ar");
+                  else if (action === "graphics")
+                    onGraphics(graphics === "auto" ? "low" : graphics === "low" ? "high" : "auto");
                   else setPanel(action);
                 }}
               />

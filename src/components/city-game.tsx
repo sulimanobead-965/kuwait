@@ -142,6 +142,11 @@ export function CityGame() {
   const [tool, setTool] = useState<Tool>(null);
   // The map's heading, mirrored for the compass (0 = north up).
   const [heading, setHeading] = useState(45);
+  const [graphics, setGraphics] = useState<"auto" | "high" | "low">("auto");
+  useEffect(() => {
+    const id = window.setTimeout(() => setGraphics(worldRef.current?.graphicsMode() ?? "auto"), 500);
+    return () => window.clearTimeout(id);
+  }, []);
   useEffect(() => {
     const id = window.setInterval(() => {
       const h = Math.round(worldRef.current?.heading() ?? 45);
@@ -1089,6 +1094,18 @@ export function CityGame() {
         onZoom={onZoom}
         onRotate={onRotate}
         heading={heading}
+        graphics={graphics}
+        onGraphics={(mode) => {
+          worldRef.current?.setGraphicsMode(mode);
+          setGraphics(mode);
+          pushToast(
+            mode === "auto"
+              ? t("الرسوم تلقائية: تخف وحدها إذا الجهاز بطيء")
+              : mode === "low"
+                ? t("الرسوم خفيفة: أسرع وأخف على الجهاز")
+                : t("الرسوم عالية: أجمل شكل، وقد تكون أبطأ"),
+          );
+        }}
         zone={zone}
         onZoneApply={onZoneApply}
         onBoard={(patch) => {
