@@ -701,8 +701,17 @@ function carryOutOrders(s: Sim) {
 }
 
 /** Projects are priced for a city of 10,000 residents and grow with the city. */
+// Worked out once per game day: a full statistics pass on every project price made
+// the board's monthly decisions slow in very big cities.
+const scaleMemo = new WeakMap<Sim, { day: number; value: number }>();
+
 export function projectScale(s: Sim) {
-  return Math.max(1, stats(s).residents / 10_000);
+  const day = Math.floor(s.day);
+  const hit = scaleMemo.get(s);
+  if (hit && hit.day === day) return hit.value;
+  const value = Math.max(1, stats(s).residents / 10_000);
+  scaleMemo.set(s, { day, value });
+  return value;
 }
 
 export function projectCost(s: Sim, key: string) {

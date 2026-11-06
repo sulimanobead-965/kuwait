@@ -105,7 +105,29 @@ function replacePlan(s: Sim, b: Building): Plan {
  * Free lots that touch a road and sit next to existing buildings, collected once per
  * month (O(buildings)) and handed out one by one.
  */
+/**
+ * Candidate lots by city layout: a full map has ~100k buildings, and rescanning all
+ * their neighbours for every building the board or builder places took seconds.
+ * The list is reused while the layout is unchanged; each lot is re-checked on use.
+ */
+const lotCache = new WeakMap<Sim, { sig: string; lots: { c: number; r: number }[] }>();
+
 function lotFinder(s: Sim) {
+  const sig = `${s.buildings.length}:${s.roads.length}:${s.sites.length}`;
+  const hit = lotCache.get(s);
+  const lots = hit && hit.sig === sig ? hit.lots : scanLots(s);
+  if (!hit || hit.sig !== sig) lotCache.set(s, { sig, lots });
+  let next = 0;
+  return () => {
+    while (next < lots.length) {
+      const lot = lots[next++]!;
+      if (!cellTaken(s, lot.c, lot.r) && !siteAt(s.sites, lot.c, lot.r)) return lot;
+    }
+    return null;
+  };
+}
+
+function scanLots(s: Sim) {
   const roads = roadSet(s);
   const seen = new Set<string>();
   const lots: { c: number; r: number }[] = [];
@@ -135,14 +157,7 @@ function lotFinder(s: Sim) {
       )
         lots.push({ c, r });
     }
-  let next = 0;
-  return () => {
-    while (next < lots.length) {
-      const lot = lots[next++]!;
-      if (!cellTaken(s, lot.c, lot.r)) return lot;
-    }
-    return null;
-  };
+  return lots;
 }
 
 /**

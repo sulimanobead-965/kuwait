@@ -127,6 +127,8 @@ export type Sim = {
   voicesSeen: number;
   /** Fenced developer construction sites inside the city. */
   sites: Site[];
+  /** Kroner per second from all buildings, kept by `tick` (not saved). */
+  incomeRate?: number;
   /** One-off story markers (event held, loan repaid, crisis survived…). */
   flags: string[];
   achievements: string[];
@@ -1180,6 +1182,29 @@ const snapshots = new WeakSet<Sim>();
 const statsMemo = new WeakMap<Sim, CityStats>();
 const countMemo = new WeakMap<Sim, Map<Kind, number>>();
 
+const valueMemo = new WeakMap<Sim, Map<string, number>>();
+/** A number worked out once per interface snapshot (always fresh for the live city). */
+const liveMemo = new WeakMap<Sim, Map<string, { sig: string; v: number }>>();
+function memo(s: Sim, key: string, fn: () => number) {
+  if (!snapshots.has(s)) {
+    // The live city: reuse within the same game day and layout (big cities only).
+    if (s.buildings.length < 1500) return fn();
+    const sig = `${Math.floor(s.day)}:${s.buildings.length}:${s.roads.length}`;
+    let lm = liveMemo.get(s);
+    if (!lm) liveMemo.set(s, (lm = new Map()));
+    const hit = lm.get(key);
+    if (hit && hit.sig === sig) return hit.v;
+    const v = fn();
+    lm.set(key, { sig, v });
+    return v;
+  }
+  let m = valueMemo.get(s);
+  if (!m) valueMemo.set(s, (m = new Map()));
+  let v = m.get(key);
+  if (v === undefined) m.set(key, (v = fn()));
+  return v;
+}
+
 export function stats(s: Sim): CityStats {
   if (!snapshots.has(s)) return computeStats(s);
   let st = statsMemo.get(s);
@@ -1494,7 +1519,13 @@ export function tick(s: Sim, dt: number) {
   const list = s.buildings;
   if (list.length <= 1500) {
     const st = stats(s);
-    for (const b of list) accrue(b, incomePerSec(b, s, st), dt);
+    let total = 0;
+    for (const b of list) {
+      const rate = incomePerSec(b, s, st);
+      if (rate > 0) total += rate;
+      accrue(b, rate, dt);
+    }
+    s.incomeRate = total;
     return;
   }
   const st = stats(s);
@@ -1515,7 +1546,13 @@ export function tick(s: Sim, dt: number) {
       rateCursor = rateCursor + 1 >= list.length ? 0 : rateCursor + 1;
     }
   }
-  for (const b of list) accrue(b, rateCache.get(b) ?? 0, dt);
+  let total = 0;
+  for (const b of list) {
+    const rate = rateCache.get(b) ?? 0;
+    if (rate > 0) total += rate;
+    accrue(b, rate, dt);
+  }
+  s.incomeRate = total;
 }
 
 function accrue(b: Building, rate: number, dt: number) {
@@ -1524,7 +1561,7 @@ function accrue(b: Building, rate: number, dt: number) {
 }
 
 export function totalStored(s: Sim) {
-  return s.buildings.reduce((n, b) => n + Math.floor(b.stored), 0);
+  return memo(s, "stored", () => s.buildings.reduce((n, b) => n + Math.floor(b.stored), 0));
 }
 
 export function collectOne(s: Sim, id: string) {
@@ -2131,10 +2168,35 @@ export function findDevelopmentSite(
   near?: { c: number; r: number },
 ) {
   const def = DEVELOPMENTS[kind];
+  if (noRoom(s, kind)) return null;
   const area = areaTables(s, true, false);
-  return nearestRect(def.w, def.h, near ?? cityCenter(s), (c, r) =>
+  const spot = nearestRect(def.w, def.h, near ?? cityCenter(s), (c, r) =>
     area.free(c, r, def.w, def.h) && (!def.coast || area.coast(c, r, def.w, def.h)),
   );
+  if (!spot) markNoRoom(s, kind);
+  return spot;
+}
+
+/**
+ * A full map has no room for a development; searching it again every month (a scan
+ * of the whole country) is skipped until the layout changes.
+ */
+const roomMemo = new WeakMap<Sim, Map<string, { b: number; r: number; sites: number; day: number }>>();
+function noRoom(s: Sim, kind: string) {
+  const m = roomMemo.get(s)?.get(kind);
+  // Still full unless something was demolished, a site finished, or a year passed.
+  return Boolean(
+    m &&
+      s.buildings.length >= m.b - 4 &&
+      s.roads.length >= m.r - 4 &&
+      s.sites.length >= m.sites &&
+      s.day - m.day < 360,
+  );
+}
+function markNoRoom(s: Sim, kind: string) {
+  let m = roomMemo.get(s);
+  if (!m) roomMemo.set(s, (m = new Map()));
+  m.set(kind, { b: s.buildings.length, r: s.roads.length, sites: s.sites.length, day: s.day });
 }
 
 /**
@@ -2189,12 +2251,16 @@ export function startDevelopment(
 export function startMegaSite(s: Sim, kind: DevelopmentKind, completes: number): Site | null {
   const def = DEVELOPMENTS[kind];
   if (!def.mega) return null;
+  if (noRoom(s, kind)) return null;
   const at = lonLatToCell(def.mega.lon, def.mega.lat);
   const area = areaTables(s, true, false);
   const spot = nearestRect(def.w, def.h, at, (c, r) =>
     area.free(c, r, def.w, def.h) && (!def.coast || area.coast(c, r, def.w, def.h)),
   );
-  if (!spot) return null;
+  if (!spot) {
+    markNoRoom(s, kind);
+    return null;
+  }
   const site: Site = {
     id: `${Math.floor(s.day)}-${Math.random().toString(36).slice(2, 7)}`,
     developer: "national",
@@ -2472,7 +2538,7 @@ export function takeSample(s: Sim): Sample {
 }
 
 export function demand(s: Sim, st = stats(s)) {
-  const houses = s.buildings.filter((b) => CATALOG[b.kind].pop > 0).length;
+  const houses = memo(s, "houses", () => s.buildings.filter((b) => CATALOG[b.kind].pop > 0).length);
   const shops = countKind(s, "shop") + countKind(s, "tower");
   const plants = countKind(s, "power") + countKind(s, "water");
   const works = countKind(s, "factory") + countKind(s, "port") + countKind(s, "refinery");
@@ -2554,6 +2620,10 @@ export const ORDINANCE_COST = Object.fromEntries(
 ) as Record<LawKey, number>;
 
 export function monthlyUpkeep(s: Sim) {
+  return memo(s, "upkeep", () => upkeepOf(s));
+}
+
+function upkeepOf(s: Sim) {
   let n = 0;
   for (const b of s.buildings) n += (UPKEEP[b.kind] ?? 5) * (1 + (b.level - 1) * 0.5);
   // The municipality maintains a neighborhood's planned streets; yours cost a little.
@@ -2571,10 +2641,14 @@ export function monthlyUpkeep(s: Sim) {
 const SECONDS_PER_MONTH = 30 / 6;
 
 export function monthlyIncome(s: Sim) {
-  const st = stats(s);
-  return Math.round(
-    s.buildings.reduce((n, b) => n + incomePerSec(b, s, st) * SECONDS_PER_MONTH, 0),
-  );
+  // Big cities: the running total the income step keeps (a full pass over every
+  // building's income took half a second and froze the budget screen).
+  if (s.buildings.length > 1500 && s.incomeRate !== undefined)
+    return Math.round(s.incomeRate * SECONDS_PER_MONTH);
+  return memo(s, "income", () => {
+    const st = stats(s);
+    return Math.round(s.buildings.reduce((n, b) => n + incomePerSec(b, s, st) * SECONDS_PER_MONTH, 0));
+  });
 }
 
 function pushLog(s: Sim, text: string) {
