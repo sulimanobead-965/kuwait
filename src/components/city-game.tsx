@@ -356,7 +356,7 @@ export function CityGame() {
         }
         lastRoadCell.current = at;
       } else if (current?.kind === "site") {
-        const act = startDevelopment(sim, current.project, at);
+        const act = startDevelopment(sim, current.project, at, current.developer);
         audio.play(act.ok ? "quest" : "error", sim.mute);
         if (!act.ok) toastRef.current(act.msg);
         else {
@@ -901,8 +901,8 @@ export function CityGame() {
         onMudarabaWithdraw={() => finance(withdrawMudaraba(simRef.current))}
         onSukuk={(issuer, a, r, y) => finance(buySukuk(simRef.current, issuer, a, r, y))}
         onMurabaha={(a, p, m) => finance(takeMurabaha(simRef.current, a, p, m))}
-        onDevelop={(kind) => {
-          const act = startDevelopment(simRef.current, kind);
+        onDevelop={(kind, dev) => {
+          const act = startDevelopment(simRef.current, kind, undefined, dev);
           if (!act.ok) pushToast(act.msg);
           else {
             pushToast(t("تم تسوير الموقع وبدأ البناء"));
@@ -913,9 +913,9 @@ export function CityGame() {
           }
           sync();
         }}
-        onPickSite={(kind) => {
+        onPickSite={(kind, dev) => {
           setSelected(null);
-          setTool({ kind: "site", project: kind });
+          setTool({ kind: "site", project: kind, developer: dev });
           pushToast(t("اضغط على الخريطة في مكان المشروع"));
         }}
         player={player ?? { name: t("المحافظ"), avatar: "🧔🏽" }}

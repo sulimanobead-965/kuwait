@@ -861,4 +861,23 @@ export const EN: Record<string, string> = {
     "The developer upgrades; residents pay: 99% to you, 1% to the developer",
   "ترقيات يدفعها السكان: {amount} لك · {fee} للمطور":
     "Resident-paid upgrades: {amount} to you · {fee} to the developer",
+  "مجموعة الخليج للتطوير": "Gulf Development Group",
+  "أسرع في البناء، لكنها أكثر مغامرة.": "Builds faster, but takes bigger risks.",
+  "الجزيرة القابضة": "Al Jazeera Holding",
+  "متحفظة وثابتة، ومخاطرها منخفضة.": "Conservative and steady, with low risk.",
+  "دار البناء الكويتية": "Kuwait Building House",
+  "شركة عائلية متوسطة الحجم.": "A mid-sized family firm.",
+  "هيئة التطوير الوطنية": "National Development Authority",
+  "جهة حكومية لا تفلس أبداً، لكنها أبطأ.": "State-backed and never goes bankrupt, but slower.",
+  "مطور كبير بخبرة طويلة، ومخاطرة متوسطة.": "A large, experienced developer with medium risk.",
+  "اختر المطور": "Choose the developer",
+  "مفلسة ومغلقة مؤقتاً": "Bankrupt and closed for now",
+  "ترقيات المباني يتوزعها المطورون المفتوحون تلقائياً، والهيئة الحكومية تتكفل بها إذا أفلسوا كلهم، فلا تدفع أنت شيئاً.":
+    "Building upgrades are shared automatically among the open developers, and the state authority takes over if they all go bankrupt, so you never pay anything.",
+  "الترقية على {company}، والسكان يدفعون: ٩٩٪ لك و١٪ للمطور":
+    "{company} does the upgrade; residents pay: 99% to you, 1% to the developer",
+  "بدأت {company} بناء {name}": "{company} started building {name}",
+  "إفلاس {company}! مشاريعها متوقفة": "{company} went bankrupt! Its projects have stopped",
+  "توقف بناء {name} بعد إفلاس {company}. استرجعت {amount} د.ك فقط":
+    "{name} stopped after {company} went bankrupt. You recovered only {amount} KD",
 };

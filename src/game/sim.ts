@@ -3,8 +3,11 @@ import { consulting, emptyFinance, financeMonth, loadFinance, type FinanceState 
 import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import {
+  DEVELOPERS,
+  DEVELOPER_IDS,
   DEVELOPMENTS,
   loadSites,
+  type DeveloperId,
   siteAt,
   type DevelopmentKind,
   type Site,
@@ -205,7 +208,10 @@ let developing = false;
 /** The reason a cell is off-limits: it's inside someone's fenced construction site. */
 function fenced(s: Sim, c: number, r: number) {
   if (developing || !s.sites?.length || !siteAt(s.sites, c, r)) return null;
-  return t("منطقة محمية: قيد التطوير من {company}", { company: "شركة المرسى العقارية" });
+  const site = siteAt(s.sites, c, r)!;
+  return t("منطقة محمية: قيد التطوير من {company}", {
+    company: DEVELOPERS[site.developer ?? "marsa"].name,
+  });
 }
 
 export function priceOf(base: number, _s: Sim) {
@@ -1650,10 +1656,10 @@ export function startDevelopment(
   s: Sim,
   kind: DevelopmentKind,
   at?: { c: number; r: number },
+  developer: DeveloperId = "marsa",
 ): ({ ok: true; site: Site } | { ok: false; msg: string }) {
   const def = DEVELOPMENTS[kind];
-  if (s.finance.down.developer > s.day)
-    return { ok: false, msg: t("الشركة مغلقة بعد إفلاسها") };
+  if (!developerOpen(s, developer)) return { ok: false, msg: t("الشركة مغلقة بعد إفلاسها") };
   if (s.coins < def.cost) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: def.cost }) };
   let spot = at ? { c: at.c - Math.floor(def.w / 2), r: at.r - Math.floor(def.h / 2) } : null;
   if (spot) {
@@ -1671,6 +1677,7 @@ export function startDevelopment(
   s.ytd.spend += def.cost;
   const site: Site = {
     id: `${Math.floor(s.day)}-${Math.random().toString(36).slice(2, 7)}`,
+    developer,
     kind,
     c: spot.c,
     r: spot.r,
@@ -1678,31 +1685,43 @@ export function startDevelopment(
     h: def.h,
     amount: def.cost,
     started: s.day,
-    completes: s.day + def.months * 30,
+    completes: s.day + Math.round(def.months * DEVELOPERS[developer].speed) * 30,
   };
   s.sites.push(site);
-  pushLog(s, msg("بدأت شركة المرسى العقارية بناء {name}", { name: def.name }));
+  pushLog(s, msg("بدأت {company} بناء {name}", { company: DEVELOPERS[developer].name, name: def.name }));
   return { ok: true, site };
 }
 
 /** Hands over finished developments; abandons sites if the developer went bankrupt. */
-export function developmentMonth(s: Sim) {
+export function developmentMonth(s: Sim, random = Math.random) {
+  // Private developers other than Al Marsa (whose risk lives in finance.ts) may fail too.
+  const crisis = crisisOf(s);
+  const base = crisis === "economic" ? 0.03 : crisis === "war" ? 0.01 : 0.002;
+  for (const id of DEVELOPER_IDS) {
+    const d = DEVELOPERS[id];
+    if (d.state || id === "marsa" || !developerOpen(s, id)) continue;
+    if (random() < base * d.risk) {
+      s.finance.devDown[id] = s.day + 18 * 30;
+      pushLog(s, msg("إفلاس {company}! مشاريعها متوقفة", { company: d.name }));
+    }
+  }
   if (!s.sites.length) return;
-  if (s.finance.down.developer > s.day) {
-    for (const site of s.sites) {
+  const failed = s.sites.filter((x) => !developerOpen(s, x.developer ?? "marsa"));
+  if (failed.length) {
+    for (const site of failed) {
       const back = site.amount * 0.2;
       s.coins += back;
       s.finance.lost += site.amount - back;
       pushLog(
         s,
-        msg("توقف بناء {name} بعد إفلاس المطور. استرجعت {amount} د.ك فقط", {
+        msg("توقف بناء {name} بعد إفلاس {company}. استرجعت {amount} د.ك فقط", {
+          company: DEVELOPERS[site.developer ?? "marsa"].name,
           name: DEVELOPMENTS[site.kind].name,
           amount: Math.round(back),
         }),
       );
     }
-    s.sites = [];
-    return;
+    s.sites = s.sites.filter((x) => !failed.includes(x));
   }
   for (const site of [...s.sites]) {
     if (s.day < site.completes) continue;
@@ -1763,22 +1782,35 @@ export const GOVERNOR_UPGRADE_SHARE = 0.99;
  * treasury and 1٪ to the developer. If the developer is bankrupt, the city pays
  * the full price itself as before.
  */
+/** Is this developer open for business today? The national authority always is. */
+export function developerOpen(s: Sim, id: DeveloperId) {
+  if (DEVELOPERS[id].state) return true;
+  if (id === "marsa") return s.finance.down.developer <= s.day;
+  return (s.finance.devDown[id] ?? 0) <= s.day;
+}
+
+/**
+ * Who carries out the next upgrade: the open private developer with the least work so
+ * far, or the national development authority if every private firm is bankrupt.
+ */
+export function upgradeDeveloper(s: Sim): DeveloperId {
+  const open = DEVELOPER_IDS.filter((id) => !DEVELOPERS[id].state && developerOpen(s, id));
+  if (!open.length) return "national";
+  return open.sort((a, b) => (s.finance.devFees[a] ?? 0) - (s.finance.devFees[b] ?? 0))[0]!;
+}
+
 export function settleUpgrade(
   s: Sim,
   cost: number,
-): { ok: true; byResidents: boolean; gain: number } | { ok: false; msg: string } {
-  if (s.finance.down.developer <= s.day) {
-    const gain = cost * GOVERNOR_UPGRADE_SHARE;
-    s.coins += gain;
-    s.ytd.income += gain;
-    s.finance.upgradeIncome += gain;
-    s.finance.developerFees += cost - gain;
-    return { ok: true, byResidents: true, gain };
-  }
-  if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي للترقية") };
-  s.coins -= cost;
-  s.ytd.spend += cost;
-  return { ok: true, byResidents: false, gain: -cost };
+): { ok: true; byResidents: boolean; gain: number; developer: DeveloperId } {
+  const developer = upgradeDeveloper(s);
+  const gain = cost * GOVERNOR_UPGRADE_SHARE;
+  s.coins += gain;
+  s.ytd.income += gain;
+  s.finance.upgradeIncome += gain;
+  s.finance.developerFees += cost - gain;
+  s.finance.devFees[developer] = (s.finance.devFees[developer] ?? 0) + (cost - gain);
+  return { ok: true, byResidents: true, gain, developer };
 }
 
 export function upgrade(s: Sim, id: string, now: number): Act {
@@ -1786,8 +1818,7 @@ export function upgrade(s: Sim, id: string, now: number): Act {
   if (!b) return { ok: false, msg: t("المبنى مو موجود") };
   if (b.level >= maxLevelOf(b.kind)) return { ok: false, msg: t("وصل آخر مستوى") };
   const cost = priceOf(upgradeCost(b.kind, b.level), s);
-  const paid = settleUpgrade(s, cost);
-  if (!paid.ok) return paid;
+  settleUpgrade(s, cost);
   b.level += 1;
   b.born = now;
   return { ok: true };

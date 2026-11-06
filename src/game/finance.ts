@@ -52,6 +52,9 @@ export type FinanceState = {
   /** What residents paid the treasury for developer-run upgrades, and the developer's 1٪. */
   upgradeIncome: number;
   developerFees: number;
+  /** Per-developer: the 1٪ fees earned, and bankruptcy closure day (Al Marsa uses `down`). */
+  devFees: Partial<Record<string, number>>;
+  devDown: Partial<Record<string, number>>;
   /** Lifetime numbers for the report and achievements. */
   earned: number;
   lost: number;
@@ -134,6 +137,8 @@ export function emptyFinance(): FinanceState {
     murabaha: [],
     upgradeIncome: 0,
     developerFees: 0,
+    devFees: {},
+    devDown: {},
     mudaraba: 0,
     mudarabaRate: 0.08,
     earned: 0,
@@ -157,6 +162,11 @@ export function loadFinance(raw: unknown): FinanceState {
   f.mudaraba = Math.max(0, n(p.mudaraba));
   f.upgradeIncome = Math.max(0, n(p.upgradeIncome));
   f.developerFees = Math.max(0, n(p.developerFees));
+  for (const key of ["devFees", "devDown"] as const) {
+    const raw = p[key];
+    if (raw && typeof raw === "object")
+      for (const [id, v] of Object.entries(raw)) f[key][id] = Math.max(0, n(v));
+  }
   f.mudarabaRate = p.mudarabaRate === undefined ? 0.08 : Math.max(0, n(p.mudarabaRate));
   if (Array.isArray(p.murabaha))
     f.murabaha = p.murabaha

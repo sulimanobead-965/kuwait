@@ -12,8 +12,56 @@ import type { Kind } from "./catalog";
 
 export type DevelopmentKind = "towers" | "compound" | "business" | "waterfront" | "smartcity";
 
+export type DeveloperId = "marsa" | "khaleej" | "jazeera" | "dar" | "national";
+
+/**
+ * Real-estate developers (fictional). Each fails on its own; the national
+ * development authority is state-backed and never fails, so there is always someone
+ * to carry out upgrades. Private firms build faster; the authority is slower.
+ */
+export const DEVELOPERS: Record<
+  DeveloperId,
+  { name: string; blurb: string; speed: number; risk: number; state?: boolean }
+> = {
+  marsa: {
+    name: "شركة المرسى العقارية",
+    blurb: "مطور كبير بخبرة طويلة، ومخاطرة متوسطة.",
+    speed: 1,
+    risk: 1,
+  },
+  khaleej: {
+    name: "مجموعة الخليج للتطوير",
+    blurb: "أسرع في البناء، لكنها أكثر مغامرة.",
+    speed: 0.85,
+    risk: 1.6,
+  },
+  jazeera: {
+    name: "الجزيرة القابضة",
+    blurb: "متحفظة وثابتة، ومخاطرها منخفضة.",
+    speed: 1.1,
+    risk: 0.5,
+  },
+  dar: {
+    name: "دار البناء الكويتية",
+    blurb: "شركة عائلية متوسطة الحجم.",
+    speed: 1,
+    risk: 1,
+  },
+  national: {
+    name: "هيئة التطوير الوطنية",
+    blurb: "جهة حكومية لا تفلس أبداً، لكنها أبطأ.",
+    speed: 1.35,
+    risk: 0,
+    state: true,
+  },
+};
+
+export const DEVELOPER_IDS = Object.keys(DEVELOPERS) as DeveloperId[];
+
 export type Site = {
   id: string;
+  /** Who builds it; older saves had only Al Marsa. */
+  developer: DeveloperId;
   kind: DevelopmentKind;
   /** Top-left cell and size. */
   c: number;
@@ -199,6 +247,7 @@ export function loadSites(raw: unknown): Site[] {
       const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       return {
         id: String(p.id),
+        developer: p.developer in DEVELOPERS ? p.developer : "marsa",
         kind: p.kind,
         c: n(p.c),
         r: n(p.r),

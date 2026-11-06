@@ -33,6 +33,7 @@ import {
   crisisOf,
   ERAS,
   eraOf,
+  developerOpen,
   formatCityDate,
   stats,
   type CostKey,
@@ -55,8 +56,11 @@ import {
 } from "@/game/finance";
 import { NumberField } from "@/components/hud-social";
 import {
+  DEVELOPER_IDS,
+  DEVELOPERS,
   DEVELOPMENT_KINDS,
   DEVELOPMENTS,
+  type DeveloperId,
   progressOf,
   type DevelopmentKind,
 } from "@/game/developments";
@@ -302,10 +306,11 @@ export function Companies({
   onMudaraba: (amount: number, expected: number) => void;
   onMudarabaWithdraw: () => void;
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
-  onDevelop: (kind: DevelopmentKind) => void;
-  onPickSite: (kind: DevelopmentKind) => void;
+  onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
+  onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
 }) {
   const f = snap.finance;
+  const [dev, setDev] = useState<DeveloperId>("marsa");
   const [mudAmount, setMudAmount] = useState(100_000);
   const [mudRate, setMudRate] = useState(8);
   const [sukAmount, setSukAmount] = useState(1_000_000);
@@ -578,10 +583,40 @@ export function Companies({
             "تستثمر مع الشركة فتسوّر أرض المشروع وتبنيه. أثناء البناء المنطقة محمية ولا يبني فيها أحد غير الشركة، وعند انتهاء المدة يظهر الحي جاهزاً ومسكوناً بشكله المميز. إذا أفلست الشركة يتوقف المشروع.",
           )}
         </p>
+        <p className="text-xs font-extrabold">{t("اختر المطور")}</p>
+        <div className="mb-1 grid grid-cols-2 gap-1">
+          {DEVELOPER_IDS.map((id) => {
+            const d = DEVELOPERS[id];
+            const open = developerOpen(snap, id);
+            return (
+              <button
+                key={id}
+                type="button"
+                data-testid={`developer-${id}`}
+                aria-pressed={dev === id}
+                disabled={!open}
+                onClick={() => setDev(id)}
+                className={`rounded-md border-2 px-1.5 py-1 text-start text-[11px] disabled:opacity-40 ${
+                  dev === id ? "border-sc-ink bg-sc-gold" : "border-sc-ink/30 bg-white/60"
+                }`}
+              >
+                <span className="block font-extrabold">{t(d.name)}</span>
+                <span className="block opacity-80">
+                  {open ? t(d.blurb) : t("مفلسة ومغلقة مؤقتاً")}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mb-1 text-[11px] opacity-80">
+          {t(
+            "ترقيات المباني يتوزعها المطورون المفتوحون تلقائياً، والهيئة الحكومية تتكفل بها إذا أفلسوا كلهم، فلا تدفع أنت شيئاً.",
+          )}
+        </p>
         <ul className="mb-2 space-y-1">
           {DEVELOPMENT_KINDS.map((kind) => {
             const def = DEVELOPMENTS[kind];
-            const can = isOpen(snap, "developer") && snap.coins >= def.cost;
+            const can = developerOpen(snap, dev) && snap.coins >= def.cost;
             return (
               <li key={kind} className="rounded-md border border-sc-ink/30 bg-white/60 p-1.5">
                 <p className="flex justify-between text-xs font-extrabold">
@@ -592,14 +627,18 @@ export function Companies({
                 </p>
                 <p className="text-[11px] opacity-80">
                   {t(def.blurb)} ·{" "}
-                  {t("{w}×{h} قطعة · {months} شهر", { w: def.w, h: def.h, months: def.months })}
+                  {t("{w}×{h} قطعة · {months} شهر", {
+                    w: def.w,
+                    h: def.h,
+                    months: Math.round(def.months * DEVELOPERS[dev].speed),
+                  })}
                 </p>
                 <div className="mt-1 grid grid-cols-2 gap-1">
                   <button
                     type="button"
                     data-testid={`develop-pick-${kind}`}
                     disabled={!can}
-                    onClick={() => onPickSite(kind)}
+                    onClick={() => onPickSite(kind, dev)}
                     className="sc-menu sc-on px-1 text-xs disabled:opacity-40"
                   >
                     {t("اختر الموقع على الخريطة")}
@@ -608,7 +647,7 @@ export function Companies({
                     type="button"
                     data-testid={`develop-auto-${kind}`}
                     disabled={!can}
-                    onClick={() => onDevelop(kind)}
+                    onClick={() => onDevelop(kind, dev)}
                     className="sc-menu px-1 text-xs disabled:opacity-40"
                   >
                     {t("دع الشركة تختار")}
@@ -622,7 +661,10 @@ export function Companies({
           <ul className="mb-2 space-y-1 text-xs">
             {snap.sites.map((site) => (
               <li key={site.id}>
-                <span className="font-extrabold">🏗 {t(DEVELOPMENTS[site.kind].name)}</span> ·{" "}
+                <span className="font-extrabold">
+                  🏗 {t(DEVELOPMENTS[site.kind].name)} · {t(DEVELOPERS[site.developer ?? "marsa"].name)}
+                </span>{" "}
+                ·{" "}
                 {t("اكتمل {pct}٪ · يُسلَّم {date}", {
                   pct: Math.round(progressOf(snap.day, site) * 100),
                   date: formatCityDate(site.completes),

@@ -5,6 +5,7 @@ import { CATALOG, maxLevelOf } from "./catalog.ts";
 import { LAND } from "./land.ts";
 import {
   developmentMonth,
+  upgradeDeveloper,
   upgrade,
   upgradeCost,
   homesPerLevel,
@@ -224,12 +225,16 @@ test("upgrades are run by the developer and paid by residents: 99% to the govern
   assert.equal(b.level, 2);
   assert.ok(Math.abs(s.coins - (1000 + price * 0.99)) < 1e-6, "the governor earns 99%");
   assert.ok(Math.abs(s.finance.developerFees - price * 0.01) < 1e-6, "the developer keeps 1%");
-  // With the developer bankrupt, the city pays the full price again.
+  // With every private developer bankrupt, the national authority takes over: the
+  // governor still never pays.
   s.finance.down.developer = s.day + 999;
+  for (const id of ["khaleej", "jazeera", "dar"]) s.finance.devDown[id] = s.day + 999;
+  assert.equal(upgradeDeveloper(s), "national");
   const coins = s.coins;
   const next = upgradeCost(b.kind, b.level);
   assert.equal(upgrade(s, b.id, 0).ok, true);
-  assert.ok(Math.abs(s.coins - (coins - next)) < 1e-6);
+  assert.ok(Math.abs(s.coins - (coins + next * 0.99)) < 1e-6);
+  assert.ok((s.finance.devFees.national ?? 0) > 0);
   // The construction advisor's upgrades also bring money in.
   const a = town();
   a.coins = 100_000;
@@ -238,4 +243,25 @@ test("upgrades are run by the developer and paid by residents: 99% to the govern
   const income = a.finance.upgradeIncome;
   builderMonth(a);
   assert.ok(a.finance.upgradeIncome > income);
+});
+
+test("several developers: each builds its own projects and fails on its own", () => {
+  const s = town();
+  s.coins = 20_000_000;
+  const a = startDevelopment(s, "towers", undefined, "jazeera");
+  const b = startDevelopment(s, "towers", undefined, "khaleej");
+  assert.equal(a.ok && b.ok, true);
+  if (!a.ok || !b.ok) return;
+  assert.equal(a.site.developer, "jazeera");
+  assert.ok(
+    b.site.completes - b.site.started < a.site.completes - a.site.started,
+    "Gulf builds faster",
+  );
+  // Gulf fails; Al Jazeera's site keeps going.
+  s.finance.devDown.khaleej = s.day + 999;
+  developmentMonth(s, () => 0.99);
+  assert.equal(s.sites.length, 1);
+  assert.equal(s.sites[0]!.developer, "jazeera");
+  assert.equal(startDevelopment(s, "compound", undefined, "khaleej").ok, false);
+  assert.equal(startDevelopment(s, "compound", undefined, "national").ok, true);
 });

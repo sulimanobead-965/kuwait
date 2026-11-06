@@ -34,7 +34,7 @@ import {
 } from "@/components/hud-social";
 import { murabahaInstallment, type BondOrder, type ProjectOrder } from "@/game/finance";
 import type { NpcId } from "@/game/npcs";
-import type { DevelopmentKind } from "@/game/developments";
+import { DEVELOPERS, type DeveloperId, type DevelopmentKind } from "@/game/developments";
 import { unreadCount } from "@/game/npcs";
 import {
   Achievements,
@@ -76,6 +76,7 @@ import {
   RANKS,
   rankOf,
   GOVERNOR_UPGRADE_SHARE,
+  upgradeDeveloper,
   ERAS,
   isUnlocked,
   neighborEffect,
@@ -100,7 +101,7 @@ export type HudTool =
   | { kind: "bulldoze" }
   | { kind: "zone" }
   | { kind: "build"; building: Kind }
-  | { kind: "site"; project: DevelopmentKind }
+  | { kind: "site"; project: DevelopmentKind; developer: DeveloperId }
   | null;
 
 type GraphKey = Exclude<keyof Sample, "day">;
@@ -255,8 +256,8 @@ export function CityHud({
   onMudarabaWithdraw: () => void;
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
   onMurabaha: (amount: number, profit: number, months: number) => void;
-  onDevelop: (kind: DevelopmentKind) => void;
-  onPickSite: (kind: DevelopmentKind) => void;
+  onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
+  onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onCrisis: (kind: CrisisKind) => void;
   onPhoto: () => void;
   onMusic: () => void;
@@ -521,12 +522,12 @@ export function CityHud({
                     onMudaraba={onMudaraba}
                     onMudarabaWithdraw={onMudarabaWithdraw}
                     onSukuk={onSukuk}
-                    onDevelop={(kind) => {
-                      onDevelop(kind);
+                    onDevelop={(kind, dev) => {
+                      onDevelop(kind, dev);
                       setPanel(null);
                     }}
-                    onPickSite={(kind) => {
-                      onPickSite(kind);
+                    onPickSite={(kind, dev) => {
+                      onPickSite(kind, dev);
                       setPanel(null);
                     }}
                   />
@@ -687,12 +688,13 @@ export function CityHud({
                       {neighborEffect(snap, selected).notes.join(" · ")}
                     </p>
                   )}
-                  {selected.level < maxLevelOf(selected.kind) &&
-                    snap.finance.down.developer <= snap.day && (
-                      <p className="text-xs">
-                        {t("الترقية على المطور، والسكان يدفعون: ٩٩٪ لك و١٪ للمطور")}
-                      </p>
-                    )}
+                  {selected.level < maxLevelOf(selected.kind) && (
+                    <p className="text-xs">
+                      {t("الترقية على {company}، والسكان يدفعون: ٩٩٪ لك و١٪ للمطور", {
+                        company: DEVELOPERS[upgradeDeveloper(snap)].name,
+                      })}
+                    </p>
+                  )}
                   {blockReason(selected, snap) && (
                     <p className="text-xs text-coral">{blockReason(selected, snap)}</p>
                   )}
@@ -707,18 +709,12 @@ export function CityHud({
                 >
                   {selected.level >= maxLevelOf(selected.kind)
                     ? t("مكتمل")
-                    : snap.finance.down.developer <= snap.day
-                      ? t("ترقّي · +{amount} لك", {
-                          amount: fmt(
-                            priceOf(upgradeCost(selected.kind, selected.level), snap) *
-                              GOVERNOR_UPGRADE_SHARE,
-                          ),
-                        })
-                      : priceOf(upgradeCost(selected.kind, selected.level), snap) === 0
-                        ? t("ترقّي مجاني")
-                        : t("ترقّي {amount}", {
-                            amount: fmt(priceOf(upgradeCost(selected.kind, selected.level), snap)),
-                          })}
+                    : t("ترقّي · +{amount} لك", {
+                        amount: fmt(
+                          priceOf(upgradeCost(selected.kind, selected.level), snap) *
+                            GOVERNOR_UPGRADE_SHARE,
+                        ),
+                      })}
                 </button>
               </div>
             )}
