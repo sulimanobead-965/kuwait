@@ -65,15 +65,34 @@ namespace KuwaitCity.Tests
             controller.CycleMode();Assert.AreEqual(TimeMode.Auto,controller.Mode);
             UnityEngine.Object.DestroyImmediate(host);
         }
+        [Test] public void ReferenceArchitectureAndItsDetailTiersStayVolumetric()
+        {
+            var shell=Primitive.BoubyanTower(3.65f,20,6,out var baseCenter,out var crownCenter);
+            Assert.AreEqual(.54f,baseCenter.y,.001f);Assert.Greater(crownCenter.y,baseCenter.y+2f);
+            Assert.Greater(shell.GetIndexCount(0),0);UnityEngine.Object.DestroyImmediate(shell);
+            var lower=Primitive.BoubyanPoint(0,0,3.65f);var upper=Primitive.BoubyanPoint(1,0,3.65f);
+            Assert.Less(Mathf.Abs(upper.x-.14f),Mathf.Abs(lower.x+.04f));
+            Assert.Greater(Primitive.BoubyanPoint(1,0,3.65f).y,Primitive.BoubyanPoint(1,Mathf.PI,3.65f).y);
+            var palette=ScriptableObject.CreateInstance<CityPalette>();CityPaletteFactory.Populate(palette);
+            for(int lod=0;lod<3;lod++)
+            {
+                var villa=new ModelBaker(palette,lod).Bake(BuildingKind.Villa,1);
+                var boubyan=new ModelBaker(palette,lod).Bake(BuildingKind.Boubyan,1);
+                Assert.IsTrue(villa.ContainsKey(palette.wood));Assert.IsTrue(villa.ContainsKey(palette.water));
+                Assert.IsTrue(boubyan.ContainsKey(palette.silver));Assert.Greater(MeshCosts.Triangles(boubyan),100);
+                MeshCosts.Release(villa);MeshCosts.Release(boubyan);
+            }
+            UnityEngine.Object.DestroyImmediate(palette);
+        }
         [Test] public void AllSeventeenBuildingsHaveThreeRealMeshLevels()
         {
             var palette=ScriptableObject.CreateInstance<CityPalette>();CityPaletteFactory.Populate(palette);
             foreach(BuildingKind kind in Enum.GetValues(typeof(BuildingKind)))
             {
-                var high=new ModelBaker(palette,0).Bake(kind,1);var low=new ModelBaker(palette,2).Bake(kind,1);
+                var high=new ModelBaker(palette,0).Bake(kind,1);var mid=new ModelBaker(palette,1).Bake(kind,1);var low=new ModelBaker(palette,2).Bake(kind,1);
                 Assert.Greater(MeshCosts.Triangles(high),0,kind.ToString());Assert.Greater(MeshCosts.Triangles(low),0,kind.ToString());
-                Assert.GreaterOrEqual(MeshCosts.Triangles(high),MeshCosts.Triangles(low),kind.ToString());
-                MeshCosts.Release(high);MeshCosts.Release(low);
+                Assert.GreaterOrEqual(MeshCosts.Triangles(high),MeshCosts.Triangles(mid),kind.ToString());Assert.GreaterOrEqual(MeshCosts.Triangles(mid),MeshCosts.Triangles(low),kind.ToString());
+                MeshCosts.Release(high);MeshCosts.Release(mid);MeshCosts.Release(low);
             }
             UnityEngine.Object.DestroyImmediate(palette);
         }

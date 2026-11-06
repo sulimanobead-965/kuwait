@@ -21,6 +21,13 @@ function color(g: Geo, value: string) {
     array[i + 1] = c.g;
     array[i + 2] = c.b;
   }
+  // BufferGeometry requires the same channels across every batched primitive.
+  // These models are solid-color meshes, so unused UVs are deterministic zeros.
+  if (!g.attributes.uv)
+    g.setAttribute(
+      "uv",
+      new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position!.count * 2), 2),
+    );
   g.setAttribute("color", new THREE.BufferAttribute(array, 3));
   return g;
 }
@@ -150,52 +157,189 @@ function parapet(p: ModelParts, w: number, d: number, y: number, tint: string = 
 }
 
 function villa(p: ModelParts, detail: number) {
-  box(p, 0, 0.1, 0, 1.62, 0.2, 1.38, P.sand);
-  box(p, 0, 0.57, 0, 1.25, 0.94, 1.0, P.plaster);
-  box(p, 0, 1.1, 0, 1.4, 0.12, 1.14, P.paleStone);
-  box(p, 0, 0.58, 0.525, 0.29, 0.66, 0.08, P.gulf);
-  if (detail === 0) {
-    fourWindows(p, 0.66, 1.25, 1, 3);
-    for (const x of [-0.47, 0.47]) cyl(p, x, 0.59, 0.58, 0.045, 0.75, P.white, 0.045, 8);
-    parapet(p, 1.4, 1.14, 1.22);
-    box(p, -0.4, 1.34, -0.25, 0.26, 0.34, 0.25, P.paleStone);
-    box(p, 0.36, 1.28, -0.26, 0.27, 0.16, 0.27, P.dark);
+  // Traditional Kuwaiti courtyard house: open centre, four low wings, dark wood,
+  // carved lattice wind tower and the characteristic crenellated roofline.
+  const wall = P.plaster;
+  box(p, 0, 0.055, 0, 2.02, 0.11, 1.94, P.sand);
+  box(p, 0, 0.115, 0.04, 0.98, 0.035, 1.23, P.paleStone);
+  box(p, 0, 0.63, -0.66, 1.96, 1.02, 0.52, wall);
+  box(p, -0.77, 0.51, 0.1, 0.42, 0.78, 1.0, wall);
+  box(p, 0.77, 0.51, 0.1, 0.42, 0.78, 1.0, wall);
+  // Entrance pieces leave a real opening rather than a solid rectangular cube.
+  for (const x of [-0.6, 0.6]) box(p, x, 0.49, 0.72, 0.76, 0.74, 0.43, wall);
+  box(p, 0, 0.94, 0.72, 0.46, 0.35, 0.43, wall);
+  box(p, 0, 0.12, 0.01, 0.41, 0.055, 0.41, P.limestone);
+  box(p, 0, 0.154, 0.01, 0.36, 0.025, 0.105, P.blue, "glass");
+  box(p, 0, 0.154, 0.01, 0.105, 0.025, 0.36, P.blue, "glass");
+  const courtyardPalm = (scale: number) => {
+    cyl(p, 0.29, 0.14 + scale * 0.32, 0.24, 0.025 * scale, 0.64 * scale, P.trunk, 0.046 * scale, 7);
+    for (let i = 0; i < 7; i += 1) {
+      const a = (i * Math.PI * 2) / 7;
+      box(
+        p,
+        0.29 + Math.cos(a) * 0.13,
+        0.79,
+        0.24 + Math.sin(a) * 0.13,
+        0.25 * scale,
+        0.065,
+        0.082,
+        i % 2 ? P.leaf : P.leafLight,
+      );
+    }
+  };
+  courtyardPalm(0.8);
+  woodDoor(p, 0, 0.51, 0.942, 0.37, 0.69);
+  for (const x of [-0.25, 0.25]) {
+    cyl(p, x, 0.46, 0.996, 0.032, 0.66, P.paleStone, 0.033, 8);
+    box(p, x, 0.58, 0.956, 0.065, 0.13, 0.073, P.gold, "windows");
+  }
+  box(p, 0, 0.81, 0.98, 0.65, 0.095, 0.17, wall);
+  for (const x of [-0.64, 0.64]) woodDoor(p, x, 0.55, 0.942, 0.18, 0.32);
+  for (const z of [-0.22, 0.22]) {
+    const side = new THREE.BoxGeometry(0.035, 0.25, 0.19);
+    p.opaque.push(color(place(side, -0.987, 0.55, z), P.wood));
+    for (let n = 0; n < 3; n += 1) box(p, -1.009, 0.46 + n * 0.085, z, 0.022, 0.021, 0.22, P.trunk);
+    for (const n of [-0.055, 0.055]) box(p, -1.011, 0.55, z + n, 0.024, 0.27, 0.018, P.trunk);
+  }
+  for (const z of [-0.78, -0.57])
+    for (const x of [-0.62, 0.03, 0.64]) woodDoor(p, x, 0.75, z, 0.2, 0.29);
+  if (detail < 2) {
+    parapet(p, 1.96, 0.57, 1.25, P.plaster);
+    for (const side of [-0.77, 0.77]) {
+      box(p, side, 1.0, 0.6, 0.45, 0.1, 0.09, P.plaster);
+      box(p, side, 1.0, -0.4, 0.45, 0.1, 0.09, P.plaster);
+      box(p, side - 0.225, 1.0, 0.1, 0.09, 0.1, 1.0, P.plaster);
+      box(p, side + 0.225, 1.0, 0.1, 0.09, 0.1, 1.0, P.plaster);
+    }
+    toothParapet(p, -0.98, 0.1, 1.065, 0.09, 0.95, 0);
+    toothParapet(p, 0.98, 0.1, 1.065, 0.09, 0.95, 0);
+    box(p, -0.6, 0.88, 0.72, 0.76, 0.07, 0.43, wall);
+    box(p, 0.6, 0.88, 0.72, 0.76, 0.07, 0.43, wall);
+    toothParapet(p, -0.6, 0.94, 0.94, 0.75, 0.08, 0);
+    toothParapet(p, 0.6, 0.94, 0.94, 0.75, 0.08, 0);
+    // Raised mashrabiya wind tower, screened on two visible facades.
+    box(p, -0.46, 1.38, -0.65, 0.42, 0.43, 0.38, wall);
+    box(p, -0.46, 1.42, -0.445, 0.29, 0.27, 0.035, P.wood);
+    box(p, -0.235, 1.42, -0.65, 0.035, 0.27, 0.29, P.wood);
+    for (const n of [-0.1, 0, 0.1]) {
+      box(p, -0.46 + n, 1.42, -0.419, 0.018, 0.29, 0.021, P.trunk);
+      box(p, -0.21, 1.42, -0.65 + n, 0.021, 0.29, 0.018, P.trunk);
+    }
+    toothParapet(p, -0.46, -0.65, 1.63, 0.48, 0.44, 0);
+    box(p, 0.49, 1.2, -0.64, 0.3, 0.035, 0.26, P.pavement);
+    box(p, 0.49, 1.245, -0.64, 0.2, 0.06, 0.17, P.paleStone);
+    box(p, 1.02, 0.09, 0.4, 0.28, 0.12, 0.57, P.sand);
+    ball(p, 1.05, 0.25, 0.54, 0.15, 0.22, 0.18, P.leaf, detail);
+  }
+}
+
+function woodDoor(p: ModelParts, x: number, y: number, z: number, w: number, h: number) {
+  box(p, x, y, z, w + 0.06, h + 0.06, 0.043, P.paleStone);
+  box(p, x, y, z + 0.027, w, h, 0.039, P.wood);
+  for (const shift of [-w * 0.24, w * 0.24])
+    box(p, x + shift, y, z + 0.051, 0.022, h * 0.94, 0.02, P.trunk);
+  box(p, x, y + h * 0.22, z + 0.055, w, 0.028, 0.02, P.trunk);
+}
+
+function toothParapet(
+  p: ModelParts,
+  x: number,
+  z: number,
+  y: number,
+  w: number,
+  d: number,
+  detail: number,
+) {
+  box(p, x, y - 0.095, z, w, 0.11, d, P.plaster);
+  const count = Math.max(1, Math.ceil(w / (detail === 0 ? 0.17 : 0.27)));
+  for (let i = 0; i < count; i += 1) {
+    const xx = x - w / 2 + ((i + 0.5) * w) / count;
+    box(p, xx, y, z, (w / count) * 0.58, 0.12, Math.max(d, 0.065), P.plaster);
   }
 }
 
 function modern(p: ModelParts, detail: number) {
-  box(p, 0, 0.22, 0, 1.5, 0.22, 1.3, P.sand);
-  box(p, -0.24, 0.64, -0.12, 0.88, 0.85, 0.92, P.plaster);
-  box(p, 0.2, 1.0, -0.12, 1.15, 0.1, 1.05, P.dark);
-  box(p, 0.49, 0.56, 0.1, 0.5, 0.58, 0.68, P.glass, "glass");
-  box(p, -0.52, 0.79, 0.36, 0.16, 1.14, 0.19, P.gulf);
-  if (detail === 0) {
-    fourWindows(p, 0.69, 0.88, 0.92, 3, 0.34);
-    box(p, 0.16, 0.18, 0.6, 1.55, 0.08, 0.2, P.pavement);
-    for (const x of [-0.4, -0.1, 0.2]) box(p, x, 1.12, -0.12, 0.17, 0.1, 0.3, P.glass, "glass");
-    cyl(p, 0.58, 0.46, -0.5, 0.045, 0.6, P.trunk, 0.06, 7);
-    ball(p, 0.58, 0.87, -0.5, 0.25, 0.21, 0.25, P.leaf, detail);
+  // Modern Kuwaiti villa from the reference: recessed volumes, balcony glazing,
+  // offset parapets and a timber front door, not a teal slab.
+  box(p, 0, 0.07, 0, 1.98, 0.14, 1.78, P.pavement);
+  box(p, -0.24, 0.58, -0.2, 1.18, 1.0, 1.24, P.plaster);
+  box(p, -0.27, 1.22, -0.26, 1.29, 0.31, 1.19, P.plaster);
+  box(p, 0.59, 0.6, 0.16, 0.62, 0.98, 0.94, P.dark);
+  box(p, 0.59, 1.21, 0.1, 0.65, 0.18, 1.03, P.plaster);
+  box(p, 0.25, 1.45, -0.16, 1.45, 0.13, 1.51, P.dark);
+  box(p, 0.5, 0.99, 0.39, 0.89, 0.095, 0.53, P.plaster);
+  box(p, 0.51, 0.57, 0.635, 0.73, 0.64, 0.036, P.glass, "glass");
+  box(p, 0.51, 0.57, 0.66, 0.041, 0.68, 0.05, P.black);
+  box(p, -0.39, 0.47, 0.441, 0.3, 0.65, 0.058, P.trunk);
+  for (const n of [-0.08, 0.08]) box(p, -0.39 + n, 0.47, 0.476, 0.025, 0.55, 0.025, P.wood);
+  box(p, -0.4, 1.19, 0.347, 0.7, 0.19, 0.037, P.glass, "glass");
+  box(p, 0.64, 1.18, 0.632, 0.53, 0.04, 0.04, P.gold, "windows");
+  box(p, -0.21, 1.027, 0.4, 1.21, 0.04, 0.04, P.gold, "windows");
+  box(p, 0.68, 0.5, 0.64, 0.07, 0.14, 0.055, P.gold, "windows");
+  if (detail < 2) {
+    box(p, 0.48, 1.101, 0.635, 0.87, 0.22, 0.024, P.glass, "glass");
+    box(p, 0.924, 1.101, 0.403, 0.024, 0.22, 0.46, P.glass, "glass");
+    for (const x of [0.048, 0.48, 0.922])
+      box(p, x, 1.1, 0.647, 0.025, 0.275, 0.028, P.dark, "metal");
+    box(p, 0.49, 1.235, 0.649, 0.93, 0.03, 0.032, P.dark, "metal");
+    box(p, -0.74, 0.51, 0.32, 0.041, 0.63, 1.01, P.black);
+    for (let i = 0; i < 5; i += 1)
+      box(p, -0.772, 0.51, -0.065 + i * 0.18, 0.028, 0.57, 0.047, P.dark);
+    box(p, -0.78, 0.88, -0.02, 0.12, 0.95, 0.99, P.plaster);
+    parapet(p, 1.41, 1.46, 1.535, P.plaster);
+    box(p, -0.29, 1.585, -0.55, 0.39, 0.25, 0.32, P.paleStone);
+    box(p, -0.29, 1.73, -0.55, 0.46, 0.045, 0.39, P.dark);
+    if (detail === 0) {
+      for (let i = 0; i < 4; i += 1)
+        box(p, -0.41 + i * 0.08, 1.76, -0.55, 0.023, 0.023, 0.26, P.silver, "metal");
+      for (const x of [-0.12, 0.81]) box(p, x, 0.55, 0.7, 0.07, 0.17, 0.07, P.gold, "windows");
+    }
   }
 }
 
 function apartments(p: ModelParts, detail: number, level: number) {
-  const floors = detail === 2 ? 3 : 2 + level;
-  const h = floors * 0.46;
-  box(p, 0, 0.11, 0, 1.56, 0.22, 1.34, P.sand);
-  box(p, 0, h / 2 + 0.14, 0, 1.22, h, 1.04, P.plaster);
-  box(p, 0.19, h + 0.3, -0.13, 0.87, 0.31, 0.78, P.paleStone);
-  if (detail < 2)
-    for (let f = 0; f < floors; f += 1)
-      fourWindows(p, 0.34 + f * 0.44, 1.22, 1.04, detail === 0 ? 3 : 2, 0.23);
-  else fourWindows(p, h * 0.5, 1.22, 1.04, 2, h * 0.8);
-  for (let f = 1; detail === 0 && f < floors; f += 1) {
-    box(p, 0, 0.2 + f * 0.44, 0.57, 1.3, 0.06, 0.24, P.paleStone);
-    box(p, -0.59, 0.31 + f * 0.44, 0.67, 0.035, 0.22, 0.035, P.gulf, "metal");
-    box(p, 0.59, 0.31 + f * 0.44, 0.67, 0.035, 0.22, 0.035, P.gulf, "metal");
+  const floors = detail === 2 ? 3 : Math.min(4, level + 1);
+  const h = floors * 0.48;
+  const w = 1.44,
+    d = 1.14;
+  box(p, 0, 0.065, 0, 1.92, 0.13, 1.76, P.pavement);
+  box(p, 0, h / 2 + 0.16, -0.05, w, h, d, P.limestone);
+  for (const x of [-0.69, 0.69])
+    for (const z of [-0.56, 0.46]) box(p, x, h / 2 + 0.16, z, 0.14, h + 0.09, 0.14, P.plaster);
+  for (let f = 0; f < floors; f += 1) {
+    const y = 0.29 + f * 0.48;
+    box(p, 0, y, -0.05, 1.55, 0.075, 1.27, P.plaster);
+    if (detail < 2)
+      for (const x of [-0.36, 0.36]) {
+        box(p, x, y + 0.25, 0.537, 0.34, 0.28, 0.044, P.glass, "glass");
+        box(p, x, y + 0.09, 0.594, 0.49, 0.07, 0.19, P.plaster);
+        box(p, x, y + 0.215, 0.684, 0.46, 0.035, 0.032, P.white, "metal");
+        for (const dx of [-0.21, 0, 0.21])
+          box(p, x + dx, y + 0.148, 0.682, 0.027, 0.18, 0.031, P.white, "metal");
+        box(p, x, y + 0.25, 0.568, 0.025, 0.28, 0.026, P.white);
+      }
+    for (const z of [-0.32, 0.09]) {
+      box(p, 0.744, y + 0.24, z, 0.035, 0.22, 0.28, P.glass, "glass");
+      box(p, 0.769, y + 0.24, z, 0.03, 0.255, 0.32, P.plaster);
+      box(p, 0.793, y + 0.24, z, 0.021, 0.2, 0.25, P.glass, "glass");
+    }
   }
+  const roof = 0.17 + h;
+  parapet(p, 1.47, 1.23, roof + 0.13, P.plaster);
   if (detail === 0) {
-    parapet(p, 1.3, 1.12, h + 0.23);
-    box(p, 0, 0.38, 0.565, 0.25, 0.38, 0.07, P.gulf);
+    // The signature rooftop tank and mechanical dish distinguish a Kuwait apartment.
+    for (const x of [0.32, 0.58])
+      for (const z of [-0.39, -0.11])
+        box(p, x, roof + 0.13, z, 0.035, 0.25, 0.035, P.dark, "metal");
+    cyl(p, 0.45, roof + 0.39, -0.25, 0.32, 0.46, P.white, 0.28, 16);
+    cyl(p, 0.45, roof + 0.28, -0.25, 0.324, 0.07, P.paleStone, 0.324, 16);
+    cyl(p, -0.37, roof + 0.17, -0.23, 0.04, 0.3, P.dark, 0.04, 8);
+    const dish = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.32);
+    dish.scale(0.28, 0.1, 0.28);
+    dish.rotateX(-0.62);
+    dish.translate(-0.37, roof + 0.34, -0.23);
+    p.metal.push(color(dish, P.paleStone));
+    box(p, 0.49, roof + 0.12, 0.31, 0.35, 0.15, 0.22, P.pavement);
   }
 }
 
@@ -215,16 +359,35 @@ function shop(p: ModelParts, detail: number) {
 }
 
 function tower(p: ModelParts, detail: number, level: number) {
-  const h = detail === 2 ? 2.7 : 2.8 + level * 0.37;
-  box(p, 0, 0.18, 0, 1.48, 0.36, 1.4, P.limestone);
-  box(p, 0, h / 2 + 0.3, 0, 0.98, h, 0.88, P.glass, "glass");
-  box(p, -0.52, h / 2 + 0.3, 0, 0.14, h + 0.1, 0.97, P.gulf);
-  box(p, 0, h + 0.34, 0, 1.08, 0.14, 1, P.gold, "metal");
-  const count = detail === 0 ? 8 : detail === 1 ? 5 : 2;
-  for (let i = 0; i < count; i += 1)
-    fourWindows(p, 0.54 + (i / count) * (h - 0.16), 0.98, 0.88, detail === 0 ? 4 : 2, 0.1);
-  if (detail === 0)
-    for (const x of [-0.34, 0.34]) box(p, x, h / 2 + 0.3, 0.45, 0.035, h, 0.04, P.gold, "metal");
+  // Office reference: pale structural grid around blue windows, and a real
+  // mechanical roof. It should not read as another pointed dark teal tower.
+  const h = detail === 2 ? 2.65 : 2.45 + level * 0.27;
+  const w = 1.15,
+    d = 0.98,
+    y = h / 2 + 0.2;
+  box(p, 0, 0.11, 0, 1.84, 0.22, 1.57, P.pavement);
+  box(p, 0, y, -0.02, w, h, d, P.glass, "glass");
+  const floors = detail === 0 ? 7 : 4;
+  for (let f = 0; f <= floors; f += 1)
+    box(p, 0, 0.23 + (f * h) / floors, -0.02, 1.35, 0.065, 1.15, P.plaster);
+  for (const x of [-0.57, -0.18, 0.18, 0.57])
+    for (const z of [-0.49, 0.49]) box(p, x, y, z, 0.065, h, 0.064, P.plaster);
+  for (const z of [-0.29, 0, 0.29])
+    for (const x of [-0.61, 0.61]) box(p, x, y, z, 0.068, h, 0.065, P.plaster);
+  const roof = h + 0.2;
+  box(p, 0, roof + 0.05, 0, 1.43, 0.1, 1.24, P.plaster);
+  box(p, 0, roof + 0.111, 0, 1.22, 0.034, 1.03, P.asphalt);
+  parapet(p, 1.43, 1.24, roof + 0.18, P.limestone);
+  cyl(p, -0.26, roof + 0.135, -0.02, 0.34, 0.016, P.gold, 0.34, 24);
+  if (detail === 0) {
+    box(p, -0.26, roof + 0.151, -0.02, 0.052, 0.017, 0.27, P.white);
+    box(p, -0.205, roof + 0.151, -0.15, 0.16, 0.017, 0.042, P.white);
+    box(p, -0.205, roof + 0.151, 0.11, 0.16, 0.017, 0.042, P.white);
+    box(p, -0.134, roof + 0.151, -0.02, 0.042, 0.017, 0.25, P.white);
+    box(p, 0.39, roof + 0.19, -0.3, 0.31, 0.16, 0.23, P.dark);
+    for (const x of [-0.38, -0.16, 0.06])
+      cyl(p, x, roof + 0.23, 0.33, 0.055, 0.22, P.paleStone, 0.055, 8, "metal");
+  }
 }
 
 function power(p: ModelParts, detail: number) {
@@ -429,27 +592,126 @@ function palace(p: ModelParts, detail: number) {
   }
 }
 
+export interface BoubyanProfile {
+  radius: number;
+  depth: number;
+  x: number;
+  y: number;
+}
+export function boubyanProfile(t: number, angle = 0): BoubyanProfile {
+  const crown = Math.pow(Math.max(0, (t - 0.66) / 0.34), 1.4);
+  return {
+    radius: 0.63 - 0.14 * t,
+    depth: 0.47 - 0.1 * t,
+    x: Math.cos(angle) * (0.63 - 0.14 * t) - 0.04 + 0.18 * t,
+    y: 0.54 + 3.65 * t + 0.52 * crown * (0.5 - 0.5 * Math.cos(angle)),
+  };
+}
+
 function boubyan(p: ModelParts, detail: number) {
-  const shape = new THREE.Shape();
-  shape.moveTo(-0.63, 0);
-  shape.lineTo(0.63, 0);
-  shape.lineTo(0.07, 3.8);
-  shape.lineTo(-0.08, 3.8);
-  shape.closePath();
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.73, bevelEnabled: false });
-  geo.translate(0, 0.23, -0.365);
-  p.glass.push(color(geo, P.glass));
-  box(p, 0, 0.16, 0, 1.48, 0.32, 1.2, P.limestone);
-  box(p, -0.56, 1.02, 0, 0.13, 1.7, 0.86, P.gulf, "metal");
-  if (detail < 2) {
-    const n = detail === 0 ? 15 : 6;
-    for (let i = 0; i < n; i += 1) {
-      const y = 0.4 + i * (3.2 / n);
-      const edge = 0.63 - (y / 3.8) * 0.56;
-      for (let x = -edge + 0.12; x < edge - 0.06; x += 0.22) window(p, x, y, 0.389, 0.1, 0.055);
+  // Volumetric interpretation of the original curved Boubyan reference.
+  const segments = detail === 0 ? 32 : detail === 1 ? 20 : 12;
+  const levels = detail === 0 ? 12 : detail === 1 ? 7 : 3;
+  const point = (t: number, a: number) => {
+    const sample = boubyanProfile(t, a);
+    return new THREE.Vector3(sample.x, sample.y, Math.sin(a) * sample.depth);
+  };
+
+  const shell = (bucket: ModelBucket, tint: string) => {
+    const verts: THREE.Vector3[] = [],
+      indices: number[] = [];
+    for (let f = 0; f < levels; f += 1)
+      for (let i = 0; i < segments; i += 1) {
+        const a = (i * Math.PI * 2) / segments,
+          b = ((i + 1) * Math.PI * 2) / segments;
+        const n = verts.length;
+        verts.push(
+          point(f / levels, a),
+          point(f / levels, b),
+          point((f + 1) / levels, a),
+          point((f + 1) / levels, b),
+        );
+        indices.push(n, n + 2, n + 1, n + 1, n + 2, n + 3);
+      }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        verts.flatMap((v) => v.toArray()),
+        3,
+      ),
+    );
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    p[bucket].push(color(geo, tint));
+  };
+  const cap = (
+    capPoint: (a: number) => THREE.Vector3,
+    center: THREE.Vector3,
+    upward: boolean,
+    tint: string,
+  ) => {
+    const verts: number[] = [],
+      indices: number[] = [];
+    for (let i = 0; i < segments; i += 1) {
+      verts.push(
+        ...capPoint((i * Math.PI * 2) / segments).toArray(),
+        ...capPoint(((i + 1) * Math.PI * 2) / segments).toArray(),
+        ...center.toArray(),
+      );
+      indices.push(...(upward ? [i * 3, i * 3 + 2, i * 3 + 1] : [i * 3, i * 3 + 1, i * 3 + 2]));
     }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    p.metal.push(color(g, tint));
+  };
+  shell("glass", P.boubyanGlass);
+  const center = point(1, 0).add(point(1, Math.PI)).multiplyScalar(0.5);
+  cap((a) => point(1, a), center, true, P.silver);
+  cap((a) => point(0, a), new THREE.Vector3(-0.04, 0.54, 0), false, P.silver);
+  box(p, 0, 0.19, 0, 1.94, 0.38, 1.59, P.paleStone);
+  box(p, 0, 0.42, 0, 1.76, 0.14, 1.39, P.silver, "metal");
+  box(p, -0.2, 0.32, 0.817, 0.62, 0.17, 0.033, P.glass, "glass");
+  const fins = detail === 0 ? 28 : detail === 1 ? 16 : 8;
+  for (let i = 0; i < fins; i += 1) {
+    const a = (i * Math.PI * 2) / fins;
+    const offset = new THREE.Vector3(Math.cos(a) * 0.026, 0, Math.sin(a) * 0.026);
+    const bottom = point(0, a).add(offset),
+      top = point(1, a).add(offset);
+    const mid = bottom.clone().lerp(top, 0.5);
+    const g = new THREE.BoxGeometry(0.023, top.distanceTo(bottom), 0.036);
+    g.applyQuaternion(
+      new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        top.clone().sub(bottom).normalize(),
+      ),
+    );
+    g.translate(mid.x, mid.y, mid.z);
+    p.metal.push(color(g, P.silver));
   }
-  box(p, 0.01, 4.05, 0, 0.035, 0.38, 0.035, P.gold, "metal");
+  for (const t of [0.54, 0.88]) {
+    const g = new THREE.BoxGeometry(0.045, 0.05, 0.045);
+    for (let i = 0; i < segments; i++) {
+      const at = point(t, (i * Math.PI * 2) / segments);
+      const band = g.clone();
+      band.translate(at.x, at.y, at.z);
+      p.metal.push(color(band, P.dark));
+    }
+    g.dispose();
+  }
+  if (detail < 2) {
+    const front = point(0.94, Math.PI * 0.5);
+    for (const x of [-0.065, 0.065]) {
+      const arc = new THREE.TorusGeometry(0.065, 0.021, 4, 10, Math.PI * 1.28);
+      arc.rotateZ(x > 0 ? 0.7 : -2.0);
+      arc.translate(front.x + x, front.y - 0.17, front.z + 0.073);
+      p.opaque.push(color(arc, P.red));
+    }
+    box(p, front.x, front.y - 0.3, front.z + 0.073, 0.27, 0.024, 0.018, P.white);
+    for (const x of [-0.54, -0.2, 0.24, 0.56]) box(p, x, 0.49, -0.34, 0.19, 0.12, 0.22, P.dark);
+  }
 }
 
 const cache = new Map<string, BuildingModel>();
@@ -511,6 +773,12 @@ export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): Bui
       mergeGeometries(list.length ? list : [new THREE.BoxGeometry(0, 0, 0)], false) ??
       new THREE.BoxGeometry(0, 0, 0);
     for (const item of list) item.dispose();
+    // A few legacy open decorative prisms are non-indexed. Normalize indices
+    // when the merged model is created, including their empty-bucket sentinel.
+    const index: number[] = [];
+    const count = geo.attributes.position?.count ?? 0;
+    for (let i = 0; i < count; i += 1) index.push(i);
+    if (!geo.index && count % 3 === 0) geo.setIndex(index);
     geo.computeBoundingSphere();
     return geo;
   };

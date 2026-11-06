@@ -109,12 +109,12 @@ export function createTerrain() {
   return { group, material };
 }
 
-export function createGrid() {
+export function createGrid(avoid: ReadonlySet<string> = new Set()) {
   const vertices: number[] = [];
   const half = CELL_SIZE / 2;
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
-      if (!LAND[r]![c]) continue;
+      if (!LAND[r]![c] || avoid.has(`${c},${r}`)) continue;
       const { x, z } = cellWorld(c, r);
       vertices.push(
         x - half,
@@ -155,53 +155,47 @@ export function createGrid() {
   const material = new THREE.LineBasicMaterial({ color: P.dark, transparent: true, opacity: 0.17 });
   return new THREE.LineSegments(geometry, material);
 }
-
 export function createRoads(roadKeys: string[]) {
   const asphalt: THREE.BufferGeometry[] = [];
-  const details: THREE.BufferGeometry[] = [];
   const lights: THREE.BufferGeometry[] = [];
   const roads = new Set(roadKeys);
   for (const key of roadKeys) {
     const [c, r] = key.split(",").map(Number);
     const { x, z } = cellWorld(c!, r!);
-    const e = roads.has(`${c + 1},${r}`);
-    const w = roads.has(`${c - 1},${r}`);
-    const n = roads.has(`${c},${r - 1}`);
-    const s = roads.has(`${c},${r + 1}`);
-    const width = CELL_SIZE * 0.46;
-    const span = CELL_SIZE * 0.51;
-    box(details, x, LAND_HEIGHT + 0.02, z, CELL_SIZE * 0.99, 0.04, CELL_SIZE * 0.99, P.pavement);
-    box(
-      asphalt,
-      x,
-      LAND_HEIGHT + 0.049,
-      z,
-      e || w ? span : width,
-      0.045,
-      n || s || !(e || w) ? span : width,
-      P.asphalt,
-    );
-    const mark = (xx: number, zz: number, dx: number, dz: number) =>
-      box(details, xx, LAND_HEIGHT + 0.075, zz, dx, 0.014, dz, P.white);
-    if (e || (!w && !n && !s)) {
-      mark(x + CELL_SIZE * 0.18, z, 0.27, 0.038);
-      if (e) mark(x + CELL_SIZE * 0.52, z, 0.24, 0.038);
-    }
-    if (w) mark(x - CELL_SIZE * 0.36, z, 0.24, 0.038);
-    if (s || (!n && !e && !w)) {
-      mark(x, z + CELL_SIZE * 0.18, 0.038, 0.27);
-      if (s) mark(x, z + CELL_SIZE * 0.52, 0.038, 0.24);
-    }
-    if (n) mark(x, z - CELL_SIZE * 0.36, 0.038, 0.24);
-    if ((c! + r!) % 4 === 0 && (e || w || n || s)) {
-      const lx = x + (e || w ? 0 : width * 0.75);
-      const lz = z + (e || w ? -width * 0.72 : 0);
-      box(details, lx, LAND_HEIGHT + 0.47, lz, 0.045, 0.83, 0.045, P.dark);
-      box(details, lx, LAND_HEIGHT + 0.9, lz, 0.19, 0.055, 0.18, P.dark);
-      box(lights, lx, LAND_HEIGHT + 0.87, lz, 0.14, 0.032, 0.12, P.gold);
+    // Continuous plain asphalt: no pale paving surround, no border markings.
+    box(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
+    const horizontal = roads.has(`${c + 1},${r}`) || roads.has(`${c - 1},${r}`);
+    const vertical = roads.has(`${c},${r - 1}`) || roads.has(`${c},${r + 1}`);
+    if ((c! + r!) % 4 === 0 && (horizontal || vertical)) {
+      const lx = x + (horizontal ? 0 : CELL_SIZE * 0.405);
+      const lz = z + (horizontal ? -CELL_SIZE * 0.45 : 0);
+      box(asphalt, lx, LAND_HEIGHT + 0.463, lz, 0.042, 0.9, 0.042, P.dark);
+      const armX = lx + (horizontal ? 0 : -0.08);
+      const armZ = lz + (horizontal ? 0.08 : 0);
+      box(
+        asphalt,
+        armX,
+        LAND_HEIGHT + 0.89,
+        armZ,
+        horizontal ? 0.045 : 0.21,
+        0.05,
+        horizontal ? 0.21 : 0.045,
+        P.dark,
+      );
+      box(
+        lights,
+        armX,
+        LAND_HEIGHT + 0.865,
+        armZ,
+        horizontal ? 0.07 : 0.14,
+        0.026,
+        horizontal ? 0.14 : 0.07,
+        P.gold,
+      );
     }
   }
-  return { asphalt: merge(asphalt), details: merge(details), lights: merge(lights) };
+  const details = new THREE.BoxGeometry(0, 0, 0);
+  return { asphalt: merge(asphalt), details, lights: merge(lights) };
 }
 
 export function palmGeometry() {

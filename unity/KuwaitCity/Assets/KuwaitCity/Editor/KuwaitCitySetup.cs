@@ -43,7 +43,12 @@ namespace KuwaitCity.Editor
                 palette.name="GulfPalette";CityPaletteFactory.Populate(palette);
                 AssetDatabase.CreateAsset(palette,Root+"/Resources/GulfPalette.asset");
             }
-            foreach(var material in new[]{palette.limestone,palette.pale,palette.land,palette.sand,palette.asphalt,palette.glass,palette.water,palette.dark,palette.teal,palette.gold,palette.leaf,palette.windows,palette.roadMark})
+            // A pre-existing palette was serialized before wood and aluminum
+            // existed. Populate referenced slots too instead of leaving nulls.
+            if(palette.wood==null)palette.wood=CityPalette.NewLit("Carved Kuwaiti wood",new Color(.27f,.17f,.10f));
+            if(palette.silver==null)palette.silver=CityPalette.NewLit("Pearl aluminum Boubyan fins",new Color(.66f,.71f,.74f),false,.72f);
+            if(palette.asphalt!=null)palette.asphalt.color=new Color(.157f,.193f,.216f);
+            foreach(var material in new[]{palette.limestone,palette.pale,palette.land,palette.sand,palette.asphalt,palette.glass,palette.water,palette.dark,palette.teal,palette.gold,palette.leaf,palette.windows,palette.roadMark,palette.wood,palette.silver})
             {
                 if(material==null)continue;
                 var path=Root+"/Resources/Materials/"+material.name+".mat";

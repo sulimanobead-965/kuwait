@@ -497,6 +497,11 @@ export class CityWorld {
     const roadSignature = sim.roads.join("|");
     if (roadSignature !== this.roadSignature) {
       this.roadSignature = roadSignature;
+      this.scene.remove(this.grid);
+      this.grid.geometry.dispose();
+      this.grid.material.dispose();
+      this.grid = createGrid(new Set(sim.roads));
+      this.scene.add(this.grid);
       for (const item of [this.roadMesh, this.roadDetail, this.roadLights]) {
         if (item) {
           this.scene.remove(item);

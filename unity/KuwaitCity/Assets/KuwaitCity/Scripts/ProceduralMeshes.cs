@@ -25,6 +25,31 @@ namespace KuwaitCity
             int index=vertices.Count;vertices.Add(a);vertices.Add(b);vertices.Add(c);vertices.Add(d);
             triangles.AddRange(new[]{index,index+1,index+2,index,index+2,index+3});
         }
+        /** Closed, sloping ellipse used for the Boubyan profile; indexed and volumetric. */
+        public static Mesh BoubyanTower(float height,int sides,int floorCount,out Vector3 baseCenter,out Vector3 crownCenter)
+        {
+            var vertices=new List<Vector3>();var triangles=new List<int>();baseCenter=new Vector3(-.04f,.54f,0);crownCenter=(Point(1,0)+Point(1,Mathf.PI))*.5f;
+            Vector3 Point(float t,float angle)
+            {
+                float crown=Mathf.Pow(Mathf.Max(0,(t-.66f)/.34f),1.4f);
+                return new Vector3(Mathf.Cos(angle)*(.63f-.14f*t)-.04f+.18f*t,
+                    .54f+height*t+.52f*crown*(.5f-.5f*Mathf.Cos(angle)),Mathf.Sin(angle)*(.47f-.1f*t));
+            }
+            for(int floor=0;floor<floorCount;floor++)for(int side=0;side<sides;side++)
+            {
+                float a=side*Mathf.PI*2/sides,b=(side+1)*Mathf.PI*2/sides;
+                AddFace(vertices,triangles,Point(floor/(float)floorCount,b),Point(floor/(float)floorCount,a),Point((floor+1)/(float)floorCount,a),Point((floor+1)/(float)floorCount,b));
+                if(floor==0){int n=vertices.Count;vertices.Add(baseCenter);vertices.Add(Point(0,a));vertices.Add(Point(0,b));triangles.AddRange(new[]{n,n+1,n+2});}
+                if(floor==floorCount-1){int n=vertices.Count;vertices.Add(crownCenter);vertices.Add(Point(1,b));vertices.Add(Point(1,a));triangles.AddRange(new[]{n,n+1,n+2});}
+            }
+            return Finish("Boubyan curved glazed shell",vertices,triangles);
+        }
+        public static Vector3 BoubyanPoint(float t,float angle,float height)
+        {
+            float crown=Mathf.Pow(Mathf.Max(0,(t-.66f)/.34f),1.4f);
+            return new Vector3(Mathf.Cos(angle)*(.63f-.14f*t)-.04f+.18f*t,
+                .54f+height*t+.52f*crown*(.5f-.5f*Mathf.Cos(angle)),Mathf.Sin(angle)*(.47f-.1f*t));
+        }
         public static Mesh Cylinder(float radius,float height,int sides,float topRatio=1f)
         {
             var vertices=new List<Vector3>();var triangles=new List<int>();

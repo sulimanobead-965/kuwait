@@ -70,20 +70,26 @@ namespace KuwaitCity
             }
             roadRoot=new GameObject("Merged road network").transform;roadRoot.SetParent(transform,false);
 
-            var asphalt=new List<CombineInstance>();var paving=new List<CombineInstance>();var stripes=new List<CombineInstance>();
+            var asphalt=new List<CombineInstance>();
             foreach(var cell in roads)
             {
                 if(!CityLand.TryCell(cell,out var c,out var r))continue;
                 var at=CityLand.World(c,r);
-                var east=roads.Contains(CityLand.Key(c+1,r));var west=roads.Contains(CityLand.Key(c-1,r));
-                var north=roads.Contains(CityLand.Key(c,r-1));var south=roads.Contains(CityLand.Key(c,r+1));
-                Box(paving,at+new Vector3(0,.01f,0),new Vector3(CityLand.CellSize,.055f,CityLand.CellSize));
-                Box(asphalt,at+new Vector3(0,.05f,0),new Vector3(east||west?CityLand.CellSize:.99f,.07f,north||south||!(east||west)?CityLand.CellSize:.99f));
-                if(east||west||(!north&&!south)){Box(stripes,at+new Vector3(.53f,.09f,0),new Vector3(.30f,.012f,.04f));Box(stripes,at+new Vector3(-.53f,.09f,0),new Vector3(.30f,.012f,.04f));}
-                if(north||south){Box(stripes,at+new Vector3(0,.09f,.53f),new Vector3(.04f,.012f,.35f));Box(stripes,at+new Vector3(0,.09f,-.53f),new Vector3(.04f,.012f,.35f));}
+                // Uninterrupted charcoal asphalt, with neither a pale paving
+                // underlay nor a bright border around each individual tile.
+                Box(asphalt,at+new Vector3(0,.306f,0),new Vector3(CityLand.CellSize,.016f,CityLand.CellSize));
+                bool horizontal=roads.Contains(CityLand.Key(c+1,r))||roads.Contains(CityLand.Key(c-1,r));
+                bool vertical=roads.Contains(CityLand.Key(c,r-1))||roads.Contains(CityLand.Key(c,r+1));
+                if((c+r)%4==0&&(horizontal||vertical))
+                {
+                    var lamp=at+(horizontal?new Vector3(0,.76f,-.99f):new Vector3(.89f,.76f,0));
+                    Box(asphalt,lamp,new Vector3(.045f,.90f,.045f));
+                    var cap=lamp+(horizontal?new Vector3(0,.43f,.08f):new Vector3(-.08f,.43f,0));
+                    Box(asphalt,cap,horizontal?new Vector3(.045f,.05f,.21f):new Vector3(.21f,.05f,.045f));
+                }
                 if((c*7+r*13)%6==0)if(palmBatch!=null)palmBatch.Add(at+new Vector3(.79f,.02f,.77f),Quaternion.identity,Vector3.one);
             }
-            Merge("Roads / asphalt",palette.asphalt,asphalt,roadRoot);Merge("Roads / paving",palette.sand,paving,roadRoot);Merge("Roads / markings",palette.roadMark,stripes,roadRoot);
+            Merge("Roads / asphalt",palette.asphalt,asphalt,roadRoot);
             if(vehicleBatch!=null)
             {
                 vehicleBatch.Clear();int i=0;
@@ -91,7 +97,7 @@ namespace KuwaitCity
                 {
                     bool horizontal=roads.Contains(CityLand.Key(c+1,r))||roads.Contains(CityLand.Key(c-1,r));
                     var axis=horizontal?Vector3.right:Vector3.forward;
-                    vehicleBatch.Add(CityLand.World(c,r)+new Vector3(0,.13f,-.17f),horizontal?Quaternion.Euler(0,90,0):Quaternion.identity,new Vector3(.31f,.18f,.65f));
+                    vehicleBatch.Add(CityLand.World(c,r)+new Vector3(0,.39f,-.17f),horizontal?Quaternion.Euler(0,90,0):Quaternion.identity,new Vector3(.31f,.18f,.65f));
                     vehicleBatch.SetAxis(vehicleBatch.Count-1,axis);
                 }}
             }
