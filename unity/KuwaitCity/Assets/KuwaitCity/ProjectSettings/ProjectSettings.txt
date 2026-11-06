@@ -1,0 +1,14 @@
+PlayerSettings:
+  companyName: Omdat Kuwait
+  productName: عمدة الكويت
+  defaultScreenOrientation: AutoRotation
+  autorotateToPortrait: 1
+  autorotateToPortraitUpsideDown: 0
+  autorotateToLandscapeRight: 1
+  autorotateToLandscapeLeft: 1
+  activeInputHandler: 2
+  colorSpace: Linear
+  gpuSkinning: 0
+
+# Asset Store assets are not used. Select the installed 6000.3.x editor locally.
+# Mobile batching/profiling is performed in the Editor, not an untested claim in this file.

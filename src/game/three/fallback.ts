@@ -1,0 +1,270 @@
+import type { Cell } from "./camera";
+import { cellWorld, worldCell } from "./camera";
+import { COLS, LAND, ROWS } from "@/game/land";
+import type { Sim } from "@/game/sim";
+import type { HudTool } from "@/components/city-hud";
+import type { DayMode } from "./day-night";
+import type { WorldCallbacks, WorldDiagnostics } from "./renderer";
+
+/** Accessibility/compatibility path only. No sprite images; the main view is true WebGL meshes. */
+export class FallbackCityWorld {
+  private ctx: CanvasRenderingContext2D | null;
+  private viewHeight = 65;
+  private viewHeightGoal = 65;
+  private target = { x: 6, z: 8 };
+  private tool: HudTool = null;
+  private zoneBox: { c0: number; r0: number; c1: number; r1: number } | null = null;
+  private sim: Sim | null = null;
+  private mode: DayMode = "auto";
+  private pointers = new Map<number, { x: number; y: number }>();
+  private drag: {
+    x: number;
+    y: number;
+    moved: number;
+    road: boolean;
+    zone: boolean;
+    start?: Cell;
+  } | null = null;
+  private width = 1;
+  private height = 1;
+  private observer: ResizeObserver;
+  private info: WorldDiagnostics = {
+    renderer: "unavailable",
+    orthographic: true,
+    pitch: 32.5,
+    yaw: 45,
+    buildings: 0,
+    roads: 0,
+    drawCalls: 0,
+    triangles: 0,
+    lodLevels: 0,
+    instancedPalms: 0,
+    instancedCars: 0,
+    dayMode: "auto",
+    night: 0,
+    lodDistribution: {},
+  };
+
+  constructor(
+    private canvas: HTMLCanvasElement,
+    private callbacks: WorldCallbacks,
+    private unlockAudio: () => void,
+  ) {
+    this.ctx = canvas.getContext("2d");
+    canvas.addEventListener("pointerdown", this.unlockAudio, { passive: true });
+    canvas.dataset.ready = "1";
+    canvas.dataset.renderer = "fallback";
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(canvas);
+    this.resize();
+    canvas.addEventListener("pointerdown", this.onDown);
+    canvas.addEventListener("pointermove", this.onMove);
+    canvas.addEventListener("pointerup", this.onUp);
+    canvas.addEventListener("pointercancel", this.onUp);
+    canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    canvas.style.touchAction = "none";
+  }
+
+  diagnostics() {
+    return this.info;
+  }
+  setTool(tool: HudTool) {
+    this.tool = tool;
+  }
+  setDayMode(mode: DayMode) {
+    this.mode = mode;
+    this.info.dayMode = mode;
+  }
+  setZone(box: typeof this.zoneBox) {
+    this.zoneBox = box;
+  }
+  zoom(factor: number) {
+    this.viewHeightGoal = Math.max(15, Math.min(92, this.viewHeightGoal / factor));
+  }
+
+  private resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    this.width = Math.max(1, rect.width);
+    this.height = Math.max(1, rect.height);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.canvas.width = Math.round(this.width * dpr);
+    this.canvas.height = Math.round(this.height * dpr);
+    this.ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  private project(x: number, z: number) {
+    const scale = this.height / this.viewHeight;
+    return {
+      x: this.width / 2 + (x - this.target.x - (z - this.target.z)) * Math.SQRT1_2 * scale,
+      y: this.height / 2 + (x - this.target.x + (z - this.target.z)) * 0.268 * scale,
+    };
+  }
+
+  private at(e: PointerEvent): Cell {
+    const rect = this.canvas.getBoundingClientRect();
+    const scale = this.height / this.viewHeight;
+    const px = (e.clientX - rect.left - this.width / 2) / (Math.SQRT1_2 * scale);
+    const py = (e.clientY - rect.top - this.height / 2) / (0.268 * scale);
+    return worldCell(this.target.x + (px + py) / 2, this.target.z + (py - px) / 2);
+  }
+
+  private onDown = (e: PointerEvent) => {
+    this.canvas.setPointerCapture(e.pointerId);
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pointers.size > 1) {
+      this.drag = null;
+      return;
+    }
+    this.callbacks.strokeEnd();
+    const rect = this.canvas.getBoundingClientRect();
+    const road = Boolean(this.sim?.started && this.tool?.kind === "road");
+    const zone = Boolean(this.sim?.started && this.tool?.kind === "zone");
+    this.drag = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      moved: 0,
+      road,
+      zone,
+      start: zone ? this.at(e) : undefined,
+    };
+    if (road) this.callbacks.cell(this.at(e));
+  };
+
+  private onMove = (e: PointerEvent) => {
+    if (this.pointers.has(e.pointerId))
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      this.viewHeightGoal = Math.max(
+        15,
+        Math.min(92, (this.viewHeight * 170) / Math.max(30, Math.hypot(a!.x - b!.x, a!.y - b!.y))),
+      );
+      return;
+    }
+    if (!this.drag) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left,
+      y = e.clientY - rect.top;
+    const dx = x - this.drag.x,
+      dy = y - this.drag.y;
+    this.drag.x = x;
+    this.drag.y = y;
+    this.drag.moved += Math.hypot(dx, dy);
+    if (this.drag.road) {
+      this.callbacks.cell(this.at(e));
+      return;
+    }
+    if (this.drag.zone) {
+      this.callbacks.zone(this.drag.start ? range(this.drag.start, this.at(e)) : null);
+      return;
+    }
+    if (this.drag.moved < 3) return;
+    const scale = this.height / this.viewHeight;
+    const px = -dx / (Math.SQRT1_2 * scale),
+      py = -dy / (0.268 * scale);
+    this.target.x += (px + py) / 2;
+    this.target.z += (py - px) / 2;
+  };
+
+  private onUp = (e: PointerEvent) => {
+    const drag = this.drag;
+    this.pointers.delete(e.pointerId);
+    if (!drag || this.pointers.size > 0) return;
+    this.drag = null;
+    if (drag.zone && drag.start) {
+      const end = this.at(e);
+      this.callbacks.zone(
+        Math.abs(end.c - drag.start.c) < 3 || Math.abs(end.r - drag.start.r) < 3
+          ? null
+          : range(drag.start, end),
+      );
+    } else if (!drag.road && drag.moved < 14) this.callbacks.cell(this.at(e));
+    this.callbacks.strokeEnd();
+  };
+  private onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    this.zoom(e.deltaY > 0 ? 1.13 : 0.86);
+  };
+
+  sync(sim: Sim) {
+    this.sim = sim;
+    this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.info.buildings = sim.buildings.length;
+    this.info.roads = sim.roads.length;
+    this.info.night = this.mode === "night" ? 1 : 0;
+    ctx.setTransform(this.canvas.width / this.width, 0, 0, this.canvas.height / this.height, 0, 0);
+    ctx.fillStyle = this.mode === "night" ? "#15354c" : "#217f87";
+    ctx.fillRect(0, 0, this.width, this.height);
+    for (let r = 0; r < ROWS; r += 1)
+      for (let c = 0; c < COLS; c += 1) {
+        if (!LAND[r]![c]) continue;
+        const at = cellWorld(c, r);
+        const p = this.project(at.x, at.z);
+        const size = (this.height / this.viewHeight) * 1.56;
+        const height = size * 0.538;
+        ctx.fillStyle = sim.roads.includes(`${c},${r}`) ? "#35434a" : "#d1bd93";
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - height / 2);
+        ctx.lineTo(p.x + size / 2, p.y);
+        ctx.lineTo(p.x, p.y + height / 2);
+        ctx.lineTo(p.x - size / 2, p.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    for (const b of [...sim.buildings].sort((a, z) => a.c + a.r - z.c - z.r)) {
+      const p = this.project(cellWorld(b.c, b.r).x, cellWorld(b.c, b.r).z);
+      const scale = this.height / this.viewHeight;
+      const width = ["kuwait", "mosque", "palace"].includes(b.kind) ? 15 * scale : 12 * scale;
+      const h = ["kuwait", "liberation", "boubyan", "tower"].includes(b.kind)
+        ? 32 * scale
+        : 15 * scale;
+      if (b.kind === "park") {
+        ctx.fillStyle = "#477e60";
+        ctx.fillRect(p.x - width / 2, p.y - 3, width, 5);
+        continue;
+      }
+      ctx.fillStyle = "#eadbbd";
+      ctx.fillRect(p.x - width / 2, p.y - h, width, h);
+      ctx.fillStyle = "#796c55";
+      ctx.beginPath();
+      ctx.moveTo(p.x + width / 2, p.y - h);
+      ctx.lineTo(p.x + width / 2 + 5 * scale, p.y - h - 3 * scale);
+      ctx.lineTo(p.x + width / 2 + 5 * scale, p.y - 3 * scale);
+      ctx.lineTo(p.x + width / 2, p.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#147c82";
+      ctx.fillRect(p.x - width / 2, p.y - h, width, 3 * scale);
+      ctx.fillStyle = this.mode === "night" ? "#ffe192" : "#345c65";
+      for (let i = 0; i < 3; i += 1)
+        ctx.fillRect(
+          p.x - width * 0.32 + i * width * 0.27,
+          p.y - h * 0.7,
+          Math.max(1, scale * 2),
+          Math.max(1, scale * 3),
+        );
+      if (b.stored >= 1) {
+        ctx.fillStyle = "#e1bb65";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - h - 9, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  dispose() {
+    this.observer.disconnect();
+    this.canvas.removeEventListener("pointerdown", this.unlockAudio);
+    this.canvas.removeEventListener("pointerdown", this.onDown);
+    this.canvas.removeEventListener("pointermove", this.onMove);
+    this.canvas.removeEventListener("pointerup", this.onUp);
+    this.canvas.removeEventListener("pointercancel", this.onUp);
+    this.canvas.removeEventListener("wheel", this.onWheel);
+  }
+}
+
+function range(start: Cell, end: Cell) {
+  return { c0: start.c, r0: start.r, c1: end.c, r1: end.r };
+}

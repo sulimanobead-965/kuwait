@@ -21,14 +21,9 @@ import {
   Zap,
   ZapOff,
   RotateCcw,
+  SunMoon,
 } from "lucide-react";
-import {
-  CATALOG,
-  kindsIn,
-  ROAD_COST,
-  type Category,
-  type Kind,
-} from "@/game/catalog";
+import { CATALOG, kindsIn, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
   bulletin,
   demand,
@@ -49,6 +44,7 @@ import {
   type Sim,
   type ZonePick,
 } from "@/game/sim";
+import type { DayMode } from "@/game/three/day-night";
 
 export type HudTool =
   | { kind: "road" }
@@ -117,6 +113,8 @@ export function CityHud({
   onReset,
   onCancelReset,
   onZoom,
+  onDayMode,
+  dayMode,
   zone,
   onZoneApply,
   onZoneCancel,
@@ -147,6 +145,8 @@ export function CityHud({
   onReset: () => void;
   onCancelReset: () => void;
   onZoom: (factor: number) => void;
+  onDayMode: (mode: DayMode) => void;
+  dayMode: DayMode;
   zone: { c0: number; r0: number; c1: number; r1: number } | null;
   onZoneApply: (pick: ZonePick) => void;
   onZoneCancel: () => void;
@@ -181,52 +181,72 @@ export function CityHud({
     setTray(true);
   }
 
-  const cards =
-    cat === "commerce" || cat === "housing" ? kindsIn(cat) : tray ? kindsIn(cat) : [];
+  const cards = cat === "commerce" || cat === "housing" ? kindsIn(cat) : tray ? kindsIn(cat) : [];
 
   return (
     <>
       <div className="pointer-events-none absolute inset-0 z-10">
         {snap.started && (
-        <div className="safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
-          <Round
-            label="سكن وتجارة"
-            on={tray && (cat === "housing" || cat === "commerce")}
-            onClick={() => openCat("housing")}
-          >
-            <LayoutGrid size={18} />
-          </Round>
-          <Round label="طرق" on={tool?.kind === "road"} onClick={onRoad}>
-            <Route size={18} />
-          </Round>
-          <Round label="تنظيم منطقة" on={tool?.kind === "zone" || zone !== null} onClick={onZone}>
-            <Grid2x2 size={18} />
-          </Round>
-          <Round
-            label="كهرباء وماء وخدمات"
-            on={tray && cat === "services"}
-            onClick={() => openCat("services")}
-          >
-            <Zap size={18} />
-          </Round>
-          <Round label="معالم" on={tray && cat === "landmarks"} onClick={() => openCat("landmarks")}>
-            <Landmark size={18} />
-          </Round>
-          <Round label="هدم" on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
-            <Trash2 size={18} />
-          </Round>
-          <Rci r={dem.r} c={dem.c} i={dem.i} />
-        </div>
+          <div className="safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
+            <Round
+              label="سكن وتجارة"
+              on={tray && (cat === "housing" || cat === "commerce")}
+              onClick={() => openCat("housing")}
+            >
+              <LayoutGrid size={18} />
+            </Round>
+            <Round label="طرق" on={tool?.kind === "road"} onClick={onRoad}>
+              <Route size={18} />
+            </Round>
+            <Round label="تنظيم منطقة" on={tool?.kind === "zone" || zone !== null} onClick={onZone}>
+              <Grid2x2 size={18} />
+            </Round>
+            <Round
+              label="كهرباء وماء وخدمات"
+              on={tray && cat === "services"}
+              onClick={() => openCat("services")}
+            >
+              <Zap size={18} />
+            </Round>
+            <Round
+              label="معالم"
+              on={tray && cat === "landmarks"}
+              onClick={() => openCat("landmarks")}
+            >
+              <Landmark size={18} />
+            </Round>
+            <Round label="هدم" on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
+              <Trash2 size={18} />
+            </Round>
+            <Rci r={dem.r} c={dem.c} i={dem.i} />
+          </div>
         )}
         {snap.started && (
-        <div className="pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
-          <Round label="تقريب" onClick={() => onZoom(1.28)}>
-            <Plus size={18} />
-          </Round>
-          <Round label="تبعيد" onClick={() => onZoom(1 / 1.28)}>
-            <Minus size={18} />
-          </Round>
-        </div>
+          <div className="pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
+            <Round label="تقريب" onClick={() => onZoom(1.28)}>
+              <Plus size={18} />
+            </Round>
+            <Round label="تبعيد" onClick={() => onZoom(1 / 1.28)}>
+              <Minus size={18} />
+            </Round>
+            <Round
+              label={`الإضاءة: ${dayMode === "auto" ? "تلقائية" : dayMode === "day" ? "نهار" : "ليل"}`}
+              testid="day-mode"
+              on={dayMode === "night"}
+              onClick={() =>
+                onDayMode(dayMode === "auto" ? "day" : dayMode === "day" ? "night" : "auto")
+              }
+            >
+              <SunMoon size={18} />
+            </Round>
+            <span className="view-3d-badge" dir="rtl">
+              {dayMode === "night"
+                ? "ليل المدينة"
+                : dayMode === "day"
+                  ? "نهار المدينة"
+                  : "دورة النهار والليل"}
+            </span>
+          </div>
         )}
       </div>
 
@@ -239,13 +259,16 @@ export function CityHud({
               </p>
             ))}
           </div>
-          {zone && (
-            <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />
-          )}
+          {zone && <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />}
           {panel && snap.started && (
             <section className="sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md">
               <div className="sc-title m-2">
-                <button type="button" className="sc-x" aria-label="إغلاق" onClick={() => setPanel(null)}>
+                <button
+                  type="button"
+                  className="sc-x"
+                  aria-label="إغلاق"
+                  onClick={() => setPanel(null)}
+                >
                   <X size={18} />
                 </button>
                 <h2 className="flex-1 text-center text-base">
@@ -270,9 +293,7 @@ export function CityHud({
                     }
                   />
                 )}
-                {panel === "budget" && (
-                  <Budget snap={snap} onTax={onTax} />
-                )}
+                {panel === "budget" && <Budget snap={snap} onTax={onTax} />}
                 {panel === "laws" && (
                   <ul className="space-y-2">
                     {LAWS.map((law) => {
@@ -290,7 +311,9 @@ export function CityHud({
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className="block text-sm">{law.title}</span>
-                              <span className="block text-xs font-medium opacity-80">{law.detail}</span>
+                              <span className="block text-xs font-medium opacity-80">
+                                {law.detail}
+                              </span>
                             </span>
                           </button>
                         </li>
@@ -307,7 +330,10 @@ export function CityHud({
           )}
           {!snap.started && (
             <div className="absolute inset-x-0 bottom-0">
-              <div className="sc-panel pointer-events-auto safe-bottom mx-2 rounded-t-xl px-4 pt-5" dir="rtl">
+              <div
+                className="sc-panel pointer-events-auto safe-bottom mx-2 rounded-t-xl px-4 pt-5"
+                dir="rtl"
+              >
                 <p className="text-sm font-bold text-sc-leaf">خريطة مدينة الكويت</p>
                 <h2 className="mt-1 text-3xl font-extrabold leading-tight">عمدة الكويت</h2>
                 <p className="mt-2 text-base leading-relaxed">
@@ -341,14 +367,20 @@ export function CityHud({
             )}
             {selected && (
               <div className="mx-2 mt-2 flex items-center gap-2 rounded-md bg-sc-mint px-2 py-1 text-sc-ink">
-                <img src={`/game/${selected.kind}.png`} alt="" className="h-12 w-12 object-contain" />
+                <img
+                  src={`/game/${selected.kind}.png`}
+                  alt=""
+                  className="h-12 w-12 object-contain"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-extrabold">
                     {CATALOG[selected.kind].name} · مستوى {selected.level}
                   </p>
                   <p className="text-xs">
                     {incomePerSec(selected, snap).toFixed(1)} د.ك/ث
-                    {coastal(selected.c, selected.r) && CATALOG[selected.kind].coastBoost ? " · كورنيش" : ""}
+                    {coastal(selected.c, selected.r) && CATALOG[selected.kind].coastBoost
+                      ? " · كورنيش"
+                      : ""}
                   </p>
                   {blockReason(selected, snap) && (
                     <p className="text-xs text-coral">{blockReason(selected, snap)}</p>
@@ -406,8 +438,14 @@ export function CityHud({
                           on ? "sc-on border-sc-ink" : "border-sc-ink bg-sc-mint text-sc-ink"
                         } ${poor ? "opacity-50" : ""}`}
                       >
-                        <img src={`/game/${def.kind}.png`} alt="" className="h-12 w-full object-contain" />
-                        <span className="mt-1 w-full truncate text-center text-xs font-extrabold">{def.name}</span>
+                        <img
+                          src={`/game/${def.kind}.png`}
+                          alt=""
+                          className="h-12 w-full object-contain"
+                        />
+                        <span className="mt-1 w-full truncate text-center text-xs font-extrabold">
+                          {def.name}
+                        </span>
                         <span className="text-xs">{price === 0 ? "مجاني" : fmt(price)}</span>
                       </button>
                     );
@@ -422,7 +460,9 @@ export function CityHud({
               </p>
             )}
             {tool?.kind === "bulldoze" && (
-              <p className="px-3 pt-2 text-xs font-bold text-sc-gold">اضغط مبنى أو طريق. يرجع لك نصف التكلفة.</p>
+              <p className="px-3 pt-2 text-xs font-bold text-sc-gold">
+                اضغط مبنى أو طريق. يرجع لك نصف التكلفة.
+              </p>
             )}
             <div className="flex gap-1.5 overflow-x-auto px-2 py-2">
               <Round label={snap.mute ? "تشغيل الصوت" : "كتم الصوت"} onClick={onMute}>
@@ -431,7 +471,11 @@ export function CityHud({
               <Round label="مدينة جديدة" onClick={onAskReset}>
                 <RotateCcw size={16} />
               </Round>
-              <Menu on={panel === "graphs"} testid="open-graphs" onClick={() => togglePanel("graphs")}>
+              <Menu
+                on={panel === "graphs"}
+                testid="open-graphs"
+                onClick={() => togglePanel("graphs")}
+              >
                 الرسوم
               </Menu>
               <Menu on={panel === "budget"} onClick={() => togglePanel("budget")}>
@@ -446,11 +490,20 @@ export function CityHud({
               <Menu on={panel === "disasters"} onClick={() => togglePanel("disasters")}>
                 الكوارث
               </Menu>
-              <button type="button" data-testid="luck-btn" onClick={onLuck} className="sc-menu sc-on inline-flex shrink-0 items-center gap-1 px-3 text-sm">
+              <button
+                type="button"
+                data-testid="luck-btn"
+                onClick={onLuck}
+                className="sc-menu sc-on inline-flex shrink-0 items-center gap-1 px-3 text-sm"
+              >
                 <Dices size={16} /> حظ
               </button>
               {stored > 0 && (
-                <button type="button" onClick={onCollect} className="sc-menu sc-on shrink-0 px-3 text-sm">
+                <button
+                  type="button"
+                  onClick={onCollect}
+                  className="sc-menu sc-on shrink-0 px-3 text-sm"
+                >
                   اجمع {fmt(stored)}
                 </button>
               )}
@@ -511,9 +564,14 @@ function ZoneCard({
     { key: "parks", label: "حدائق" },
   ];
   return (
-    <div className="sc-panel pointer-events-auto absolute inset-x-3 bottom-2 rounded-xl px-3 py-3" dir="rtl">
+    <div
+      className="sc-panel pointer-events-auto absolute inset-x-3 bottom-2 rounded-xl px-3 py-3"
+      dir="rtl"
+    >
       <p className="text-sm font-extrabold">تنظيم المنطقة</p>
-      <p className="mt-1 text-xs leading-relaxed">الشوارع شبكة منتظمة، والبيوت تصطف على الرصيف، والحدائق وسط المربعات.</p>
+      <p className="mt-1 text-xs leading-relaxed">
+        الشوارع شبكة منتظمة، والبيوت تصطف على الرصيف، والحدائق وسط المربعات.
+      </p>
       <div className="mt-2 flex flex-wrap gap-1">
         {chips.map((chip) => (
           <button
@@ -528,7 +586,11 @@ function ZoneCard({
         ))}
       </div>
       <div className="mt-2 flex gap-2">
-        <button type="button" className="sc-menu sc-on h-11 flex-1 text-sm" onClick={() => onApply(pick)}>
+        <button
+          type="button"
+          className="sc-menu sc-on h-11 flex-1 text-sm"
+          onClick={() => onApply(pick)}
+        >
           نفّذ التخطيط
         </button>
         <button type="button" className="sc-menu h-11 px-3 text-sm" onClick={onCancel}>
@@ -585,7 +647,9 @@ function Graphs({
               onClick={() => onToggle(item.key)}
               className={`flex h-11 items-center gap-1 rounded-md px-2 text-xs font-extrabold ${on ? "sc-on" : "sc-menu"}`}
             >
-              <span className="grid h-5 w-5 shrink-0 place-items-center">{on ? <Check size={14} /> : null}</span>
+              <span className="grid h-5 w-5 shrink-0 place-items-center">
+                {on ? <Check size={14} /> : null}
+              </span>
               <span className="truncate">{item.label}</span>
             </button>
           );
@@ -645,16 +709,12 @@ function GraphCanvas({
     ro.observe(canvas);
     return () => ro.disconnect();
   }, [sig, rows, active]);
-  return <canvas ref={ref} className="h-40 w-full rounded-md bg-sc-mint" aria-label="رسم المدينة" />;
+  return (
+    <canvas ref={ref} className="h-40 w-full rounded-md bg-sc-mint" aria-label="رسم المدينة" />
+  );
 }
 
-function Budget({
-  snap,
-  onTax,
-}: {
-  snap: Sim;
-  onTax: (n: number) => void;
-}) {
+function Budget({ snap, onTax }: { snap: Sim; onTax: (n: number) => void }) {
   const income = monthlyIncome(snap);
   const cost = monthlyUpkeep(snap);
   return (
@@ -752,19 +812,27 @@ function Disasters({
         الكوارث من عندك، مثل لوحة سيم سيتي. الحريق يضرب مبنى، العاصفة تنزل الرضا، وانقطاع الكهرباء
         يطفّي الإنتاج لين ما تعدّي.
       </p>
-      {active && (
-        <p className="sc-lcd text-sm">
-          جارية لين {formatCityDate(active.until)}
-        </p>
-      )}
+      {active && <p className="sc-lcd text-sm">جارية لين {formatCityDate(active.until)}</p>}
       <div className="grid grid-cols-1 gap-2">
-        <button type="button" className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm" onClick={() => onDisaster("fire")}>
+        <button
+          type="button"
+          className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
+          onClick={() => onDisaster("fire")}
+        >
           <Flame size={16} /> حريق
         </button>
-        <button type="button" className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm" onClick={() => onDisaster("storm")}>
+        <button
+          type="button"
+          className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
+          onClick={() => onDisaster("storm")}
+        >
           <Cloud size={16} /> عاصفة رملية
         </button>
-        <button type="button" className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm" onClick={() => onDisaster("blackout")}>
+        <button
+          type="button"
+          className="sc-menu inline-flex w-full items-center justify-center gap-2 text-sm"
+          onClick={() => onDisaster("blackout")}
+        >
           <ZapOff size={16} /> انقطاع كهرباء
         </button>
       </div>
@@ -782,7 +850,11 @@ function Disasters({
 
 function Rci({ r, c, i }: { r: number; c: number; i: number }) {
   return (
-    <div className="mt-1 flex gap-1 rounded-md bg-sc-ink px-1 py-1" aria-label="طلب السكن والتجارة والصناعة" dir="ltr">
+    <div
+      className="mt-1 flex gap-1 rounded-md bg-sc-ink px-1 py-1"
+      aria-label="طلب السكن والتجارة والصناعة"
+      dir="ltr"
+    >
       <Meter label="R" value={r} tone="bg-sc-green" />
       <Meter label="C" value={c} tone="bg-sc-sky" />
       <Meter label="I" value={i} tone="bg-sc-gold" />
@@ -811,14 +883,23 @@ function Round({
   on,
   onClick,
   children,
+  testid,
 }: {
   label: string;
   on?: boolean;
   onClick: () => void;
   children: ReactNode;
+  testid?: string;
 }) {
   return (
-    <button type="button" aria-label={label} aria-pressed={on} onClick={onClick} className={`sc-round ${on ? "sc-on" : ""}`}>
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={on}
+      data-testid={testid}
+      onClick={onClick}
+      className={`sc-round ${on ? "sc-on" : ""}`}
+    >
       {children}
     </button>
   );
