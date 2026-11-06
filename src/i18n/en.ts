@@ -1123,4 +1123,10 @@ export const EN: Record<string, string> = {
   "جزيرة صغيرة": "Islet",
   "الصبية": "Subiya",
   "ابنِ جسراً يربط {name} باليابسة أولاً": "Build a bridge linking {name} to the mainland first",
+  "برج البنك الوطني": "NBK Tower",
+  "برج زجاجي منحني كالشراع، مقر بنك الكويت الوطني": "A curved glass tower like a sail, home of the National Bank of Kuwait",
+  "برج التجارية": "Al Tijaria Tower",
+  "برج المكاتب الأزرق الملتوي في قلب العاصمة": "The twisting blue office tower in the heart of the capital",
+  "حديقة الشهيد": "Al Shaheed Park",
+  "أكبر حديقة في العاصمة: بحيرة ومتحفان وحدائق ملونة وممشى": "The capital's biggest park: a lake, two museums, colourful gardens and a walkway",
 };

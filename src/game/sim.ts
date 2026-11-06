@@ -646,7 +646,8 @@ export function isCelebrating(s: Sim) {
 export function neighborMult(s: Sim, b: Building) {
   const d = CATALOG[b.kind];
   const housing = d.pop > 0;
-  const trade = !housing && (d.cat === "commerce" || b.kind === "avenues" || b.kind === "mubarakiya" || b.kind === "hamra");
+  const trade =
+    !housing && (d.cat === "commerce" || ["avenues", "mubarakiya", "hamra", "nbk", "tijaria"].includes(b.kind));
   if (!housing && !trade) return 1;
   const lots = cityIndex(s).lots;
   let parks = 0,
@@ -701,7 +702,7 @@ export function neighborEffect(s: Sim, b: Building) {
       mult *= Math.max(0.5, 1 - plants * 0.15);
       notes.push(t("بجانب محطة −{n}٪", { n: plants * 15 }));
     }
-  } else if (d.cat === "commerce" || ["avenues", "mubarakiya", "hamra"].includes(b.kind)) {
+  } else if (d.cat === "commerce" || ["avenues", "mubarakiya", "hamra", "nbk", "tijaria"].includes(b.kind)) {
     const homes = Math.min(4, near.filter((k) => CATALOG[k].pop > 0).length);
     if (homes) {
       mult *= 1 + homes * 0.05;
@@ -2266,7 +2267,8 @@ export function upgrade(s: Sim, id: string, now: number): Act {
 export function metrics(s: Sim, st = stats(s)): Sample {
   const shops = countKind(s, "shop");
   const towers = countKind(s, "tower");
-  const parks = countKind(s, "park");
+  // Al Shaheed Park cleans the air like several ordinary parks.
+  const parks = countKind(s, "park") + countKind(s, "shaheed") * 4;
   const police = countKind(s, "police");
   const clinics = countKind(s, "clinic");
   const industryN =

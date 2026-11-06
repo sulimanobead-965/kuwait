@@ -24,7 +24,10 @@ export type Kind =
   | "stadium"
   | "port"
   | "refinery"
-  | "factory";
+  | "factory"
+  | "nbk"
+  | "tijaria"
+  | "shaheed";
 
 export type Category = "housing" | "commerce" | "services" | "landmarks" | "industry";
 
@@ -490,6 +493,65 @@ export const CATALOG: Record<Kind, Def> = {
     coastBoost: false,
     era: 1,
     scale: 1.4,
+  },
+  nbk: {
+    kind: "nbk",
+    name: "برج البنك الوطني",
+    blurb: "برج زجاجي منحني كالشراع، مقر بنك الكويت الوطني",
+    cost: 9500,
+    cat: "landmarks",
+    pop: 0,
+    income: 16,
+    powerUse: 6,
+    powerGive: 0,
+    waterUse: 2,
+    waterGive: 0,
+    happy: 14,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: true,
+    era: 2,
+    jobs: 80,
+    scale: 0.8,
+  },
+  tijaria: {
+    kind: "tijaria",
+    name: "برج التجارية",
+    blurb: "برج المكاتب الأزرق الملتوي في قلب العاصمة",
+    cost: 7000,
+    cat: "landmarks",
+    pop: 0,
+    income: 12,
+    powerUse: 5,
+    powerGive: 0,
+    waterUse: 2,
+    waterGive: 0,
+    happy: 12,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: true,
+    era: 1,
+    jobs: 60,
+    scale: 0.8,
+  },
+  shaheed: {
+    kind: "shaheed",
+    name: "حديقة الشهيد",
+    blurb: "أكبر حديقة في العاصمة: بحيرة ومتحفان وحدائق ملونة وممشى",
+    cost: 5000,
+    cat: "landmarks",
+    pop: 0,
+    income: 3,
+    powerUse: 2,
+    powerGive: 0,
+    waterUse: 3,
+    waterGive: 0,
+    happy: 26,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    era: 1,
+    scale: 1.2,
   },
   // Industry: big earners whose whole income goes to the city treasury, at the cost
   // of pollution and some unhappiness nearby. They also provide many jobs.

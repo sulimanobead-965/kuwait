@@ -1631,6 +1631,110 @@ function refinery(p: ModelParts, detail: number) {
   cone(p, -0.82, 2.32, 0.72, 0.08, 0.26, P.gold, 8);
 }
 
+function nbk(p: ModelParts, detail: number) {
+  // NBK Tower: a curved glass sail that tapers to a point, framed by pale stone
+  // edges, over a low podium with palms.
+  box(p, 0, 0.08, 0, 1.94, 0.16, 1.86, P.pavement);
+  box(p, 0.08, 0.3, 0.12, 1.5, 0.3, 1.24, P.white);
+  box(p, 0.08, 0.3, 0.745, 1.3, 0.2, 0.02, P.glass, "glass");
+  if (detail < 2) for (const [x, z] of [[-0.75, 0.75], [-0.45, 0.82], [0.75, 0.8], [-0.8, 0.4]] as const) palm(p, x, z, 0.42);
+  const base = 0.45,
+    height = 6.4;
+  const slices = detail === 0 ? 30 : detail === 1 ? 15 : 8;
+  const seg = detail === 0 ? 22 : 12;
+  const width = (t: number) => 0.06 + 0.58 * (1 - Math.pow(t, 2.4)) * (1 + 0.12 * Math.sin(t * Math.PI));
+  const lean = (t: number) => -0.28 * t * t;
+  const depth = 0.58;
+  const dh = height / slices;
+  for (let i = 0; i < slices; i += 1) {
+    const t0 = i / slices,
+      t1 = (i + 1) / slices,
+      tm = (t0 + t1) / 2;
+    const y = base + (i + 0.5) * dh;
+    const g = new THREE.CylinderGeometry(width(t1), width(t0), dh * 1.01, seg, 1);
+    g.scale(1, 1, depth);
+    g.translate(0, y, lean(tm));
+    push(p, g, "#8cc0d2", "glass");
+    // Pale stone edges along both tips of the sail.
+    const w = width(tm);
+    for (const side of [-1, 1]) box(p, side * w * 0.97, y, lean(tm), 0.06, dh * 1.02, 0.12, P.limestone);
+    if (detail === 0 && i % 2 === 0) {
+      const ring = new THREE.CylinderGeometry(width(t0) * 1.005, width(t0) * 1.005, 0.02, seg, 1, true);
+      ring.scale(1, 1, depth);
+      ring.translate(0, base + i * dh, lean(t0));
+      push(p, ring, P.silver, "windows");
+    }
+  }
+  cone(p, 0, base + height + 0.12, lean(1), 0.06, 0.26, P.limestone, 8);
+}
+
+function tijaria(p: ModelParts, detail: number) {
+  // Al Tijaria Tower: dark blue glass that twists as it rises, on a pale podium,
+  // topped by a slanted crown and a mast.
+  box(p, 0, 0.08, 0, 1.94, 0.16, 1.86, P.pavement);
+  box(p, 0, 0.36, 0, 1.4, 0.42, 1.3, P.plaster);
+  box(p, 0, 0.32, 0.655, 1.1, 0.24, 0.02, P.glass, "glass");
+  const base = 0.57,
+    height = 5.2;
+  const slices = detail === 0 ? 32 : detail === 1 ? 16 : 8;
+  const dh = height / slices;
+  for (let i = 0; i < slices; i += 1) {
+    const t = (i + 0.5) / slices;
+    const w = 0.66 - 0.16 * t;
+    const g = new THREE.BoxGeometry(w * 1.25, dh * 1.01, w * 0.95);
+    g.rotateY(t * Math.PI * 0.55);
+    g.translate(0, base + (i + 0.5) * dh, 0);
+    push(p, g, "#1f4a85", "glass");
+    if (detail === 0 && i % 3 === 0) {
+      const line = new THREE.BoxGeometry(w * 1.26, 0.018, w * 0.96);
+      line.rotateY(t * Math.PI * 0.55);
+      line.translate(0, base + i * dh, 0);
+      push(p, line, P.silver, "windows");
+    }
+  }
+  // Slanted crown.
+  const crown = new THREE.BoxGeometry(0.62, 0.5, 0.48);
+  crown.rotateZ(0.5);
+  crown.rotateY(Math.PI * 0.55);
+  crown.translate(0, base + height + 0.08, 0);
+  push(p, crown, "#1f4a85", "glass");
+  cyl(p, 0.05, base + height + 0.75, 0, 0.018, 1.0, P.silver, 0.025, 6, "metal");
+  box(p, 0.05, base + height + 1.05, 0, 0.36, 0.025, 0.025, P.silver, "metal");
+}
+
+function shaheed(p: ModelParts, detail: number) {
+  // Al Shaheed Park: lawns crossed by paths, a lake, rainbow flower beds, the
+  // green-roofed Habitat museum, the round Remembrance museum and palm rows.
+  box(p, 0, 0.05, 0, 2.06, 0.1, 2.06, P.leaf);
+  box(p, 0, 0.105, 0.05, 2.0, 0.012, 0.12, P.paleStone);
+  box(p, -0.05, 0.105, 0, 0.12, 0.012, 2.0, P.paleStone);
+  // Lake.
+  box(p, -0.55, 0.108, 0.52, 0.74, 0.02, 0.6, P.pool, "glass");
+  box(p, -0.55, 0.104, 0.52, 0.82, 0.016, 0.68, P.paleStone);
+  // Rainbow flower beds.
+  const colors = ["#e0584f", "#f0a33c", "#f2d14b", "#69b85a", "#4aa3d8", "#8a6bd1"];
+  const beds = detail === 2 ? 3 : 6;
+  for (let i = 0; i < beds; i += 1)
+    box(p, 0.25 + i * (0.6 / beds), 0.12, -0.52, 0.6 / beds - 0.02, 0.03, 0.66, colors[(i * 6) / beds]!);
+  // Habitat museum with a green roof.
+  box(p, 0.55, 0.2, 0.52, 0.66, 0.2, 0.56, P.limestone);
+  box(p, 0.55, 0.31, 0.52, 0.7, 0.03, 0.6, P.leafLight);
+  box(p, 0.55, 0.2, 0.805, 0.5, 0.1, 0.012, P.glass, "glass");
+  // The white shell dome by the park, low and wide, over a dark glass base.
+  ball(p, 0.02, 0.1, -0.02, 0.48, 0.34, 0.36, P.white, detail);
+  cyl(p, 0.02, 0.13, -0.02, 0.44, 0.06, P.deepGlass, 0.44, detail === 0 ? 24 : 12, "glass");
+  // Remembrance museum: a low round drum.
+  cyl(p, -0.55, 0.2, -0.52, 0.27, 0.2, P.white, 0.29, detail === 0 ? 20 : 10);
+  cyl(p, -0.55, 0.315, -0.52, 0.29, 0.03, P.leafLight, 0.29, detail === 0 ? 20 : 10);
+  if (detail < 2) {
+    // Red jogging track along the edge.
+    box(p, 0, 0.112, -0.95, 1.9, 0.014, 0.06, P.track);
+    box(p, 0.95, 0.112, 0, 0.06, 0.014, 1.9, P.track);
+    for (const [x, z] of [[-0.95, -0.15], [-0.95, 0.2], [0.15, 0.95], [-0.25, 0.95], [0.15, -0.15], [-0.3, -0.2]] as const)
+      palm(p, x, z, 0.38);
+  }
+}
+
 const cache = new Map<string, BuildingModel>();
 
 export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): BuildingModel {
@@ -1713,6 +1817,15 @@ export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): Bui
       break;
     case "refinery":
       refinery(p, detail);
+      break;
+    case "nbk":
+      nbk(p, detail);
+      break;
+    case "tijaria":
+      tijaria(p, detail);
+      break;
+    case "shaheed":
+      shaheed(p, detail);
       break;
   }
   const merge = (list: Geo[]) => {

@@ -329,13 +329,15 @@ export class FallbackCityWorld {
         ? 17 * scale
         : ["kuwait", "mosque", "palace"].includes(b.kind)
           ? 15 * scale
-          : ["hamra"].includes(b.kind)
+          : ["hamra", "nbk", "tijaria"].includes(b.kind)
             ? 10 * scale
             : 12 * scale;
       const skyscraper = ["apartments", "shop", "tower"].includes(b.kind) && b.level >= 4;
       const h =
-        b.kind === "hamra"
+        ["hamra", "nbk"].includes(b.kind)
           ? 48 * scale
+          : b.kind === "tijaria"
+            ? 40 * scale
           : skyscraper
             ? (b.level >= 5 ? 42 : 36) * scale
             : ["kuwait", "liberation", "boubyan", "tower"].includes(b.kind)
