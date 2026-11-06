@@ -1406,4 +1406,5 @@ export const EN: Record<string, string> = {
   "يكلف {amount} د.ك سنوياً (يُقسّط شهرياً) · قوة الأثر {pct}٪": "Costs {amount} KD a year (paid monthly) · effect strength {pct}%",
   "لكل قانون تختار بالمؤشر نسبة سنوية من دخل المدينة تُصرف عليه، وتُقسّط على أشهر السنة. كلما زادت النسبة قوي أثر القانون، حتى ٣ أضعاف.": "For each law, pick with the slider a yearly share of the city's income to spend on it, paid across the months. The bigger the share, the stronger the law, up to 3×.",
   "أو اكتب أي نسبة (بلا حد أعلى)": "Or type any rate (no upper limit)",
+  "الحفظ السحابي التلقائي ما نجح: {why}": "Automatic cloud save failed: {why}",
 };

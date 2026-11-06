@@ -28,7 +28,7 @@ export function aboutGame(snap: Sim) {
   return { residents: stats(snap).residents, day: Math.floor(snap.day) };
 }
 
-function errorText(code: CloudError) {
+export function errorText(code: CloudError) {
   switch (code) {
     case "unavailable":
       return t("الحفظ السحابي يعمل فقط داخل رابط اللعبة على Claude");

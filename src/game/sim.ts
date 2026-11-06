@@ -745,7 +745,20 @@ export const ERAS = ["الاستقلال ١٩٦١", "طفرة النفط", "ال
 
 export function eraOf(s: Sim) {
   if (s.quest >= QUESTS.length) return ERAS.length - 1;
-  return QUESTS[s.quest]?.era ?? 0;
+  // The missions open eras in order, but a city that has grown big enough or lived
+  // long enough has reached the era anyway (no landmark stays locked behind one
+  // unfinished mission).
+  return Math.max(QUESTS[s.quest]?.era ?? 0, cityEra(s));
+}
+
+function cityEra(s: Sim) {
+  if (!s.started) return 0;
+  const year = 1961 + Math.floor(s.day / 365);
+  const residents = stats(s).residents;
+  if (residents >= 500_000 || year >= 2000) return 3;
+  if (residents >= 100_000 || year >= 1985) return 2;
+  if (residents >= 15_000 || year >= 1972) return 1;
+  return 0;
 }
 
 export function isUnlocked(s: Sim, kind: Kind) {

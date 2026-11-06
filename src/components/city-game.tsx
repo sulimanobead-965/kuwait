@@ -29,8 +29,8 @@ import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/h
 import { fireBuilder, hireBuilder } from "@/game/builder";
 import { borrowFrom, chat, greet, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
 import { CATALOG, type Category, type Kind } from "@/game/catalog";
-import { loadSession, pushSave, snapshotLocal } from "@/game/cloud";
-import { aboutGame } from "@/components/hud-cloud";
+import { CloudFail, loadSession, pushSave, snapshotLocal } from "@/game/cloud";
+import { aboutGame, errorText } from "@/components/hud-cloud";
 import {
   advanceDays,
   advanceQuest,
@@ -520,6 +520,7 @@ export function CityGame() {
     // Signed in to the cloud: upload every 3 minutes when the game changed.
     let cloudLast = "";
     let cloudBusy = false;
+    let cloudWarned = false;
     const cloudTimer = window.setInterval(() => {
       const session = loadSession();
       if (!session || cloudBusy || !simRef.current.started) return;
@@ -530,8 +531,18 @@ export function CityGame() {
       pushSave(session, aboutGame(simRef.current))
         .then(() => {
           cloudLast = mark;
+          cloudWarned = false;
         })
-        .catch(() => undefined)
+        .catch((e: unknown) => {
+          // Say once why the automatic cloud save did not go through.
+          if (cloudWarned) return;
+          cloudWarned = true;
+          toastRef.current(
+            t("الحفظ السحابي التلقائي ما نجح: {why}", {
+              why: errorText(e instanceof CloudFail ? e.code : "network"),
+            }),
+          );
+        })
         .finally(() => {
           cloudBusy = false;
         });
