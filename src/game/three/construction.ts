@@ -38,7 +38,7 @@ function mesh(
 
 /** Final height (world units) a skeleton grows toward, by planned kind and level. */
 function targetHeight(kind: string, level: number) {
-  if (kind === "park" || kind === "chalet") return 0.5;
+  if (kind === "park" || kind === "chalet" || kind === "runway" || kind === "rail") return 0.3;
   if (kind === "apartments" || kind === "tower" || kind === "shop")
     return level >= 5 ? 7 : level >= 4 ? 5.2 : 2.6;
   return 1.6;

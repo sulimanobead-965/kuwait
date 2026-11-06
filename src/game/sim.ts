@@ -35,6 +35,7 @@ import {
 } from "./developments";
 import { COLS, FINE_ROW0, GRID_GEN, isForeign, OLD_COL0, islandAt, ISLANDS, isIsland, LAND, ROWS } from "./land";
 import { msg, t, tx } from "../i18n/index.ts";
+import { lonLatToCell } from "./places";
 export { districtById, isDistrictLand } from "./districts";
 import {
   districtById,
@@ -2151,6 +2152,36 @@ export function startDevelopment(
   return { ok: true, site };
 }
 
+/**
+ * A state mega project's fenced site at its real place in Kuwait (or the nearest
+ * open ground of the right size). Paid for by the project; built by the national
+ * authority, which never goes bankrupt. Null when no land is free.
+ */
+export function startMegaSite(s: Sim, kind: DevelopmentKind, completes: number): Site | null {
+  const def = DEVELOPMENTS[kind];
+  if (!def.mega) return null;
+  const at = lonLatToCell(def.mega.lon, def.mega.lat);
+  const area = areaTables(s, true, false);
+  const spot = nearestRect(def.w, def.h, at, (c, r) =>
+    area.free(c, r, def.w, def.h) && (!def.coast || area.coast(c, r, def.w, def.h)),
+  );
+  if (!spot) return null;
+  const site: Site = {
+    id: `${Math.floor(s.day)}-${Math.random().toString(36).slice(2, 7)}`,
+    developer: "national",
+    kind,
+    c: spot.c,
+    r: spot.r,
+    w: def.w,
+    h: def.h,
+    amount: 0,
+    started: s.day,
+    completes,
+  };
+  s.sites.push(site);
+  return site;
+}
+
 /** Hands over finished developments; abandons sites if the developer went bankrupt. */
 export function developmentMonth(s: Sim, random = Math.random) {
   // Private developers other than Al Marsa (whose risk lives in finance.ts) may fail too.
@@ -2198,6 +2229,9 @@ export function developmentMonth(s: Sim, random = Math.random) {
         // A chalet lot that ended up a step from the water becomes a seaside garden.
         if (!act.ok && lot.kind === "chalet")
           act = placeBuilding(s, "park", site.c + lot.dc, site.r + lot.dr, 0);
+        // A quay that ended up inland becomes a warehouse.
+        if (!act.ok && lot.kind === "port")
+          act = placeBuilding(s, "factory", site.c + lot.dc, site.r + lot.dr, 0);
         if (!act.ok) continue;
         const b = s.buildings[s.buildings.length - 1]!;
         b.level = Math.min(maxLevelOf(b.kind), lot.level);

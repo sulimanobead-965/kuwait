@@ -15,6 +15,7 @@ import { msg, t, type Params, bigNum } from "../i18n/index.ts";
 import { CATALOG, type Kind } from "./catalog";
 import { freeLot, runPlans } from "./builder";
 import { deposit, withdraw } from "./finance";
+import { DEVELOPMENTS, type DevelopmentKind } from "./developments";
 import {
   coastal,
   cellTaken,
@@ -28,6 +29,7 @@ import {
   repayLoan,
   roadSet,
   startDevelopment,
+  startMegaSite,
   stats,
   takeLoan,
   type Sim,
@@ -545,6 +547,8 @@ export type BoardProject = {
   scale: number;
   /** Finished and running (its buildings placed). */
   open: boolean;
+  /** Mega projects: the fenced construction site on the map. */
+  site?: string;
 };
 
 export type BoardState = {
@@ -608,6 +612,7 @@ export function loadBoard(raw: unknown): BoardState {
         completes: n(x.completes, 0),
         scale: Math.max(1, n(x.scale, 1)),
         open: Boolean(x.open),
+        ...(typeof x.site === "string" ? { site: x.site } : {}),
       }));
   if (Array.isArray(p.log)) b.log = p.log.filter((x) => typeof x === "string").slice(0, 40);
   if (p.params && typeof p.params === "object")
@@ -725,14 +730,20 @@ export function approveProject(s: Sim, key: string, by: "governor" | "board" = "
     const cash = Math.round(25_000 * projectScale(s));
     s.coins += cash;
   }
-  s.board.projects.push({
+  const project: BoardProject = {
     id: `${s.day.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     key,
     started: s.day,
     completes: s.day + def.months * 30,
     scale: projectScale(s),
     open: false,
-  });
+  };
+  // Mega projects are really built: a fenced site at their real place in Kuwait.
+  if (def.mega && key in DEVELOPMENTS) {
+    const site = startMegaSite(s, key as DevelopmentKind, project.completes);
+    if (site) project.site = site.id;
+  }
+  s.board.projects.push(project);
   note(
     s,
     msg(by === "board" ? "{director}: اعتمد المجلس «{name}» بتكلفة {amount} د.ك" : "اعتمدت «{name}» بتكلفة {amount} د.ك", {
@@ -803,12 +814,25 @@ function placeNear(s: Sim, kind: Kind) {
 }
 
 /** Finished projects place their buildings once (free: already paid for). */
+/** Mega projects approved before they were built on the map get their site now. */
+function siteOldMegas(s: Sim) {
+  for (const p of s.board.projects) {
+    if (p.site || !PROJECTS[p.key]?.mega || !(p.key in DEVELOPMENTS)) continue;
+    const site = startMegaSite(s, p.key as DevelopmentKind, Math.max(p.completes, s.day + 30));
+    p.site = site?.id ?? "none";
+  }
+}
+
 function finishProjects(s: Sim) {
   for (const p of s.board.projects) {
     if (p.open || p.completes > s.day) continue;
     p.open = true;
     const def = PROJECTS[p.key]!;
     let built = 0;
+    if (p.site && p.site !== "none") {
+      note(s, msg("اكتمل «{name}» وافتُتح على الخريطة", { name: def.name }));
+      continue;
+    }
     if (def.build) {
       const coins = s.coins;
       for (let i = 0; i < def.build.count; i += 1) if (placeNear(s, def.build.kind)) built += 1;
@@ -969,6 +993,7 @@ function decide(s: Sim) {
  */
 export function boardMonth(s: Sim) {
   const b = s.board;
+  siteOldMegas(s);
   finishProjects(s);
   carryOutOrders(s);
   const money = projectMoney(s);

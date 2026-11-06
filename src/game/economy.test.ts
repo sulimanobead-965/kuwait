@@ -252,3 +252,20 @@ test("big cities save compactly and reload the same roads and buildings", async 
   assert.equal(n, 10 * s.buildings.length);
   assert.equal(s.coins, before + n);
 });
+
+test("mega projects are really built on the map at their real place", async () => {
+  const { approveProject } = await import("./board.ts");
+  const { lonLatToCell } = await import("./places.ts");
+  const s = createInitial();
+  s.started = true;
+  s.coins = 1e12;
+  assert.ok(approveProject(s, "airport").ok);
+  const site = s.sites.find((x) => x.kind === "airport");
+  assert.ok(site, "the airport gets a fenced site");
+  const at = lonLatToCell(47.975, 29.235);
+  assert.ok(Math.abs(site!.c + site!.w / 2 - at.c) + Math.abs(site!.r + site!.h / 2 - at.r) < 30, "near the real airport");
+  for (let m = 0; m < 38; m += 1) advanceDays(s, 30);
+  assert.ok(!s.sites.some((x) => x.kind === "airport"), "the site is handed over");
+  assert.ok(s.buildings.filter((b) => b.kind === "runway").length >= 20);
+  assert.ok(s.buildings.some((b) => b.kind === "terminal"));
+});

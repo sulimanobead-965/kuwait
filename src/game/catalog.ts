@@ -27,7 +27,11 @@ export type Kind =
   | "factory"
   | "nbk"
   | "tijaria"
-  | "shaheed";
+  | "shaheed"
+  | "runway"
+  | "terminal"
+  | "rail"
+  | "station";
 
 export type Category = "housing" | "commerce" | "services" | "landmarks" | "industry";
 
@@ -56,6 +60,8 @@ export type Def = {
   era?: number;
   /** Jobs per level, on top of the shop/tower defaults. */
   jobs?: number;
+  /** Built only by the state's mega projects, never from the build menu. */
+  stateOnly?: boolean;
 };
 
 /** Default highest level for kinds without `maxLevel`. */
@@ -613,6 +619,88 @@ export const CATALOG: Record<Kind, Def> = {
     jobs: 55,
     scale: 1.35,
   },
+  runway: {
+    kind: "runway",
+    name: "مدرج طيران",
+    blurb: "جزء من مدرج المطار الدولي",
+    cost: 0,
+    cat: "industry",
+    pop: 0,
+    income: 0,
+    powerUse: 1,
+    powerGive: 0,
+    waterUse: 0,
+    waterGive: 0,
+    happy: -1,
+    needsRoad: false,
+    needsPop: 0,
+    coastBoost: false,
+    scale: 1,
+    maxLevel: 1,
+    stateOnly: true,
+  },
+  terminal: {
+    kind: "terminal",
+    name: "مبنى ركاب المطار",
+    blurb: "صالات السفر والوصول في المطار الدولي",
+    cost: 0,
+    cat: "industry",
+    pop: 0,
+    income: 30,
+    powerUse: 6,
+    powerGive: 0,
+    waterUse: 3,
+    waterGive: 0,
+    happy: 2,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    scale: 1.2,
+    maxLevel: 1,
+    jobs: 120,
+    stateOnly: true,
+  },
+  rail: {
+    kind: "rail",
+    name: "سكة قطار",
+    blurb: "خط السكة الحديد بين المدن",
+    cost: 0,
+    cat: "industry",
+    pop: 0,
+    income: 0,
+    powerUse: 1,
+    powerGive: 0,
+    waterUse: 0,
+    waterGive: 0,
+    happy: 0,
+    needsRoad: false,
+    needsPop: 0,
+    coastBoost: false,
+    scale: 1,
+    maxLevel: 1,
+    stateOnly: true,
+  },
+  station: {
+    kind: "station",
+    name: "محطة قطار",
+    blurb: "محطة ركاب على خط السكة الحديد",
+    cost: 0,
+    cat: "industry",
+    pop: 0,
+    income: 18,
+    powerUse: 3,
+    powerGive: 0,
+    waterUse: 1,
+    waterGive: 0,
+    happy: 2,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    scale: 1.1,
+    maxLevel: 1,
+    jobs: 40,
+    stateOnly: true,
+  },
 };
 
 export const CATEGORIES: { id: Category; label: string }[] = [
@@ -626,5 +714,5 @@ export const CATEGORIES: { id: Category; label: string }[] = [
 export const KINDS = Object.keys(CATALOG) as Kind[];
 
 export function kindsIn(cat: Category): Def[] {
-  return KINDS.map((k) => CATALOG[k]).filter((d) => d.cat === cat);
+  return KINDS.map((k) => CATALOG[k]).filter((d) => d.cat === cat && !d.stateOnly);
 }

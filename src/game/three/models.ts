@@ -1580,6 +1580,53 @@ function factory(p: ModelParts, detail: number) {
   }
 }
 
+function runway(p: ModelParts, detail: number) {
+  // Dark asphalt strip with a white centre line and edge lights.
+  box(p, 0, 0.03, 0, 2.08, 0.06, 2.08, P.asphalt);
+  for (const x of [-0.7, 0, 0.7]) box(p, x, 0.065, 0, 0.36, 0.01, 0.08, P.white);
+  for (const z of [-0.92, 0.92]) box(p, 0, 0.065, z, 2.08, 0.01, 0.04, P.white);
+  if (detail === 0)
+    for (const x of [-0.8, 0, 0.8])
+      for (const z of [-0.98, 0.98]) box(p, x, 0.09, z, 0.05, 0.05, 0.05, P.gold, "metal");
+}
+
+function terminal(p: ModelParts, detail: number) {
+  // Long glass passenger hall under a wave roof, with a jet bridge.
+  box(p, 0, 0.05, 0, 2.08, 0.1, 2.08, P.pavement);
+  box(p, 0, 0.42, 0, 2.0, 0.64, 1.3, P.white);
+  box(p, 0, 0.44, 0.66, 1.9, 0.5, 0.02, P.glass, "glass");
+  box(p, 0, 0.44, -0.66, 1.9, 0.5, 0.02, P.glass, "glass");
+  box(p, 0, 0.8, 0, 2.08, 0.08, 1.5, P.silver, "metal");
+  box(p, 0, 0.88, 0, 1.6, 0.08, 1.1, P.silver, "metal");
+  box(p, 0.4, 0.42, -0.95, 0.16, 0.16, 0.5, P.paleStone);
+  if (detail < 2) box(p, -0.5, 0.95, 0, 0.5, 0.06, 0.3, P.gulf, "metal");
+}
+
+function rail(p: ModelParts, detail: number) {
+  // Gravel bed, sleepers and two steel rails running along the line.
+  box(p, 0, 0.04, 0, 2.08, 0.08, 1.0, P.sand);
+  const sleepers = detail === 0 ? 7 : 4;
+  for (let i = 0; i < sleepers; i += 1)
+    box(p, -0.9 + (i * 1.8) / (sleepers - 1), 0.09, 0, 0.1, 0.03, 0.8, P.wood);
+  for (const z of [-0.25, 0.25]) box(p, 0, 0.12, z, 2.08, 0.04, 0.05, P.silver, "metal");
+}
+
+function station(p: ModelParts, detail: number) {
+  // Platform beside the track with a canopy and a station hall.
+  rail(p, detail);
+  box(p, 0, 0.12, 0.72, 2.0, 0.16, 0.55, P.paleStone);
+  for (const x of [-0.8, 0, 0.8]) box(p, x, 0.45, 0.72, 0.05, 0.5, 0.05, P.dark, "metal");
+  box(p, 0, 0.72, 0.72, 2.08, 0.05, 0.62, P.gulf, "metal");
+  box(p, 0, 0.4, -0.75, 1.4, 0.6, 0.5, P.plaster);
+  box(p, 0, 0.42, -0.49, 1.2, 0.3, 0.02, P.glass, "glass");
+  if (detail < 2) {
+    // A train waiting at the platform.
+    box(p, -0.1, 0.32, 0, 1.7, 0.36, 0.42, P.white, "metal");
+    box(p, -0.1, 0.36, 0.215, 1.5, 0.12, 0.01, P.glass, "glass");
+    box(p, -0.1, 0.22, 0.215, 1.7, 0.04, 0.01, P.red);
+  }
+}
+
 function port(p: ModelParts, detail: number) {
   // Concrete quay with a gantry crane, stacked containers and a warehouse.
   box(p, 0, 0.06, 0, 2.06, 0.12, 2.06, P.paleStone);
@@ -1826,6 +1873,18 @@ export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): Bui
       break;
     case "shaheed":
       shaheed(p, detail);
+      break;
+    case "runway":
+      runway(p, detail);
+      break;
+    case "terminal":
+      terminal(p, detail);
+      break;
+    case "rail":
+      rail(p, detail);
+      break;
+    case "station":
+      station(p, detail);
       break;
   }
   const merge = (list: Geo[]) => {
