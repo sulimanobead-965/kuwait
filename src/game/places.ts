@@ -17,7 +17,7 @@ export const PLACES: readonly Place[] = [
   { name: "جون الكويت", lon: 47.86, lat: 29.42, major: true },
   { name: "مدينة الكويت", lon: 47.985, lat: 29.375, major: true },
   { name: "جزيرة بوبيان", lon: 48.2, lat: 29.8, major: true },
-  { name: "جزيرة فيلكا", lon: 48.36, lat: 29.445 },
+  { name: "جزيرة فيلكا", lon: 48.33, lat: 29.435 },
   { name: "جزيرة وربة", lon: 48.06, lat: 29.985 },
   { name: "الصبية", lon: 47.92, lat: 29.6 },
   { name: "الشويخ", lon: 47.94, lat: 29.345 },
