@@ -7,6 +7,7 @@ import {
   type District,
   type DistrictId,
 } from "@/game/districts";
+import { LAND, COLS, ROWS } from "@/game/land";
 import { roadMarkingsAt } from "@/game/three/road-markings";
 
 const arabicNumber = (n: number) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]!);
@@ -72,6 +73,38 @@ export function DistrictDiagram({
     </svg>
   );
 }
+
+function FreeDiagram() {
+  const land = useMemo(() => {
+    const parts: string[] = [];
+    for (let r = 0; r < ROWS; r += 1) {
+      let c = 0;
+      const row = LAND[r] ?? [];
+      while (c < COLS) {
+        if (!row[c]) {
+          c += 1;
+          continue;
+        }
+        const start = c;
+        while (c < COLS && row[c]) c += 1;
+        parts.push(`M${start} ${r}h${c - start}v1H${start}Z`);
+      }
+    }
+    return parts.join("");
+  }, []);
+  return (
+    <svg
+      viewBox={`0 0 ${COLS} ${ROWS}`}
+      className="district-preview"
+      role="img"
+      aria-label="مخطط المنطقة الحرة"
+    >
+      <rect width={COLS} height={ROWS} fill="#7eb8c4" />
+      <path d={land} fill="#cbb98a" />
+    </svg>
+  );
+}
+
 interface Props {
   open: boolean;
   current: DistrictId | null;
@@ -111,7 +144,9 @@ export function DistrictSelector({
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         const index = DISTRICTS.findIndex((item) => item.id === selectedRef.current);
-        const next = DISTRICTS[(index + (event.key === "ArrowLeft" ? 1 : 2)) % 3]!.id;
+        const next =
+          DISTRICTS[(index + (event.key === "ArrowLeft" ? 1 : DISTRICTS.length - 1)) % DISTRICTS.length]!
+            .id;
         setSelected(next);
         dialogRef.current?.querySelector<HTMLButtonElement>(`[data-district="${next}"]`)?.focus();
         return;
@@ -159,15 +194,15 @@ export function DistrictSelector({
             <span className="district-eyebrow">
               <Map size={15} /> عمدة الكويت
             </span>
-            <h2 id="district-title">اختر الحي قبل بناء مدينة جديدة</h2>
+            <h2 id="district-title">اختر الحي أو المنطقة الحرة</h2>
           </div>
           <button type="button" className="sc-x" onClick={onClose} aria-label="إغلاق اختيار الحي">
             <X size={18} />
           </button>
         </header>
         <p className="district-intro">
-          اختيارات مبنية على لوحات الأحياء المصوّرة، وليست خرائط مساحة أو مسحًا جغرافيًا. استعراضك
-          هنا لا يغيّر مدينتك.
+          المدينة صارت بخمسة أضعاف المساحة. داخل الحي تقدر تبني خارج القطع المرقّمة، والمنطقة الحرة هي كل
+          اليابسة بلا أرقام. الاستعراض هنا لا يغيّر مدينتك.
         </p>
         <div className="district-options" role="radiogroup" aria-label="الأحياء المتاحة">
           {DISTRICTS.map((item) => (
@@ -180,12 +215,16 @@ export function DistrictSelector({
               className={`district-option ${selected === item.id ? "selected" : ""}`}
               onClick={() => setSelected(item.id)}
             >
-              <DistrictDiagram district={item} />
+              {item.id === "free" ? <FreeDiagram /> : <DistrictDiagram district={item} />}
               <span className="district-option-title">
                 <MapPin size={16} />
                 {item.name}
               </span>
-              <span>{arabicNumber(item.sectors.length)} قطع · مخطط لعب</span>
+              <span>
+                {item.id === "free"
+                  ? "كل المدينة · خمسة أضعاف"
+                  : `${arabicNumber(item.sectors.length)} قطع · والبناء خارجها مسموح`}
+              </span>
             </button>
           ))}
         </div>

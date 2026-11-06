@@ -1,11 +1,8 @@
-// 1 = land, 0 = water. Finer mask sampled from the Kuwait City map.
-export const COLS = 48 as const
-export const ROWS = 32 as const
-export const CELL = 50
-export const GRID_GEN = 1
-export const WORLD_W = COLS * CELL
-export const WORLD_H = ROWS * CELL
-export const LAND: readonly (readonly number[])[] = [
+// 1 = land, 0 = water. The source mask is the Kuwait City sample; the playable
+// grid stretches it so the land area is five times larger.
+const SRC_COLS = 48;
+const SRC_ROWS = 32;
+const SOURCE_LAND: readonly (readonly number[])[] = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -38,4 +35,42 @@ export const LAND: readonly (readonly number[])[] = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-]
+];
+
+/** Linear scale √5 so the map area is five times the source mask. */
+export const COLS = Math.round(SRC_COLS * Math.sqrt(5));
+export const ROWS = Math.round(SRC_ROWS * Math.sqrt(5));
+export const CELL = 50;
+export const GRID_GEN = 3;
+export const WORLD_W = COLS * CELL;
+export const WORLD_H = ROWS * CELL;
+export const SOURCE_COLS = SRC_COLS;
+export const SOURCE_ROWS = SRC_ROWS;
+export { SOURCE_LAND };
+
+export function sourceCell(c: number, r: number) {
+  return {
+    c: Math.min(SRC_COLS - 1, Math.max(0, Math.floor((c * SRC_COLS) / COLS))),
+    r: Math.min(SRC_ROWS - 1, Math.max(0, Math.floor((r * SRC_ROWS) / ROWS))),
+  };
+}
+
+const blocks = new Map<string, { c: number; r: number }[]>();
+export const LAND: number[][] = Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0));
+for (let r = 0; r < ROWS; r += 1) {
+  for (let c = 0; c < COLS; c += 1) {
+    const source = sourceCell(c, r);
+    const bit = SOURCE_LAND[source.r]?.[source.c] ?? 0;
+    LAND[r]![c] = bit;
+    if (!bit) continue;
+    const key = `${source.c},${source.r}`;
+    const list = blocks.get(key);
+    if (list) list.push({ c, r });
+    else blocks.set(key, [{ c, r }]);
+  }
+}
+
+/** Scaled land cells that came from one source mask cell. */
+export function cellsFromSource(c: number, r: number) {
+  return blocks.get(`${c},${r}`) ?? [];
+}

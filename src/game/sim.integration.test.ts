@@ -18,21 +18,28 @@ import {
   bulldoze,
 } from "./sim.ts";
 import { CATALOG, KINDS } from "./catalog.ts";
+import { cellsFromSource } from "./land.ts";
+
+function at(c: number, r: number) {
+  return cellsFromSource(c, r)[0]!;
+}
 
 function city() {
   const s = createInitial();
   s.started = true;
-  placeRoad(s, 17, 23);
-  placeRoad(s, 19, 23);
-  placeRoad(s, 21, 23);
+  for (const cell of cellsFromSource(17, 23)) placeRoad(s, cell.c, cell.r);
+  for (const cell of cellsFromSource(19, 23)) placeRoad(s, cell.c, cell.r);
+  for (const cell of cellsFromSource(21, 23)) placeRoad(s, cell.c, cell.r);
   return s;
 }
 
 test("placement occupancy upgrades and income remain playable", () => {
   const s = city();
-  assert.equal(placeBuilding(s, "villa", 18, 23, 0).ok, true);
-  assert.equal(placeBuilding(s, "villa", 20, 23, 0).ok, true);
-  assert.equal(placeBuilding(s, "apartments", 18, 23, 0).ok, false);
+  const home = at(18, 23);
+  const next = at(20, 23);
+  assert.equal(placeBuilding(s, "villa", home.c, home.r, 0).ok, true);
+  assert.equal(placeBuilding(s, "villa", next.c, next.r, 0).ok, true);
+  assert.equal(placeBuilding(s, "apartments", home.c, home.r, 0).ok, false);
   assert.equal(placeBuilding(s, "villa", 0, 0, 0).ok, false);
   assert.equal(stats(s).pop, 48);
   assert.ok(incomePerSec(s.buildings[0], s) > 0);
@@ -46,16 +53,15 @@ test("placement occupancy upgrades and income remain playable", () => {
   assert.ok(collectAll(s) > 0);
   assert.ok(b.stored < 1);
   assert.ok(s.coins >= 3200);
-  assert.equal(bulldoze(s, 18, 23).ok, true);
+  assert.equal(bulldoze(s, home.c, home.r).ok, true);
   assert.equal(s.buildings.length, 1);
 });
 
 test("all 17 catalog types are placeable on the same 3D grid", () => {
   const s = city();
   KINDS.forEach((kind, i) => {
-    const c = 12 + (i % 10),
-      r = 26 + Math.floor(i / 10);
-    assert.equal(placeBuilding(s, kind, c, r, i).ok, true, kind);
+    const lot = at(12 + (i % 10), 26 + Math.floor(i / 10));
+    assert.equal(placeBuilding(s, kind, lot.c, lot.r, i).ok, true, kind);
     assert.ok(CATALOG[kind].name.length > 0);
   });
   assert.equal(s.buildings.length, 17);
@@ -65,12 +71,14 @@ test("all 17 catalog types are placeable on the same 3D grid", () => {
 test("zone planning generates streets and housing on land", () => {
   const s = createInitial();
   s.started = true;
+  const a = at(18, 23);
+  const b = at(29, 28);
   const result = planZone(
     s,
-    18,
-    23,
-    29,
-    28,
+    a.c,
+    a.r,
+    b.c,
+    b.r,
     { streets: true, schools: true, fire: true, landmarks: true, parks: true },
     0,
   );
@@ -97,15 +105,17 @@ test("v2 save serializes all playable fields without mutating during clones", ()
   };
   try {
     const s = city();
-    placeBuilding(s, "villa", 18, 23, 0);
-    placeBuilding(s, "kuwait", 27, 18, 0);
+    const villa = at(18, 23);
+    const icon = at(27, 18);
+    placeBuilding(s, "villa", villa.c, villa.r, 0);
+    placeBuilding(s, "kuwait", icon.c, icon.r, 0);
     upgrade(s, s.buildings[0].id, 1);
     advanceDays(s, 90);
     s.ordinances.recycling = true;
     saveSim(s);
     const saved = JSON.parse(store.get("omdat-kuwait-v1") ?? "{}");
     assert.equal(saved.v, 2);
-    assert.equal(saved.grid, 1);
+    assert.equal(saved.grid, 3);
     assert.equal(saved.buildings[0].kind, "villa");
     const loaded = loadSim();
     assert.equal(loaded.buildings.length, s.buildings.length);

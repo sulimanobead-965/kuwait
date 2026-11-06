@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool } from "@/components/city-hud";
 import { DistrictSelector } from "@/components/district-selector";
-import { districtById, type DistrictId } from "@/game/districts";
+import { districtById, isDistrictId, type DistrictId } from "@/game/districts";
 import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
 import type { Cell } from "@/game/three/camera";
 import type { DayMode } from "@/game/three/day-night";
@@ -19,6 +19,7 @@ import {
   createInitial,
   createInitialDistrict,
   loadSim,
+  nearestOpenLot,
   placeBuilding,
   placeRoad,
   planZone,
@@ -150,11 +151,7 @@ export function CityGame() {
       failed = true;
     }
     const savedDistrict = localStorage.getItem("omdat-kuwait-selected-district");
-    simRef.current = loadSim(
-      savedDistrict === "yarmouk" || savedDistrict === "adailiya" || savedDistrict === "surra"
-        ? savedDistrict
-        : null,
-    );
+    simRef.current = loadSim(isDistrictId(savedDistrict) ? savedDistrict : null);
     if (simRef.current.district) {
       simRef.current.started = true;
       simRef.current.speed = 0;
@@ -217,7 +214,8 @@ export function CityGame() {
         }
         lastRoadCell.current = at;
       } else if (current?.kind === "build") {
-        const act = placeBuilding(sim, current.building, at.c, at.r, timeRef.current);
+        const lot = nearestOpenLot(sim, at.c, at.r, 1) ?? at;
+        const act = placeBuilding(sim, current.building, lot.c, lot.r, timeRef.current);
         audio.play(act.ok ? "place" : "error", sim.mute);
         if (!act.ok) toastRef.current(act.msg);
         else {
@@ -326,6 +324,16 @@ export function CityGame() {
   useEffect(() => {
     if (worldRef.current) worldRef.current.disabled = districtChooser;
   }, [districtChooser]);
+
+  useEffect(() => {
+    if (!snap.started) return;
+    const footer = document.querySelector("main.game-shell footer");
+    if (!footer) return;
+    const watch = new ResizeObserver(() => worldRef.current?.frameDistrict());
+    watch.observe(footer);
+    worldRef.current?.frameDistrict();
+    return () => watch.disconnect();
+  }, [snap.started, snap.district]);
 
   useEffect(() => {
     worldRef.current?.setTool(tool);
@@ -495,7 +503,11 @@ export function CityGame() {
     setZone(null);
     setTool(null);
     sync();
-    pushToast(`تم التنظيم: ${act.roads} طريق، ${act.built} مبنى`);
+    pushToast(
+      simRef.current.district
+        ? `امتلأت القطع: ${act.built} مبنى`
+        : `تم التنظيم: ${act.roads} طريق، ${act.built} مبنى`,
+    );
   }
 
   function onZoneCancel() {
@@ -559,9 +571,7 @@ export function CityGame() {
           stopAndSave();
           setDistrictChooser(true);
         }}
-        onFocusDistrict={() => {
-          if (simRef.current.district) worldRef.current?.focus({ c: 36, r: 24 }, 24);
-        }}
+        onFocusDistrict={() => worldRef.current?.frameDistrict()}
         onSpeed={onSpeed}
         onCategory={onCategory}
         onRoad={onRoad}

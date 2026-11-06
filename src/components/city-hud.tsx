@@ -162,7 +162,8 @@ export function CityHud({
   const [onKeys, setOnKeys] = useState<GraphKey[]>(["pop", "approval", "unemployment"]);
   const [ticker, setTicker] = useState(0);
 
-  const hasLegacy = localStorage.getItem("omdat-kuwait-v1") !== null;
+  const hasLegacy =
+    typeof localStorage !== "undefined" && localStorage.getItem("omdat-kuwait-v1") !== null;
   const st = stats(snap);
   const selected = snap.buildings.find((b) => b.id === selectedId) ?? null;
   const lines = bulletin(snap, st);
@@ -268,7 +269,8 @@ export function CityHud({
             onClick={onFocusDistrict}
             className="district-focus pointer-events-auto"
           >
-            {districtById(snap.district)?.name} · عرض القطع
+            {districtById(snap.district)?.name} ·{" "}
+            {snap.district === "free" ? "عرض المدينة" : "عرض القطع"}
           </button>
         </div>
       )}
@@ -357,11 +359,11 @@ export function CityHud({
                 dir="rtl"
               >
                 <p className="text-sm font-bold text-sc-leaf">
-                  ثلاثة أحياء، لكل حي مدينته المستقلة
+                  أربعة خيارات: ثلاثة أحياء ومنطقة حرة
                 </p>
                 <h2 className="mt-1 text-3xl font-extrabold leading-tight">عمدة الكويت</h2>
                 <p className="mt-2 text-base leading-relaxed">
-                  اختر اليرموك أو العديلية أو السرة. المعاينة لا تبدأ مدينة ولا تغيّر الحفظ.
+                  اختر حيًا مخططًا أو المنطقة الحرة لكل المدينة. المعاينة لا تبدأ مدينة ولا تغيّر الحفظ.
                 </p>
                 <button
                   type="button"
@@ -614,7 +616,8 @@ function ZoneCard({
     >
       <p className="text-sm font-extrabold">تنظيم المنطقة</p>
       <p className="mt-1 text-xs leading-relaxed">
-        الشوارع شبكة منتظمة، والبيوت تصطف على الرصيف، والحدائق وسط المربعات.
+        في الحي تُملأ القطعة المرقّمة كلها. خارجها وفي المنطقة الحرة يُبنى كل ما حدّدته، مع شوارع إن
+        أبقيتها مفعّلة.
       </p>
       <div className="mt-2 flex flex-wrap gap-1">
         {chips.map((chip) => (

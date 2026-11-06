@@ -1,11 +1,22 @@
 import type { Cell } from "./camera";
-import { cellWorld, worldCell } from "./camera";
+import { cellWorld, framedView, worldCell } from "./camera";
 import { COLS, LAND, ROWS } from "@/game/land";
-import { districtById, isDistrictLand } from "@/game/districts";
+import { districtBounds, districtById, isDistrictLand } from "@/game/districts";
 import type { Sim } from "@/game/sim";
 import type { HudTool } from "@/components/city-hud";
 import type { DayMode } from "./day-night";
+import { mountDinarCoin } from "@/game/coin-face";
 import type { WorldCallbacks, WorldDiagnostics } from "./renderer";
+
+let dinarFace: HTMLCanvasElement | null = null;
+function coinFace() {
+  if (!dinarFace) {
+    const face = mountDinarCoin(256);
+    dinarFace = face.canvas;
+    void face.ready.then(() => face.paint());
+  }
+  return dinarFace;
+}
 
 /** Accessibility/compatibility path only. No sprite images; the main view is true WebGL meshes. */
 export class FallbackCityWorld {
@@ -91,6 +102,23 @@ export class FallbackCityWorld {
     this.viewHeightGoal = Math.max(15, Math.min(92, this.viewHeightGoal / factor));
   }
 
+  frameDistrict() {
+    if (!this.district || this.width < 2) return;
+    const box = districtBounds(this.district);
+    const canvas = this.canvas.getBoundingClientRect();
+    const footer = document.querySelector("main.game-shell footer");
+    let occluded = 0.38;
+    if (footer && canvas.height > 0) {
+      const foot = footer.getBoundingClientRect();
+      occluded = Math.min(0.62, Math.max(0.22, (canvas.bottom - foot.top) / canvas.height + 0.03));
+    }
+    const framed = framedView(box.cols, box.rows, this.width, this.height, occluded);
+    const at = cellWorld(box.c, box.r);
+    const front = Math.SQRT1_2 * framed.shift;
+    this.target = { x: at.x + front, z: at.z + front };
+    this.viewHeight = this.viewHeightGoal = framed.viewHeight;
+  }
+
   private resize() {
     const rect = this.canvas.getBoundingClientRect();
     this.width = Math.max(1, rect.width);
@@ -169,6 +197,8 @@ export class FallbackCityWorld {
       this.callbacks.zone(this.drag.start ? range(this.drag.start, this.at(e)) : null);
       return;
     }
+    const placing = this.tool?.kind === "build" || this.tool?.kind === "bulldoze";
+    if (placing && this.drag.moved < 88) return;
     if (this.drag.moved < 3) return;
     const scale = this.height / this.viewHeight;
     const px = -dx / (Math.SQRT1_2 * scale),
@@ -185,12 +215,18 @@ export class FallbackCityWorld {
     this.drag = null;
     if (drag.zone && drag.start) {
       const end = this.at(e);
-      this.callbacks.zone(
-        Math.abs(end.c - drag.start.c) < 3 || Math.abs(end.r - drag.start.r) < 3
-          ? null
-          : range(drag.start, end),
-      );
-    } else if (!drag.road && drag.moved < 14) this.callbacks.cell(this.at(e));
+      const district = this.sim?.district ?? null;
+      if (district) {
+        this.callbacks.zone({
+          c0: Math.min(drag.start.c, end.c),
+          r0: Math.min(drag.start.r, end.r),
+          c1: Math.max(drag.start.c, end.c),
+          r1: Math.max(drag.start.r, end.r),
+        });
+      } else if (Math.abs(end.c - drag.start.c) < 3 || Math.abs(end.r - drag.start.r) < 3) {
+        this.callbacks.zone(null);
+      } else this.callbacks.zone(range(drag.start, end));
+    } else if (!drag.road && drag.moved < 88) this.callbacks.cell(this.at(e));
     this.callbacks.strokeEnd();
   };
   private onWheel = (e: WheelEvent) => {
@@ -202,7 +238,8 @@ export class FallbackCityWorld {
     this.sim = sim;
     if (sim.district !== this.district) {
       this.district = sim.district;
-      this.focus(sim.district ? { c: 36, r: 24 } : { c: 26, r: 24 }, sim.district ? 24 : 65);
+      if (sim.district) this.frameDistrict();
+      else this.focus({ c: 26, r: 24 }, 65);
     }
     this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
     const ctx = this.ctx;
@@ -289,10 +326,9 @@ export class FallbackCityWorld {
           Math.max(1, scale * 3),
         );
       if (b.stored >= 1) {
-        ctx.fillStyle = "#e1bb65";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y - h - 9, 7, 0, Math.PI * 2);
-        ctx.fill();
+        const face = coinFace();
+        const radius = Math.min(18, Math.max(9, 8 * scale));
+        ctx.drawImage(face, p.x - radius, p.y - h - radius * 2.4, radius * 2, radius * 2);
       }
     }
   }

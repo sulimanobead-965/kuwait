@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import type { HudTool } from "../../components/city-hud.tsx";
 import type { Sim } from "@/game/sim";
-import { cellKey } from "@/game/sim";
-import { districtById, isDistrictLand } from "@/game/districts";
+import { cellKey, isLand, nearestOpenLot } from "@/game/sim";
+import { COLS, ROWS } from "@/game/land";
+import { districtBounds, districtById, sectorsForZone } from "@/game/districts";
 import {
   CAMERA_PITCH_DEGREES,
   CAMERA_YAW_DEGREES,
@@ -10,6 +11,7 @@ import {
   LAND_HEIGHT,
   cellWorld,
   clampCameraTarget,
+  framedView,
   lodFor,
   worldCell,
   type Cell,
@@ -17,6 +19,7 @@ import {
 import { lightingAt, type DayMode } from "./day-night.ts";
 import { createBuildingObject } from "./models.ts";
 import { PALETTE, cityMaterials } from "./palette.ts";
+import { mountDinarCoin } from "@/game/coin-face";
 import {
   carGeometry,
   createGrid,
@@ -104,6 +107,7 @@ export class CityWorld {
     moved: number;
     road: boolean;
     zone: boolean;
+    place: Cell | null;
     id: number;
   } | null = null;
   private pinch: { dist: number; zoom: number } | null = null;
@@ -132,7 +136,7 @@ export class CityWorld {
     this.renderer.shadowMap.autoUpdate = false;
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES);
     const yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
-    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, 260);
+    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, 900);
     this.camera.position
       .copy(this.target)
       .add(
@@ -162,10 +166,10 @@ export class CityWorld {
     this.sun.shadow.normalBias = 0.025;
     this.sun.shadow.bias = -0.00018;
     this.sun.shadow.radius = 2;
-    this.scene.fog = new THREE.Fog("#a5cbd2", 110, 230);
+    this.scene.fog = new THREE.Fog("#a5cbd2", 220, 720);
     this.scene.background = new THREE.Color("#a5cbd2");
     const water = new THREE.Mesh(
-      new THREE.BoxGeometry(250, 0.3, 230),
+      new THREE.BoxGeometry(COLS * CELL_SIZE + 48, 0.3, ROWS * CELL_SIZE + 48),
       new THREE.MeshStandardMaterial({ color: PALETTE.gulf, roughness: 0.24, metalness: 0.22 }),
     );
     water.position.y = -0.34;
@@ -262,6 +266,7 @@ export class CityWorld {
     this.renderer.setPixelRatio(this.width < 600 ? 1 : this.pixelRatio);
     this.renderer.setSize(this.width, this.height, false);
     this.updateProjection();
+    if (this.districtId) this.frameDistrict();
   }
 
   private updateProjection() {
@@ -307,7 +312,19 @@ export class CityWorld {
     const p = this.local(e);
     const road = Boolean(this.sim?.started && this.currentTool?.kind === "road");
     const zone = Boolean(this.sim?.started && this.currentTool?.kind === "zone");
-    this.pointerDown = { x: p.x, y: p.y, moved: 0, road, zone, id: e.pointerId };
+    const placing = Boolean(
+      this.sim?.started &&
+        (this.currentTool?.kind === "build" || this.currentTool?.kind === "bulldoze"),
+    );
+    this.pointerDown = {
+      x: p.x,
+      y: p.y,
+      moved: 0,
+      road,
+      zone,
+      place: placing ? this.rayCell(e) : null,
+      id: e.pointerId,
+    };
     if (road) this.callbacks.cell(this.rayCell(e));
     if (zone) this.zone = this.rayCell(e);
   };
@@ -343,6 +360,7 @@ export class CityWorld {
       this.drawZone(this.zone, this.hover);
       return;
     }
+    if (drag.place && drag.moved < 88) return;
     if (drag.moved > 3) {
       const factor = this.viewHeight / this.height;
       const right = new THREE.Vector3(Math.SQRT1_2, 0, -Math.SQRT1_2);
@@ -367,22 +385,37 @@ export class CityWorld {
       this.callbacks.strokeEnd();
     }
     if (drag.zone && this.zone) {
-      if (
-        !this.hover ||
-        Math.abs(this.hover.c - this.zone.c) < 3 ||
-        Math.abs(this.hover.r - this.zone.r) < 3
-      ) {
-        this.zoneMesh.visible = false;
+      const end = this.hover ?? this.rayCell(e);
+      const district = this.sim?.district ?? null;
+      const tooSmall = Math.abs(end.c - this.zone.c) < 3 || Math.abs(end.r - this.zone.r) < 3;
+      this.zoneMesh.visible = false;
+      if (district) {
+        this.callbacks.zone({
+          c0: Math.min(this.zone.c, end.c),
+          r0: Math.min(this.zone.r, end.r),
+          c1: Math.max(this.zone.c, end.c),
+          r1: Math.max(this.zone.r, end.r),
+        });
+      } else if (tooSmall) {
         this.callbacks.zone(null);
       } else {
         this.callbacks.zone({
           c0: this.zone.c,
           r0: this.zone.r,
-          c1: this.hover.c,
-          r1: this.hover.r,
+          c1: end.c,
+          r1: end.r,
         });
       }
       this.zone = null;
+      return;
+    }
+    if (drag.place && drag.moved < 88 && this.sim) {
+      const released = this.rayCell(e);
+      const cell =
+        nearestOpenLot(this.sim, released.c, released.r, 1) ??
+        (drag.place ? nearestOpenLot(this.sim, drag.place.c, drag.place.r, 1) : null) ??
+        released;
+      this.callbacks.cell(cell);
       return;
     }
     if (drag.moved >= 14 || drag.road || !this.sim?.started) return;
@@ -424,10 +457,34 @@ export class CityWorld {
   };
 
   private drawZone(start: Cell, end: Cell) {
-    const c0 = Math.min(start.c, end.c),
-      c1 = Math.max(start.c, end.c);
-    const r0 = Math.min(start.r, end.r),
-      r1 = Math.max(start.r, end.r);
+    const district = this.sim?.district ?? null;
+    const parcels = district
+      ? sectorsForZone(
+          district,
+          Math.min(start.c, end.c),
+          Math.min(start.r, end.r),
+          Math.max(start.c, end.c),
+          Math.max(start.r, end.r),
+        )
+      : [];
+    let c0 = Math.min(start.c, end.c);
+    let c1 = Math.max(start.c, end.c);
+    let r0 = Math.min(start.r, end.r);
+    let r1 = Math.max(start.r, end.r);
+    if (parcels.length) {
+      c0 = 99;
+      c1 = 0;
+      r0 = 99;
+      r1 = 0;
+      for (const parcel of parcels) {
+        for (const cell of parcel.cells) {
+          c0 = Math.min(c0, cell.c);
+          c1 = Math.max(c1, cell.c);
+          r0 = Math.min(r0, cell.r);
+          r1 = Math.max(r1, cell.r);
+        }
+      }
+    }
     const a = cellWorld(c0, r0),
       b = cellWorld(c1, r1);
     this.zoneMesh.position.set((a.x + b.x) / 2, LAND_HEIGHT + 0.11, (a.z + b.z) / 2);
@@ -480,6 +537,41 @@ export class CityWorld {
     this.dirtyShadows = true;
   }
 
+  frameDistrict() {
+    if (!this.districtId || this.width < 2) return;
+    const box = districtBounds(this.districtId);
+    const canvas = this.canvas.getBoundingClientRect();
+    const footer = document.querySelector("main.game-shell footer");
+    let occluded = 0.38;
+    if (footer && canvas.height > 0) {
+      const foot = footer.getBoundingClientRect();
+      occluded = Math.min(0.62, Math.max(0.22, (canvas.bottom - foot.top) / canvas.height + 0.03));
+    }
+    const framed = framedView(box.cols, box.rows, this.width, this.height, occluded);
+    const at = cellWorld(box.c, box.r);
+    this.targetGoal.set(at.x, LAND_HEIGHT, at.z).addScaledVector(
+      new THREE.Vector3(Math.SQRT1_2, 0, Math.SQRT1_2),
+      framed.shift,
+    );
+    clampCameraTarget(this.targetGoal, framed.viewHeight);
+    this.target.copy(this.targetGoal);
+    this.viewHeightGoal = framed.viewHeight;
+    this.viewHeight = framed.viewHeight;
+    this.updateProjection();
+    const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES),
+      yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
+    this.camera.position.copy(this.target).add(
+      new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch) * 100,
+        Math.sin(pitch) * 100,
+        Math.cos(yaw) * Math.cos(pitch) * 100,
+      ),
+    );
+    this.camera.lookAt(this.target);
+    this.camera.updateMatrixWorld();
+    this.dirtyShadows = true;
+  }
+
   projectCell(c: number, r: number) {
     const world = cellWorld(c, r);
     const ndc = new THREE.Vector3(world.x, LAND_HEIGHT, world.z).project(this.camera);
@@ -506,13 +598,14 @@ export class CityWorld {
         this.districtNumbers = createDistrictNumbers(district);
         this.scene.add(this.districtNumbers);
       }
-      this.focus(district ? { c: 36, r: 24 } : { c: 26, r: 24 }, district ? 24 : 31);
+      if (district) this.frameDistrict();
+      else this.focus({ c: 26, r: 24 }, 31);
     }
     const preview =
       !input.started && !input.district && input.buildings.length === 0 && input.roads.length === 0;
     const sim = preview ? createInitialPreview() : input;
-    // On the very first sync, bring a saved city into a portrait-usable frame.
-    if (force && input.started && input.buildings.length > 0 && this.viewHeight === 47) {
+    // Saved cities without a neighborhood still need a portrait-usable frame.
+    if (force && input.started && !input.district && input.buildings.length > 0 && this.viewHeight === 47) {
       const mean = input.buildings.reduce((a, b) => ({ c: a.c + b.c, r: a.r + b.r }), {
         c: 0,
         r: 0,
@@ -720,10 +813,15 @@ export class CityWorld {
       this.highlight.visible = false;
       return;
     }
-    const { c, r } = this.hover;
+    const aimed =
+      current.kind === "build" && this.sim
+        ? (nearestOpenLot(this.sim, this.hover.c, this.hover.r, 1) ?? this.hover)
+        : this.hover;
+    const { c, r } = aimed;
+    const key = cellKey(c, r);
     const blocked =
-      !isDistrictLand(this.sim.district ?? null, cellKey(c, r)) ||
-      this.sim.roads.includes(cellKey(c, r)) ||
+      !isLand(c, r) ||
+      this.sim.roads.includes(key) ||
       this.sim.buildings.some((b) => b.c === c && b.r === r);
     const material = this.highlight.material as THREE.MeshBasicMaterial;
     material.color.set((current.kind === "bulldoze" ? !blocked : blocked) ? "#d56845" : "#45e0d5");
@@ -764,7 +862,7 @@ export class CityWorld {
     for (const b of this.sim?.buildings ?? []) {
       if (b.stored < 1) continue;
       const record = this.buildings.get(b.id);
-      if (record) record.position.y = LAND_HEIGHT + 3.5 + Math.sin(this.elapsed * 2 + b.c) * 0.18;
+      if (record) record.position.y = LAND_HEIGHT + 5.15 + Math.sin(this.elapsed * 2 + b.c) * 0.2;
     }
     if (this.viewHeight < 65 && this.sim)
       for (const b of this.sim.buildings) {
@@ -782,33 +880,27 @@ export class CityWorld {
 
   private coinGroup = new THREE.Group();
   private coinSprites = new Map<string, THREE.Sprite>();
+  private coinTexture: THREE.CanvasTexture | null = null;
   private drawCoin(record: BuildingRecord) {
     let sprite = this.coinSprites.get(record.object.userData.buildingId as string);
     if (!sprite) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 96;
-      canvas.height = 96;
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#e2b54e";
-      ctx.beginPath();
-      ctx.arc(48, 48, 37, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = "#f6df9d";
-      ctx.stroke();
-      ctx.fillStyle = "#143c43";
-      ctx.font = "bold 45px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("د", 48, 47);
-      const texture = new THREE.CanvasTexture(canvas);
+      if (!this.coinTexture) {
+        const face = mountDinarCoin(256);
+        const texture = new THREE.CanvasTexture(face.canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 4;
+        this.coinTexture = texture;
+        void face.ready.then(() => {
+          texture.needsUpdate = true;
+        });
+      }
       const material = new THREE.SpriteMaterial({
-        map: texture,
+        map: this.coinTexture,
         depthTest: false,
         depthWrite: false,
       });
       sprite = new THREE.Sprite(material);
-      sprite.scale.setScalar(1.12);
+      sprite.scale.setScalar(1.28);
       this.coinGroup.add(sprite);
       this.coinSprites.set(record.object.userData.buildingId as string, sprite);
       this.scene.add(this.coinGroup);
@@ -821,7 +913,6 @@ export class CityWorld {
     const coin = this.coinSprites.get(id);
     if (!coin) return;
     this.coinGroup.remove(coin);
-    coin.material.map?.dispose();
     coin.material.dispose();
     this.coinSprites.delete(id);
   }
@@ -829,6 +920,8 @@ export class CityWorld {
   dispose() {
     if (this.districtNumbers) disposeDistrictNumbers(this.districtNumbers);
     for (const id of [...this.coinSprites.keys()]) this.hideCoin(id);
+    this.coinTexture?.dispose();
+    this.coinTexture = null;
     this.renderer.setAnimationLoop(null);
     this.observer.disconnect();
     this.timer.dispose();

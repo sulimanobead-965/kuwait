@@ -4,12 +4,31 @@ import * as THREE from "three";
 import {
   CAMERA_PITCH_DEGREES,
   CAMERA_YAW_DEGREES,
+  CELL_SIZE,
   LAND_HEIGHT,
   cellWorld,
+  framedView,
   worldCell,
 } from "./camera.ts";
 import { createRoads } from "./scenery.ts";
 import { roadMarkingsAt } from "./road-markings.ts";
+import { COLS, LAND, ROWS } from "../land.ts";
+
+function findCross() {
+  for (let r = 2; r < ROWS - 2; r += 1) {
+    for (let c = 4; c < COLS - 4; c += 1) {
+      const horizontal = [-4, -3, -2, -1, 0, 1, 2, 3, 4].every((dc) => LAND[r]?.[c + dc] === 1);
+      const vertical = [-2, -1, 1, 2].every((dr) => LAND[r + dr]?.[c] === 1);
+      if (horizontal && vertical) return { c, r };
+    }
+  }
+  throw new Error("no land cross");
+}
+
+const hub = findCross();
+const crossRoads = new Set<string>();
+for (let dc = -4; dc <= 4; dc += 1) crossRoads.add(`${hub.c + dc},${hub.r}`);
+for (let dr = -2; dr <= 2; dr += 1) if (dr) crossRoads.add(`${hub.c},${hub.r + dr}`);
 
 test("isometric orthographic ray returns original land lot", () => {
   const camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, 260);
@@ -43,19 +62,46 @@ test("isometric orthographic ray returns original land lot", () => {
   }
 });
 
-const crossRoads = new Set(["22,21", "23,21", "24,21", "25,21", "26,21", "27,21", "25,18", "25,20", "25,22", "25,23"]);
+test("portrait framing keeps neighborhood lots large enough to tap", () => {
+  const phone = framedView(13, 12, 440, 956, 0.48);
+  const desktop = framedView(13, 12, 1280, 720, 0.4);
+  const step = CELL_SIZE * Math.SQRT1_2;
+  const phonePx = (step / (phone.viewHeight * (440 / 956))) * 440;
+  assert.ok(phonePx >= 38, `phone cell ${phonePx.toFixed(1)}px`);
+  assert.ok(phone.viewHeight < 50, `phone zoomed out to ${phone.viewHeight}`);
+  assert.ok(desktop.viewHeight > 22 && desktop.viewHeight < 50);
+});
 
 test("road paint has correctly oriented dashed approaches, stops, and empty junction interiors", () => {
-  assert.deepEqual(roadMarkingsAt(crossRoads, 25, 21), []);
-  assert.deepEqual(roadMarkingsAt(crossRoads, 23, 21), [{ type: "dash", axis: "x" }]);
-  assert.deepEqual(roadMarkingsAt(crossRoads, 26, 21), [
-    { type: "stop", axis: "x", dc: -1, dr: 0 },
-  ]);
-  const straight = new Set(["20,20", "21,20", "22,20", "23,20", "24,20"]);
-  assert.deepEqual(roadMarkingsAt(straight, 22, 20), [{ type: "dash", axis: "x" }]);
-  const vertical = new Set(["32,18", "32,19", "32,20", "32,21"]);
-  assert.deepEqual(roadMarkingsAt(vertical, 32, 20), [{ type: "dash", axis: "z" }]);
-  assert.deepEqual(roadMarkingsAt(crossRoads, 25, 22), [{ type: "stop", axis: "z", dc: 0, dr: -1 }]);
+  assert.deepEqual(roadMarkingsAt(crossRoads, hub.c, hub.r), []);
+  const dashC = (hub.c + 2 + hub.r) % 2 === 0 ? hub.c + 2 : hub.c + 3;
+  assert.deepEqual(roadMarkingsAt(crossRoads, dashC, hub.r), [{ type: "dash", axis: "x" }]);
+  const stopC = hub.c + 1;
+  const stopX: { type: "dash" | "stop"; axis: "x" | "z"; dc?: number; dr?: number }[] = [];
+  if ((stopC + hub.r) % 2 === 0) stopX.push({ type: "dash", axis: "x" });
+  stopX.push({ type: "stop", axis: "x", dc: -1, dr: 0 });
+  assert.deepEqual(roadMarkingsAt(crossRoads, stopC, hub.r), stopX);
+  let vc = 0;
+  let vr = 0;
+  for (let c = 0; c < COLS && !vr; c += 1) {
+    for (let r = 2; r < ROWS - 2; r += 1) {
+      if (
+        [r - 2, r - 1, r, r + 1, r + 2].every((row) => LAND[row]?.[c] === 1) &&
+        (c + r) % 2 === 0
+      ) {
+        vc = c;
+        vr = r;
+        break;
+      }
+    }
+  }
+  const vertical = new Set([vr - 2, vr - 1, vr, vr + 1, vr + 2].map((r) => `${vc},${r}`));
+  assert.deepEqual(roadMarkingsAt(vertical, vc, vr), [{ type: "dash", axis: "z" }]);
+  const stopR = hub.r + 1;
+  const stopZ: { type: "dash" | "stop"; axis: "x" | "z"; dc?: number; dr?: number }[] = [];
+  if ((hub.c + stopR) % 2 === 0) stopZ.push({ type: "dash", axis: "z" });
+  stopZ.push({ type: "stop", axis: "z", dc: 0, dr: -1 });
+  assert.deepEqual(roadMarkingsAt(crossRoads, hub.c, stopR), stopZ);
 });
 
 test("real district paint is merged geometry, with finite vertices and no per-tile curb mesh", () => {

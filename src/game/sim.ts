@@ -6,7 +6,8 @@ import {
   districtRoads,
   districtSaveKey,
   isDistrictLand,
-  sectorAt,
+  isSchematicRoad,
+  sectorsForZone,
   type DistrictId,
 } from "./districts";
 export type { DistrictId } from "./districts";
@@ -396,7 +397,7 @@ export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
   if (!isLand(c, r)) return { ok: false, msg: "ما ينفع الطريق في البحر" };
-  if (s.district && isDistrictLand(s.district, cellKey(c, r)))
+  if (s.district && s.district !== "free" && isDistrictLand(s.district, cellKey(c, r)))
     return { ok: false, msg: "المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة" };
   if (s.buildings.some((b) => b.c === c && b.r === r)) return { ok: false, msg: "في مبنى هنا" };
   const k = cellKey(c, r);
@@ -410,8 +411,6 @@ export function placeRoad(s: Sim, c: number, r: number): Act {
 
 export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: number): Act {
   if (!isLand(c, r)) return { ok: false, msg: "ما ينفع البناء في البحر" };
-  if (!isDistrictLand(s.district ?? null, cellKey(c, r)))
-    return { ok: false, msg: "اختر أرضًا داخل إحدى القطع المرقّمة" };
   if (s.roads.includes(cellKey(c, r)) || s.buildings.some((b) => b.c === c && b.r === r)) {
     return { ok: false, msg: "الأرض مشغولة" };
   }
@@ -430,6 +429,23 @@ export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: num
   return { ok: true };
 }
 
+/** Fat-finger snap: the lot under the tap, or an open neighboring lot. */
+export function nearestOpenLot(s: Sim, c: number, r: number, radius = 1) {
+  let best: { c: number; r: number; d: number } | null = null;
+  for (let dr = -radius; dr <= radius; dr += 1) {
+    for (let dc = -radius; dc <= radius; dc += 1) {
+      const cc = c + dc;
+      const rr = r + dr;
+      const key = cellKey(cc, rr);
+      if (!isLand(cc, rr)) continue;
+      if (s.roads.includes(key) || s.buildings.some((b) => b.c === cc && b.r === rr)) continue;
+      const d = dc * dc + dr * dr;
+      if (!best || d < best.d) best = { c: cc, r: rr, d };
+    }
+  }
+  return best ? { c: best.c, r: best.r } : null;
+}
+
 export type ZonePick = {
   streets: boolean;
   schools: boolean;
@@ -437,6 +453,115 @@ export type ZonePick = {
   landmarks: boolean;
   parks: boolean;
 };
+
+function fillParcel(
+  s: Sim,
+  cells: readonly { c: number; r: number }[],
+  pick: ZonePick,
+  now: number,
+): { ok: true; roads: number; built: number } | { ok: false; msg: string } {
+  const open = cells.filter(
+    ({ c, r }) =>
+      isLand(c, r) &&
+      !s.roads.includes(cellKey(c, r)) &&
+      !s.buildings.some((b) => b.c === c && b.r === r),
+  );
+  const midC = open.reduce((n, cell) => n + cell.c, 0) / Math.max(1, open.length);
+  const midR = open.reduce((n, cell) => n + cell.r, 0) / Math.max(1, open.length);
+  const pool = open
+    .map((cell) => ({ ...cell, score: Math.abs(cell.c - midC) + Math.abs(cell.r - midR) }))
+    .sort((a, b) => a.score - b.score);
+  let built = 0;
+  const take = (kind: Kind) => {
+    const lot = pool.shift();
+    if (!lot) return false;
+    const act = placeBuilding(s, kind, lot.c, lot.r, now);
+    if (!act.ok) return false;
+    built += 1;
+    return true;
+  };
+  if (pick.schools) take("school");
+  if (pick.fire) take("fire");
+  if (pick.landmarks) {
+    const icons: Kind[] = ["boubyan", "kuwait", "mosque", "liberation", "palace"];
+    take(icons.find((k) => !s.buildings.some((b) => b.kind === k)) ?? "kuwait");
+  }
+  if (pick.parks) {
+    const limit = pick.streets ? Math.max(1, Math.floor(open.length / 5)) : Math.min(12, pool.length);
+    let n = 0;
+    while (pool.length && n < limit) {
+      if (!take("park")) break;
+      n += 1;
+    }
+  }
+  if (pick.streets) {
+    let i = 0;
+    while (pool.length) {
+      const kind: Kind = i % 7 === 3 ? "apartments" : i % 5 === 0 ? "modern" : "villa";
+      if (!take(kind)) break;
+      i += 1;
+    }
+  }
+  if (built === 0) return { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+  return { ok: true, roads: 0, built };
+}
+
+const ZONE_CAP = 800;
+
+function capCells(cells: { c: number; r: number }[], midC: number, midR: number) {
+  if (cells.length <= ZONE_CAP) return cells;
+  return [...cells]
+    .sort(
+      (a, b) =>
+        Math.abs(a.c - midC) + Math.abs(a.r - midR) - (Math.abs(b.c - midC) + Math.abs(b.r - midR)),
+    )
+    .slice(0, ZONE_CAP);
+}
+
+function collectOpen(
+  s: Sim,
+  cA: number,
+  rA: number,
+  cB: number,
+  rB: number,
+  skip: ReadonlySet<string>,
+) {
+  const cells: { c: number; r: number }[] = [];
+  for (let r = rA; r <= rB; r += 1) {
+    for (let c = cA; c <= cB; c += 1) {
+      const key = cellKey(c, r);
+      if (!isLand(c, r) || skip.has(key) || roadIsSchematic(s.district, key)) continue;
+      if (s.roads.includes(key) || s.buildings.some((b) => b.c === c && b.r === r)) continue;
+      cells.push({ c, r });
+    }
+  }
+  return cells;
+}
+
+function zoneOpenLand(
+  s: Sim,
+  cA: number,
+  rA: number,
+  cB: number,
+  rB: number,
+  pick: ZonePick,
+  now: number,
+  skip: ReadonlySet<string>,
+): { ok: true; roads: number; built: number } | { ok: false; msg: string } {
+  const cells = capCells(collectOpen(s, cA, rA, cB, rB, skip), (cA + cB) / 2, (rA + rB) / 2);
+  if (!cells.length) return { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+  let roads = 0;
+  if (pick.streets && cells.length >= 12) {
+    for (const cell of cells) {
+      if (cell.c % 5 !== 0 && cell.r % 5 !== 0) continue;
+      const act = placeRoad(s, cell.c, cell.r);
+      if (act.ok && act.fresh) roads += 1;
+    }
+  }
+  const act = fillParcel(s, cells, pick, now);
+  if (!act.ok) return roads > 0 ? { ok: true, roads, built: 0 } : act;
+  return { ok: true, roads, built: act.built };
+}
 
 export function planZone(
   s: Sim,
@@ -451,32 +576,43 @@ export function planZone(
   let cB = Math.min(COLS - 1, Math.max(c0, c1));
   let rA = Math.max(0, Math.min(r0, r1));
   let rB = Math.min(ROWS - 1, Math.max(r0, r1));
-  if (cB - cA < 3 || rB - rA < 3) return { ok: false, msg: "حدّد منطقة أكبر" };
   if (!pick.streets && !pick.schools && !pick.fire && !pick.landmarks && !pick.parks) {
     return { ok: false, msg: "اختر ماذا يُبنى في المنطقة" };
   }
+  if (s.district === "free") return zoneOpenLand(s, cA, rA, cB, rB, pick, now, new Set());
+  if (s.district) {
+    const parcels = sectorsForZone(s.district, c0, r0, c1, r1);
+    const parcelKeys = new Set(
+      parcels.flatMap((parcel) => parcel.cells.map((cell) => cellKey(cell.c, cell.r))),
+    );
+    let built = 0;
+    if (parcels.length) {
+      const act = fillParcel(
+        s,
+        capCells(
+          parcels.flatMap((parcel) => [...parcel.cells]),
+          (cA + cB) / 2,
+          (rA + rB) / 2,
+        ),
+        pick,
+        now,
+      );
+      if (act.ok) built += act.built;
+      else if (!collectOpen(s, cA, rA, cB, rB, parcelKeys).length) return act;
+    }
+    const outside = collectOpen(s, cA, rA, cB, rB, parcelKeys);
+    if (!outside.length) {
+      return built > 0
+        ? { ok: true, roads: 0, built }
+        : { ok: false, msg: "ما لقيت أرض فاضية في المنطقة" };
+    }
+    const act = zoneOpenLand(s, cA, rA, cB, rB, pick, now, parcelKeys);
+    if (!act.ok) return built > 0 ? { ok: true, roads: 0, built } : act;
+    return { ok: true, roads: act.roads, built: built + act.built };
+  }
+  if (cB - cA < 3 || rB - rA < 3) return { ok: false, msg: "حدّد منطقة أكبر" };
   let roads = 0;
   let built = 0;
-  if (s.district) {
-    const number = sectorAt(s.district, cellKey(cA, rA));
-    const parcel = districtById(s.district)?.sectors.find((sector) => sector.number === number);
-    if (!parcel) return { ok: false, msg: "ابدأ التحديد على أرض داخل قطعة مرقّمة" };
-    let left: number = COLS,
-      right = 0,
-      top: number = ROWS,
-      bottom = 0;
-    for (const { c, r } of parcel.cells) {
-      left = Math.min(left, c);
-      right = Math.max(right, c);
-      top = Math.min(top, r);
-      bottom = Math.max(bottom, r);
-    }
-    cA = left;
-    cB = right;
-    rA = top;
-    rB = bottom;
-    /* The tool plans the indicated sector, never through another sector. */
-  }
   const period = 4;
   const linesBetween = (a: number, b: number) => {
     const lines = [a];
@@ -797,10 +933,8 @@ export function createInitialDistrict(district: DistrictId): Sim {
   return s;
 }
 
-export const roadIsSchematic = (district: DistrictId | null | undefined, key: string) => {
-  const d = districtById(district);
-  return Boolean(d && districtRoads(d).includes(key));
-};
+export const roadIsSchematic = (district: DistrictId | null | undefined, key: string) =>
+  isSchematicRoad(district, key);
 
 export function loadSim(district?: DistrictId | null): Sim {
   if (typeof localStorage === "undefined")
@@ -826,7 +960,10 @@ export function loadSim(district?: DistrictId | null): Sim {
     // The independently owned key, not arbitrary save content, decides layout identity.
     const requestedDistrict = district ?? null;
     s.district = districtById(requestedDistrict)?.id ?? null;
-    const fine = p.grid === GRID_GEN;
+    if (p.grid !== GRID_GEN) {
+      if (!s.history.length) s.history.push(takeSample(s));
+      return s;
+    }
     const o = p.ordinances;
     if (o && typeof o === "object") {
       s.ordinances = {
@@ -854,17 +991,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     for (const k of roads) {
       if (typeof k !== "string") continue;
       const [c, r] = k.split(",").map(Number);
-      if (fine) {
-        if (isLand(c, r)) roadCells.push(cellKey(c, r));
-        continue;
-      }
-      for (const dc of [0, 1]) {
-        for (const dr of [0, 1]) {
-          const nc = c * 2 + dc;
-          const nr = r * 2 + dr;
-          if (isLand(nc, nr)) roadCells.push(cellKey(nc, nr));
-        }
-      }
+      if (isLand(c, r)) roadCells.push(cellKey(c, r));
     }
     if (s.district) roadCells.push(...districtRoads(districtById(s.district)!));
     s.roads = [...new Set(roadCells)];
@@ -876,34 +1003,9 @@ export function loadSim(district?: DistrictId | null): Sim {
       if (typeof b.kind !== "string" || !(b.kind in CATALOG)) continue;
       const c0 = Number(b.c);
       const r0 = Number(b.r);
-      let c = c0;
-      let r = r0;
-      if (!fine) {
-        const spots = [
-          [c0 * 2, r0 * 2],
-          [c0 * 2 + 1, r0 * 2],
-          [c0 * 2, r0 * 2 + 1],
-          [c0 * 2 + 1, r0 * 2 + 1],
-        ];
-        const roadSet = new Set(s.roads);
-        const hit = spots.find(
-          ([nc, nr]) =>
-            isLand(nc, nr) &&
-            !roadSet.has(cellKey(nc, nr)) &&
-            DIRS.some(([dc, dr]) => roadSet.has(cellKey(nc + dc, nr + dr))),
-        );
-        const open = spots.find(([nc, nr]) => isLand(nc, nr) && !roadSet.has(cellKey(nc, nr)));
-        const pick = hit ?? open;
-        if (!pick) continue;
-        c = pick[0];
-        r = pick[1];
-      }
-      if (
-        !isLand(c, r) ||
-        !isDistrictLand(s.district ?? null, cellKey(c, r)) ||
-        taken.has(cellKey(c, r))
-      )
-        continue;
+      const c = c0;
+      const r = r0;
+      if (!isLand(c, r) || taken.has(cellKey(c, r))) continue;
       taken.add(cellKey(c, r));
       s.buildings.push({
         id: String(b.id ?? cellKey(c, r)),

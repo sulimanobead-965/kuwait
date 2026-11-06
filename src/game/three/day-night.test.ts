@@ -49,6 +49,7 @@ test("camera and every building model are shared between generated lots", () => 
 });
 
 import { createGrid, createRoads } from "./scenery.ts";
+import { LAND } from "../land.ts";
 import { PALETTE } from "./palette.ts";
 import { LAND_HEIGHT } from "./camera.ts";
 
@@ -154,7 +155,17 @@ test("roads keep interior paint separate from charcoal asphalt, with no pale bor
   assert.equal(positions.count, 120, "three complete asphalt cubes and one two-part streetlamp");
   assert.equal(roads.lights.getAttribute("position").count, 24);
   for (const geometry of [roads.asphalt, roads.markings, roads.details, roads.lights]) geometry.dispose();
-  const open = createGrid(new Set(["20,28"]));
+  let lot = "0,0";
+  for (let r = 0; r < LAND.length && lot === "0,0"; r += 1) {
+    const row = LAND[r] ?? [];
+    for (let c = 0; c < row.length; c += 1) {
+      if (row[c]) {
+        lot = `${c},${r}`;
+        break;
+      }
+    }
+  }
+  const open = createGrid(new Set([lot]));
   assert.equal(
     open.geometry.getAttribute("position").count,
     createGrid().geometry.getAttribute("position").count - 8,

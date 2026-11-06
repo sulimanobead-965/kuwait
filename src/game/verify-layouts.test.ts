@@ -2,22 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DISTRICTS,
-  districtArterial,
   districtById,
   districtRoads,
   isDistrictId,
   isDistrictLand,
   sectorAt,
+  sectorsForZone,
   type DistrictId,
 } from "./districts.ts";
-import { isLand } from "./sim.ts";
+import { cellsFromSource, LAND, sourceCell, SOURCE_LAND } from "./land.ts";
 import {
   bulldoze,
   cellKey,
   createInitial,
   createInitialDistrict,
+  isLand,
   loadSim,
   placeBuilding,
+  nearestOpenLot,
   placeRoad,
   planZone,
   saveSim,
@@ -29,22 +31,35 @@ function locate(id: DistrictId, number: number) {
   return sector;
 }
 
+function srcOf(sector: { x: number; y: number }) {
+  return sourceCell(sector.x, sector.y);
+}
+
+test("the playable land is five times the source mask", () => {
+  const count = (rows: readonly (readonly number[])[]) =>
+    rows.reduce((sum, row) => sum + row.reduce((n, bit) => n + bit, 0), 0);
+  const ratio = count(LAND) / count(SOURCE_LAND);
+  assert.ok(ratio > 4.6 && ratio < 5.4, String(ratio));
+});
+
 test("only the three verified sign layouts, with the exact sector ordering", () => {
   assert.equal(isDistrictId("jahra"), false);
   assert.deepEqual(
-    DISTRICTS.map((d) => [d.id, d.name, d.sectors.length]),
+    DISTRICTS.filter((d) => d.id !== "free").map((d) => [d.id, d.name, d.sectors.length]),
     [
       ["yarmouk", "اليرموك", 4],
       ["adailiya", "العديلية", 4],
       ["surra", "السرة", 6],
     ],
   );
+  assert.equal(districtById("free")?.name, "منطقة حرة");
+  assert.equal(districtById("free")?.sectors.length, 0);
   assert.deepEqual(
-    [2, 3, 1, 4].map((n) => locate("yarmouk", n).y < 27),
+    [2, 3, 1, 4].map((n) => srcOf(locate("yarmouk", n)).r < 27),
     [true, true, false, false],
   );
   assert.deepEqual(
-    [3, 2, 4, 1].map((n) => locate("adailiya", n).y < 27),
+    [3, 2, 4, 1].map((n) => srcOf(locate("adailiya", n)).r < 27),
     [true, true, false, false],
   );
   for (const [left, right, row] of [
@@ -52,22 +67,25 @@ test("only the three verified sign layouts, with the exact sector ordering", () 
     [6, 3, 24],
     [5, 4, 29],
   ] as const) {
-    assert.equal(locate("surra", left).y, row);
-    assert.equal(locate("surra", right).y, row);
+    assert.equal(srcOf(locate("surra", left)).r, row);
+    assert.equal(srcOf(locate("surra", right)).r, row);
     assert.ok(locate("surra", right).x > locate("surra", left).x);
   }
 });
 
 test("every protected asphalt network lies on land and remains connected", () => {
   for (const district of DISTRICTS) {
+    if (district.id === "free") continue;
     const roads = new Set(districtRoads(district));
     for (const key of roads) {
       assert.equal(isDistrictLand(district.id, key), false);
       const [c, r] = key.split(",").map(Number);
       assert.equal(isLand(c!, r!), true);
     }
-    const seen = new Set(["29,18"]);
-    const queue = ["29,18"];
+    const start = [...roads][0];
+    assert.ok(start);
+    const seen = new Set([start!]);
+    const queue = [start!];
     while (queue.length) {
       const [c, r] = queue.shift()!.split(",").map(Number);
       for (const [dc, dr] of [
@@ -89,6 +107,7 @@ test("every protected asphalt network lies on land and remains connected", () =>
 
 test("every one of the fourteen sectors is buildable and planning stays within one", () => {
   for (const district of DISTRICTS) {
+    if (district.id === "free") continue;
     for (const sector of district.sectors) {
       const city = createInitialDistrict(district.id);
       const lot = sector.cells[0]!;
@@ -101,37 +120,101 @@ test("every one of the fourteen sectors is buildable and planning stays within o
     const city = createInitialDistrict(district.id);
     const sector = district.sectors[0]!;
     const start = sector.cells[0]!;
-    const shape = {
-      left: Math.min(...sector.cells.map((at) => at.c)),
-      right: Math.max(...sector.cells.map((at) => at.c)),
-      top: Math.min(...sector.cells.map((at) => at.r)),
-      bottom: Math.max(...sector.cells.map((at) => at.r)),
-    };
     const result = planZone(
       city,
       start.c,
       start.r,
-      start.c + 14,
-      start.r + 11,
+      start.c + 2,
+      start.r + 1,
       { streets: true, schools: true, fire: true, landmarks: true, parks: true },
       4,
     );
-    assert.equal(
-      result.ok,
-      shape.right - shape.left >= 3 && shape.bottom - shape.top >= 3,
-      district.id,
-    );
+    assert.equal(result.ok, true, district.id);
+    assert.equal(city.buildings.length, sector.cells.length, `${district.id} sector fill`);
     for (const b of city.buildings) {
       assert.equal(sectorAt(district.id, cellKey(b.c, b.r)), sector.number);
     }
   }
   const city = createInitialDistrict("yarmouk");
-  assert.equal(placeRoad(city, 28, 21).ok, true);
-  assert.equal(bulldoze(city, 35, 21).ok, false);
-  assert.equal(placeBuilding(city, "villa", 28, 21, 0).ok, false);
+  const schematic = districtRoads(districtById("yarmouk")!)[0]!.split(",").map(Number);
+  assert.equal(bulldoze(city, schematic[0]!, schematic[1]!).ok, false);
+  const outside = cellsFromSource(28, 21)[0]!;
+  const besideRoad = cellsFromSource(27, 21)[0]!;
+  assert.equal(placeBuilding(city, "villa", outside.c, outside.r, 0).ok, true);
+  assert.equal(placeRoad(city, besideRoad.c, besideRoad.r).ok, true);
+  const roadCells = cellsFromSource(29, 21);
+  const road = roadCells[roadCells.length - 1]!;
+  const beside = planZone(
+    createInitialDistrict("yarmouk"),
+    road.c,
+    road.r,
+    road.c,
+    road.r,
+    { streets: true, schools: false, fire: false, landmarks: false, parks: false },
+    3,
+  );
+  assert.equal(beside.ok, true);
+  const only = sectorsForZone("yarmouk", road.c, road.r, road.c, road.r);
+  assert.equal(only.length, 1);
+  const filled = createInitialDistrict("yarmouk");
+  const crossed = planZone(
+    filled,
+    locate("yarmouk", 2).cells[0]!.c,
+    locate("yarmouk", 2).cells[0]!.r,
+    locate("yarmouk", 1).cells[0]!.c,
+    locate("yarmouk", 1).cells[0]!.r,
+    { streets: true, schools: false, fire: false, landmarks: false, parks: false },
+    6,
+  );
+  assert.equal(crossed.ok, true);
+  const wanted = new Set(
+    [2, 1].flatMap((number) =>
+      locate("yarmouk", number).cells.map((cell) => cellKey(cell.c, cell.r)),
+    ),
+  );
+  for (const key of wanted) {
+    assert.equal(
+      filled.buildings.some((b) => cellKey(b.c, b.r) === key),
+      true,
+      key,
+    );
+  }
+  const far = cellsFromSource(8, 22)[0]!;
+  const open = createInitialDistrict("yarmouk");
+  const outsideZone = planZone(
+    open,
+    far.c,
+    far.r,
+    far.c + 5,
+    far.r + 4,
+    { streets: true, schools: false, fire: false, landmarks: false, parks: false },
+    8,
+  );
+  assert.equal(outsideZone.ok, true);
+  if (outsideZone.ok) assert.ok(outsideZone.built > 5);
+  const snapped = nearestOpenLot(createInitialDistrict("yarmouk"), road.c, road.r, 2);
+  assert.ok(snapped);
+  assert.equal(isDistrictLand("yarmouk", cellKey(snapped.c, snapped.r)), true);
   const legacy = createInitial();
-  assert.equal(placeRoad(legacy, 33, 21).ok, true);
-  assert.equal(placeBuilding(legacy, "villa", 34, 21, 0).ok, true);
+  const legacyLot = cellsFromSource(34, 21)[0]!;
+  const legacyRoad = cellsFromSource(33, 21)[0]!;
+  assert.equal(placeRoad(legacy, legacyRoad.c, legacyRoad.r).ok, true);
+  assert.equal(placeBuilding(legacy, "villa", legacyLot.c, legacyLot.r, 0).ok, true);
+  const free = createInitialDistrict("free");
+  assert.equal(free.roads.length, 0);
+  const freeLot = cellsFromSource(20, 24)[0]!;
+  assert.equal(placeBuilding(free, "villa", freeLot.c, freeLot.r, 1).ok, true);
+  const freeZone = planZone(
+    free,
+    freeLot.c,
+    freeLot.r,
+    freeLot.c + 6,
+    freeLot.r + 6,
+    { streets: true, schools: false, fire: false, landmarks: false, parks: false },
+    2,
+  );
+  assert.equal(freeZone.ok, true);
+  if (freeZone.ok) assert.ok(freeZone.built > 8);
 });
 
 test("preview is read-only; separate v2 saves resume and preserve the legacy city", () => {
@@ -147,8 +230,10 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
   };
   try {
     const legacy = createInitial();
-    placeRoad(legacy, 17, 23);
-    placeBuilding(legacy, "boubyan", 18, 23, 0);
+    const legacyRoad = cellsFromSource(17, 23)[0]!;
+    const legacyHome = cellsFromSource(18, 23)[0]!;
+    placeRoad(legacy, legacyRoad.c, legacyRoad.r);
+    placeBuilding(legacy, "boubyan", legacyHome.c, legacyHome.r, 0);
     saveSim(legacy);
     const original = store.get("omdat-kuwait-v1")!;
     const originalPayload = JSON.parse(original);
@@ -158,7 +243,8 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
     assert.equal(store.size, 1, "loading an unchosen neighborhood must not write it");
 
     const city = loadSim("yarmouk");
-    assert.equal(placeBuilding(city, "villa", 33, 21, 0).ok, true);
+    const lot = locate("yarmouk", 2).cells[0]!;
+    assert.equal(placeBuilding(city, "villa", lot.c, lot.r, 0).ok, true);
     saveSim(city);
     assert.equal(store.get("omdat-kuwait-v1"), original);
     assert.deepEqual(JSON.parse(store.get("omdat-kuwait-district-yarmouk")!).district, "yarmouk");
@@ -180,25 +266,5 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
   } finally {
     if (oldStorage === undefined) Reflect.deleteProperty(globalThis, "localStorage");
     else globalThis.localStorage = oldStorage;
-  }
-});
-
-
-test("all arterials use the bare constant 36/37 columns and straight separators on actual playable roads", () => {
-  for (const sector of DISTRICTS) {
-    assert.ok(districtArterial(sector.id).every(([lo, hi]) => lo === 36 && hi === 37), sector.id);
-    const roads = new Set(districtRoads(sector));
-    for (let r = 18; r <= 30; r++) {
-      assert.ok(roads.has(`36,${r}`) && roads.has(`37,${r}`), `${sector.id}/${r}`);
-      assert.equal(sectorAt(sector.id, `36,${r}`), undefined);
-      assert.equal(sectorAt(sector.id, `37,${r}`), undefined);
-    }
-    for (const r of sector.id === "surra" ? [23, 28] : [27]) {
-      for (let c = 30; c <= 42; c++) {
-        if (!isLand(c, r)) continue;
-        assert.ok(roads.has(`${c},${r}`), `${sector.id}/straight separator/${c},${r}`);
-        assert.equal(sectorAt(sector.id, `${c},${r}`), undefined);
-      }
-    }
   }
 });

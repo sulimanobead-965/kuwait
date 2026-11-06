@@ -304,7 +304,7 @@
 }
 .district-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
 .district-option {
@@ -330,7 +330,7 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 900;
   margin-top: 4px;
 }

@@ -30,6 +30,27 @@ export function clampCameraTarget(target: { x: number; z: number }, viewHeight: 
   return target;
 }
 
+export function framedView(
+  cols: number,
+  rows: number,
+  width: number,
+  height: number,
+  occludedBottom = 0.4,
+) {
+  const sinPitch = Math.sin((CAMERA_PITCH_DEGREES * Math.PI) / 180);
+  const span = (cols + rows) * CELL_SIZE * Math.SQRT1_2;
+  const depth = span * sinPitch;
+  const aspect = width / Math.max(1, height);
+  const visible = Math.max(0.42, 1 - occludedBottom);
+  const fit = Math.max(span / (aspect * 0.86), depth / (visible * 0.88));
+  // Portrait phones cannot show a whole isometric block without shrinking lots
+  // under a fingertip. Prefer readable lots and let the player pan sideways.
+  const minCellPx = width < 700 ? 40 : 26;
+  const finger = (CELL_SIZE * Math.SQRT1_2 * height) / minCellPx;
+  const viewHeight = Math.min(92, Math.max(16, Math.min(fit, finger)));
+  return { viewHeight, shift: ((occludedBottom / 2) * viewHeight) / sinPitch };
+}
+
 export function lodFor(viewHeight: number, distance: number): 0 | 1 | 2 {
   if (viewHeight <= 32 && distance <= 55) return 0;
   if (viewHeight <= 66 && distance <= 105) return 1;

@@ -3,7 +3,6 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { COLS, LAND, ROWS } from "../../game/land.ts";
 import { CELL_SIZE, LAND_HEIGHT, cellWorld } from "./camera.ts";
 import { PALETTE as P } from "./palette.ts";
-import { isDistrictLand } from "../districts.ts";
 import { roadIsSchematic, type Sim } from "../sim.ts";
 import { roadMarkingsAt } from "./road-markings.ts";
 
@@ -47,46 +46,50 @@ export function createTerrain() {
   const tiles: THREE.BufferGeometry[] = [];
   const coast: THREE.BufferGeometry[] = [];
   for (let r = 0; r < ROWS; r += 1) {
-    for (let c = 0; c < COLS; c += 1) {
-      if (!LAND[r]![c]) continue;
-      const { x, z } = cellWorld(c, r);
-      const atWater = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ].some(([dc, dr]) => LAND[r + dr!]?.[c + dc!] === 0);
-      const variation = (c * 13 + r * 7) % 5;
-      const color = atWater
-        ? P.sand
-        : variation === 0
-          ? "#dbc798"
-          : variation === 1
-            ? "#d5c298"
-            : "#d1bd93";
+    let c = 0;
+    while (c < COLS) {
+      if (!LAND[r]![c]) {
+        c += 1;
+        continue;
+      }
+      const start = c;
+      let shore = false;
+      while (c < COLS && LAND[r]![c]) {
+        shore ||= [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ].some(([dc, dr]) => LAND[r + dr!]?.[c + dc!] === 0);
+        c += 1;
+      }
+      const a = cellWorld(start, r);
+      const b = cellWorld(c - 1, r);
+      const width = b.x - a.x + CELL_SIZE * 0.997;
       box(
         tiles,
-        x,
+        (a.x + b.x) / 2,
         LAND_HEIGHT / 2 - 0.08,
-        z,
-        CELL_SIZE * 0.997,
+        a.z,
+        width,
         LAND_HEIGHT,
         CELL_SIZE * 0.997,
-        color,
+        shore ? P.sand : (start + r) % 2 === 0 ? "#d5c298" : "#d1bd93",
       );
-      if (atWater) {
+      for (let col = start; col < c; col += 1) {
+        const at = cellWorld(col, r);
         for (const [dc, dr] of [
           [1, 0],
           [-1, 0],
           [0, 1],
           [0, -1],
-        ]) {
-          if (LAND[r + dr!]?.[c + dc!] !== 0) continue;
+        ] as const) {
+          if (LAND[r + dr]?.[col + dc] !== 0) continue;
           box(
             coast,
-            x + dc! * CELL_SIZE * 0.5,
+            at.x + dc * CELL_SIZE * 0.5,
             0.08,
-            z + dr! * CELL_SIZE * 0.5,
+            at.z + dr * CELL_SIZE * 0.5,
             dc ? 0.22 : CELL_SIZE * 0.96,
             0.43,
             dr ? 0.22 : CELL_SIZE * 0.96,
@@ -120,8 +123,7 @@ export function createGrid(
   const half = CELL_SIZE / 2;
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
-      if (!LAND[r]![c] || avoid.has(`${c},${r}`)) continue;
-      if (!isDistrictLand(district ?? null, `${c},${r}`) || roadIsSchematic(district, `${c},${r}`))
+      if (!LAND[r]![c] || avoid.has(`${c},${r}`) || roadIsSchematic(district, `${c},${r}`))
         continue;
       const { x, z } = cellWorld(c, r);
       vertices.push(
