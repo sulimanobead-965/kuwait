@@ -584,7 +584,7 @@ export function CityHud({
           </button>
         )}
         {snap.started && (
-          <div className="hud-left pointer-events-auto absolute left-2 top-1/3 flex flex-col gap-2">
+          <div className="hud-left pointer-events-auto absolute flex flex-col gap-2">
             <PeopleButton unread={unreadCount(snap)} onClick={() => togglePanel("people")} />
             <Round label={t("تقريب")} onClick={() => onZoom(1.28)}>
               <Plus size={18} />

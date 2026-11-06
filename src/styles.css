@@ -713,8 +713,27 @@ body {
   right: max(0.25rem, env(safe-area-inset-right));
 }
 
+/* Map controls hug the outer edge, under the player card, clear of the bottom bar. */
 .hud-left {
   left: max(0.5rem, env(safe-area-inset-left));
+  top: calc(max(0.5rem, env(safe-area-inset-top)) + 5rem);
+  align-items: flex-end;
+}
+
+:root[dir="rtl"] .hud-left {
+  align-items: flex-end;
+}
+
+/* Shorter phones: tighter column so every control stays above the bottom bar. */
+@media (max-height: 760px) {
+  .hud-left {
+    gap: 0.3rem;
+  }
+
+  .hud-left .sc-round {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
 }
 
 .hud-panel {
