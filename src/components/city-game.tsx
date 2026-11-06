@@ -29,6 +29,8 @@ import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/h
 import { fireBuilder, hireBuilder } from "@/game/builder";
 import { borrowFrom, chat, greet, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
 import { CATALOG, type Category, type Kind } from "@/game/catalog";
+import { loadSession, pushSave, snapshotLocal } from "@/game/cloud";
+import { aboutGame } from "@/components/hud-cloud";
 import {
   advanceDays,
   advanceQuest,
@@ -512,6 +514,27 @@ export function CityGame() {
     const onPageHide = () => flushRef.current();
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("city-graphics-lost", onGraphicsLost);
+    const onSaveNow = () => flushRef.current();
+    window.addEventListener("city-save-now", onSaveNow);
+    // Signed in to the cloud: upload every 3 minutes when the game changed.
+    let cloudLast = "";
+    let cloudBusy = false;
+    const cloudTimer = window.setInterval(() => {
+      const session = loadSession();
+      if (!session || cloudBusy || !simRef.current.started) return;
+      flushRef.current();
+      const mark = JSON.stringify(snapshotLocal()).length + ":" + Math.floor(simRef.current.day);
+      if (mark === cloudLast) return;
+      cloudBusy = true;
+      pushSave(session, aboutGame(simRef.current))
+        .then(() => {
+          cloudLast = mark;
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          cloudBusy = false;
+        });
+    }, 180_000);
     canvas.addEventListener("webglcontextrestored", restoreGraphics);
     window.__city = {
       place(kind, c, r) {
@@ -551,6 +574,8 @@ export function CityGame() {
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("city-save-now", onSaveNow);
+      window.clearInterval(cloudTimer);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("city-graphics-lost", onGraphicsLost);
       canvas.removeEventListener("webglcontextrestored", restoreGraphics);

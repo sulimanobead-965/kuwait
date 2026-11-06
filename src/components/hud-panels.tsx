@@ -25,6 +25,7 @@ import {
   Briefcase,
   LineChart,
   Gauge,
+  Cloud,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
@@ -144,6 +145,7 @@ export type MoreAction =
   | "board"
   | "stocks"
   | "graphics"
+  | "cloud"
   | "language";
 
 export function MoreSheet({
@@ -205,6 +207,7 @@ export function MoreSheet({
             : t("الرسوم: خفيفة"),
       icon: <Gauge size={20} />,
     },
+    { id: "cloud", label: t("الحفظ السحابي"), icon: <Cloud size={20} /> },
     { id: "profile", label: t("ملفي"), icon: <Award size={20} /> },
     // Always offers the other language, written in that language.
     { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },

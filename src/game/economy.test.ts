@@ -269,3 +269,53 @@ test("mega projects are really built on the map at their real place", async () =
   assert.ok(s.buildings.filter((b) => b.kind === "runway").length >= 20);
   assert.ok(s.buildings.some((b) => b.kind === "terminal"));
 });
+
+test("cloud save: sign up, save, sign in on another device and restore", async () => {
+  const cloud = await import("./cloud.ts");
+  const docs = new Map<string, Record<string, unknown>>();
+  const db = {
+    doc: (path: string) => ({
+      get: async () => ({ exists: docs.has(path), data: () => docs.get(path) }),
+      set: async (d: Record<string, unknown>) => void docs.set(path, structuredClone(d)),
+      delete: async () => void docs.delete(path),
+    }),
+  };
+  const mkStore = () => {
+    const m = new Map<string, string>();
+    return {
+      get length() { return m.size; },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, String(v)),
+      removeItem: (k: string) => void m.delete(k),
+      clear: () => m.clear(),
+    } as Storage;
+  };
+  const g = globalThis as unknown as { window?: unknown; localStorage?: Storage };
+  const oldWindow = g.window, oldStorage = g.localStorage;
+  try {
+    g.window = { claude: { use: async () => db } };
+    const phoneA = mkStore();
+    g.localStorage = phoneA;
+    phoneA.setItem("omdat-kuwait-v1", JSON.stringify({ v: 2, coins: 123 }));
+    phoneA.setItem("omdat-graphics", "low");
+    await assert.rejects(cloud.signUp("1234567", "12345678"), (e: { code: string }) => e.code === "bad-phone");
+    const s = await cloud.signUp("99887766", "12345678");
+    await cloud.pushSave(s, { residents: 500, day: 40 });
+    await assert.rejects(cloud.signUp("99887766", "00000000"), (e: { code: string }) => e.code === "taken");
+    assert.ok(![...docs.values()].some((d) => JSON.stringify(d).includes("12345678")), "the PIN is never stored");
+
+    const phoneB = mkStore();
+    g.localStorage = phoneB;
+    phoneB.setItem("omdat-graphics", "high");
+    await assert.rejects(cloud.signIn("99887766", "11111111"), (e: { code: string }) => e.code === "wrong-pin");
+    const r = await cloud.signIn("99887766", "12345678");
+    assert.equal(r.info?.residents, 500);
+    assert.ok(await cloud.pullSave(r.session));
+    assert.equal(JSON.parse(phoneB.getItem("omdat-kuwait-v1")!).coins, 123);
+    assert.equal(phoneB.getItem("omdat-graphics"), "high", "device settings stay");
+  } finally {
+    g.window = oldWindow;
+    g.localStorage = oldStorage;
+  }
+});

@@ -110,6 +110,7 @@ import { districtById } from "@/game/districts";
 import { obligations, type Obligation } from "@/game/obligations";
 import { Board, MegaProjects } from "@/components/hud-board";
 import { StockMarket } from "@/components/hud-stocks";
+import { CloudPanel } from "@/components/hud-cloud";
 import type { StockId } from "@/game/stocks";
 import { boardFee, projectMoney, type BoardState, type DeptId } from "@/game/board";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang, bigNum, getLang } from "@/i18n";
@@ -143,7 +144,8 @@ type Panel =
   | "people"
   | "voices"
   | "board"
-  | "stocks";
+  | "stocks"
+  | "cloud";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -706,6 +708,7 @@ export function CityHud({
                   {panel === "voices" && t("آراء الناس")}
                   {panel === "board" && t("مجلس الإدارة")}
                   {panel === "stocks" && t("سوق الأسهم")}
+                  {panel === "cloud" && t("الحفظ السحابي")}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -760,6 +763,7 @@ export function CityHud({
                 {panel === "report" && <YearReport snap={snap} />}
                 {panel === "voices" && <Voices snap={snap} />}
                 {panel === "stocks" && <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} />}
+                {panel === "cloud" && <CloudPanel snap={snap} />}
                 {panel === "board" && (
                   <Board
                     snap={snap}
