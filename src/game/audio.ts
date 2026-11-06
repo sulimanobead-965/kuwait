@@ -1,3 +1,12 @@
+export type SoundKind = "place" | "road" | "collect" | "error" | "quest";
+
+let soundHook: ((kind: SoundKind) => void) | null = null;
+
+/** Lets the native app add haptics to game sounds without the game knowing about it. */
+export function setSoundHook(fn: ((kind: SoundKind) => void) | null) {
+  soundHook = fn;
+}
+
 export function createAudio() {
   let ctx: AudioContext | null = null;
 
@@ -123,6 +132,8 @@ export function createAudio() {
       }
     },
     play(kind: "place" | "road" | "collect" | "error" | "quest", mute: boolean) {
+      // A light tap on phones that support it (set by the native app shell).
+      soundHook?.(kind);
       if (mute) return;
       try {
         if (kind === "place") {
