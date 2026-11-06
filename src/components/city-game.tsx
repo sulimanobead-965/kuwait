@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { CityHud, type HudTool } from "@/components/city-hud";
+import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
+import { payObligations } from "@/game/obligations";
 import { DistrictSelector } from "@/components/district-selector";
 import { districtById, isDistrictId, type DistrictId } from "@/game/districts";
 import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
@@ -19,6 +20,7 @@ import {
   hireConsultant,
   startProject,
   withdraw as withdrawMoney,
+  repayMurabaha,
 } from "@/game/finance";
 import { TUTORIAL, WelcomeBack, type Celebration } from "@/components/hud-panels";
 import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/hud-social";
@@ -29,6 +31,7 @@ import {
   advanceDays,
   advanceQuest,
   bulldoze,
+  bulldozeArea,
   buyModelArea,
   startDevelopment,
   giveAid,
@@ -763,10 +766,22 @@ export function CityGame() {
     sync();
   }
 
-  function onRepay(amount: number) {
-    const act = repayLoan(simRef.current, amount);
-    pushToast(act.ok ? t("تم السداد") : act.msg);
-    sync();
+  function onPay(target: PayTarget, amount?: number) {
+    const s = simRef.current;
+    if (target.kind === "all") finance(payObligations(s, amount));
+    else if (target.kind === "murabaha") finance(repayMurabaha(s, target.id, amount));
+    else if (target.kind === "npc") finance(repayNpc(s, target.id, amount));
+    else {
+      const act = repayLoan(s, amount ?? s.loan);
+      pushToast(
+        act.ok
+          ? s.loan <= 0
+            ? t("سدّدت القرض كاملاً")
+            : t("تم السداد، والباقي {left} د.ك", { left: fmt(s.loan) })
+          : act.msg,
+      );
+      sync();
+    }
   }
 
   function onEvent(kind: EventKind) {
@@ -857,6 +872,27 @@ export function CityGame() {
     setZone(null);
   }
 
+  function onDemolish() {
+    setSelected(null);
+    setZone(null);
+    zoneRectRef.current = null;
+    setTool((t) => (t?.kind === "demolish" ? null : { kind: "demolish" }));
+  }
+
+  function onDemolishApply() {
+    if (!zone) return;
+    const act = bulldozeArea(simRef.current, zone.c0, zone.r0, zone.c1, zone.r1);
+    if (!act.ok) {
+      pushToast(act.msg);
+      return;
+    }
+    if (selected && !simRef.current.buildings.some((b) => b.id === selected)) setSelected(null);
+    zoneRectRef.current = null;
+    setZone(null);
+    sync();
+    pushToast(t("تم هدم {n} عنصر", { n: fmt(act.removed ?? 0) }));
+  }
+
   function onBulldoze() {
     setSelected(null);
     setTool((t) => (t?.kind === "bulldoze" ? null : { kind: "bulldoze" }));
@@ -920,6 +956,7 @@ export function CityGame() {
         onRoad={onRoad}
         onBulldoze={onBulldoze}
         onZone={onZone}
+        onDemolish={onDemolish}
         onBuild={onBuild}
         onTax={onTax}
         onCost={onCost}
@@ -998,7 +1035,7 @@ export function CityGame() {
         celebration={celebration}
         onCelebrationClose={nextCelebration}
         onLoan={onLoan}
-        onRepay={onRepay}
+        onPay={onPay}
         onEvent={onEvent}
         onModel={onModel}
         onOrdinance={onOrdinance}
@@ -1018,6 +1055,7 @@ export function CityGame() {
         onZoom={onZoom}
         zone={zone}
         onZoneApply={onZoneApply}
+        onDemolishApply={onDemolishApply}
         onZoneCancel={onZoneCancel}
       />
       {snap.started && (editPlayer || !player) && (

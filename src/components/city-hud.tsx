@@ -24,6 +24,7 @@ import {
   ZapOff,
   SunMoon,
   Home,
+  Eraser,
 } from "lucide-react";
 import { CATALOG, kindsIn, maxLevelOf, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
@@ -97,14 +98,23 @@ import {
   type Sample,
   type Sim,
   type ZonePick,
+  demolishPreview,
 } from "@/game/sim";
 import type { DayMode } from "@/game/three/day-night";
 import { districtById } from "@/game/districts";
+import { obligations, type Obligation } from "@/game/obligations";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
+
+export type PayTarget =
+  | { kind: "all" }
+  | { kind: "loan" }
+  | { kind: "murabaha"; id: string }
+  | { kind: "npc"; id: NpcId };
 
 export type HudTool =
   | { kind: "road" }
   | { kind: "bulldoze" }
+  | { kind: "demolish" }
   | { kind: "zone" }
   | { kind: "build"; building: Kind }
   | { kind: "site"; project: DevelopmentKind; developer: DeveloperId }
@@ -283,6 +293,7 @@ export function CityHud({
   onCategory,
   onRoad,
   onBulldoze,
+  onDemolish,
   onZone,
   onBuild,
   onTax,
@@ -322,7 +333,7 @@ export function CityHud({
   onLend,
   onBorrow,
   onNpcRepay,
-  onRepay,
+  onPay,
   onEvent,
   onModel,
   onOrdinance,
@@ -341,6 +352,7 @@ export function CityHud({
   dayMode,
   zone,
   onZoneApply,
+  onDemolishApply,
   onZoneCancel,
 }: {
   snap: Sim;
@@ -357,6 +369,7 @@ export function CityHud({
   onCategory: (id: Category) => void;
   onRoad: () => void;
   onBulldoze: () => void;
+  onDemolish: () => void;
   onZone: () => void;
   onBuild: (kind: Kind) => void;
   onTax: (n: number) => void;
@@ -396,7 +409,7 @@ export function CityHud({
   celebration: Celebration | null;
   onCelebrationClose: () => void;
   onLoan: (amount: number, rate: number) => void;
-  onRepay: (amount: number) => void;
+  onPay: (target: PayTarget, amount?: number) => void;
   onEvent: (kind: EventKind) => void;
   onModel: (kind: ModelKind) => void;
   onOrdinance: (key: keyof Ordinances, value: boolean) => void;
@@ -415,6 +428,7 @@ export function CityHud({
   dayMode: DayMode;
   zone: { c0: number; r0: number; c1: number; r1: number } | null;
   onZoneApply: (pick: ZonePick) => void;
+  onDemolishApply: () => void;
   onZoneCancel: () => void;
 }) {
   const lang = useLang();
@@ -505,6 +519,13 @@ export function CityHud({
             <Round label={t("هدم")} on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
               <Trash2 size={18} />
             </Round>
+            <Round
+              label={t("هدم منطقة")}
+              on={tool?.kind === "demolish"}
+              onClick={onDemolish}
+            >
+              <Eraser size={18} />
+            </Round>
             <Rci r={dem.r} c={dem.c} i={dem.i} />
           </div>
         )}
@@ -587,7 +608,11 @@ export function CityHud({
               </p>
             ))}
           </div>
-          {zone && <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />}
+          {zone && tool?.kind === "demolish" ? (
+            <DemolishCard snap={snap} zone={zone} onApply={onDemolishApply} onCancel={onZoneCancel} />
+          ) : (
+            zone && <ZoneCard onApply={onZoneApply} onCancel={onZoneCancel} />
+          )}
           {panel && snap.started && (
             <section
               className="hud-panel sc-panel pointer-events-auto absolute bottom-2 left-2 right-16 top-2 flex flex-col overflow-hidden rounded-md"
@@ -639,7 +664,7 @@ export function CityHud({
                     onHousingAid={onHousingAid}
                     onGiveAid={onGiveAid}
                     onLoan={onLoan}
-                    onRepay={onRepay}
+                    onPay={onPay}
                   />
                 )}
                 {panel === "companies" && (
@@ -905,6 +930,11 @@ export function CityHud({
             {tool?.kind === "bulldoze" && (
               <p className="px-3 pt-2 text-xs font-bold text-sc-gold">
                 {t("اضغط مبنى أو طريق. يرجع لك نصف التكلفة.")}
+              </p>
+            )}
+            {tool?.kind === "demolish" && !zone && (
+              <p className="px-3 pt-2 text-xs font-bold text-sc-gold">
+                {t("اسحب على الخريطة لتحديد منطقة الهدم، ثم أكّد.")}
               </p>
             )}
             {more && (
@@ -1192,7 +1222,7 @@ function Budget({
   onHousingAid,
   onGiveAid,
   onLoan,
-  onRepay,
+  onPay,
 }: {
   snap: Sim;
   onTax: (n: number) => void;
@@ -1202,7 +1232,7 @@ function Budget({
   onHousingAid: (pct: number) => void;
   onGiveAid: (amount: number) => void;
   onLoan: (amount: number, rate: number) => void;
-  onRepay: (amount: number) => void;
+  onPay: (target: PayTarget, amount?: number) => void;
 }) {
   const st = stats(snap);
   const income = monthlyIncome(snap) + feeRevenue(snap, st);
@@ -1293,16 +1323,164 @@ function Budget({
         >
           {t("اقترض {amount} د.ك بفائدة {rate}٪", { amount: fmt(loanAmount), rate: loanRate })}
         </button>
-        {snap.loan > 0 && (
-          <button
-            type="button"
-            onClick={() => onRepay(snap.loan)}
-            disabled={snap.coins <= 0}
-            className="sc-menu sc-on mt-1 w-full text-xs disabled:opacity-40"
-          >
-            {t("سدّد ما تقدر عليه")}
-          </button>
+      </div>
+      <Obligations snap={snap} onPay={onPay} />
+    </div>
+  );
+}
+
+/** Every debt in one card: pay one or all of them, in full or in part. */
+function Obligations({
+  snap,
+  onPay,
+}: {
+  snap: Sim;
+  onPay: (target: PayTarget, amount?: number) => void;
+}) {
+  const list = obligations(snap);
+  const total = list.reduce((a, o) => a + o.left, 0);
+  const [part, setPart] = useState(10_000);
+  const label = (o: Obligation) =>
+    o.kind === "loan"
+      ? t("قرض البنك")
+      : o.kind === "murabaha"
+        ? t("تمويل مرابحة")
+        : t("دين {name}", { name: t(o.name) });
+  const target = (o: Obligation): PayTarget =>
+    o.kind === "loan" ? { kind: "loan" } : o.kind === "murabaha" ? { kind: "murabaha", id: o.id } : { kind: "npc", id: o.id };
+  return (
+    <div className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="obligations">
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <Check size={16} /> {t("الالتزامات")}
+      </p>
+      {total <= 0.5 ? (
+        <p className="mt-1 text-xs">{t("ما عليك أي التزامات. ممتاز!")}</p>
+      ) : (
+        <>
+          <p className="mt-1 text-xs leading-relaxed">
+            {t("مجموع ما عليك {amount} د.ك. سدّد الكل أو جزءاً منه، لكل التزام أو لها جميعاً.", {
+              amount: fmt(total),
+            })}
+          </p>
+          <div className="mt-2">
+            <NumberField
+              label={t("مبلغ السداد الجزئي")}
+              value={part}
+              onChange={setPart}
+              suffix={currency()}
+              testid="pay-part"
+            />
+          </div>
+          <ul className="mt-2 space-y-1">
+            {list.map((o) => (
+              <li
+                key={o.kind === "loan" ? "loan" : `${o.kind}-${o.id}`}
+                className="rounded bg-white/60 p-1.5 text-xs"
+              >
+                <div className="flex items-center justify-between gap-1 font-extrabold">
+                  <span>{label(o)}</span>
+                  <span dir="ltr">{fmt(o.left)}</span>
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    disabled={snap.coins <= 0}
+                    onClick={() => onPay(target(o), part)}
+                    className="sc-menu text-xs disabled:opacity-40"
+                  >
+                    {t("سدّد {amount}", { amount: fmt(Math.min(part, o.left)) })}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={snap.coins <= 0}
+                    onClick={() => onPay(target(o))}
+                    className="sc-menu sc-on text-xs disabled:opacity-40"
+                  >
+                    {t("سدّد كاملاً")}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              data-testid="pay-part-all"
+              disabled={snap.coins <= 0}
+              onClick={() => onPay({ kind: "all" }, part)}
+              className="sc-menu text-xs disabled:opacity-40"
+            >
+              {t("سدّد {amount} من الكل", { amount: fmt(Math.min(part, total)) })}
+            </button>
+            <button
+              type="button"
+              data-testid="pay-all"
+              disabled={snap.coins <= 0}
+              onClick={() => onPay({ kind: "all" })}
+              className="sc-menu sc-on text-xs disabled:opacity-40"
+            >
+              {t("سدّد كل الالتزامات")}
+            </button>
+          </div>
+          {snap.coins < total && (
+            <p className="mt-1 text-xs opacity-80">
+              {t("رصيدك أقل من المجموع، فيُسدَّد ما يكفيه الرصيد.")}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function DemolishCard({
+  snap,
+  zone,
+  onApply,
+  onCancel,
+}: {
+  snap: Sim;
+  zone: { c0: number; r0: number; c1: number; r1: number };
+  onApply: () => void;
+  onCancel: () => void;
+}) {
+  useLang();
+  const p = demolishPreview(snap, zone.c0, zone.r0, zone.c1, zone.r1);
+  const empty = p.buildings + p.roads === 0;
+  return (
+    <div
+      className="sc-panel pointer-events-auto absolute inset-x-3 bottom-2 rounded-xl px-3 py-3"
+      dir={dirOf()}
+      data-testid="demolish-card"
+    >
+      <p className="text-sm font-extrabold">{t("هدم المنطقة المحددة")}</p>
+      <p className="mt-1 text-xs leading-relaxed">
+        {empty
+          ? t("ما في شيء تهدّه في هذه المنطقة.")
+          : t("سيُهدم {buildings} مبنى و{roads} شارع، ويرجع لك {amount} د.ك (نصف التكلفة).", {
+              buildings: fmt(p.buildings),
+              roads: fmt(p.roads),
+              amount: fmt(p.refund),
+            })}
+        {p.kept > 0 && (
+          <span className="block opacity-80">
+            {t("{n} عنصر محمي لن يُهدم (مشاريع قيد التطوير أو الشارع الرئيسي).", { n: fmt(p.kept) })}
+          </span>
         )}
+      </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          data-testid="demolish-apply"
+          disabled={empty}
+          className="sc-menu sc-on h-11 flex-1 text-sm disabled:opacity-40"
+          onClick={onApply}
+        >
+          {t("اهدم المنطقة")}
+        </button>
+        <button type="button" className="sc-menu h-11 px-3 text-sm" onClick={onCancel}>
+          {t("إلغاء")}
+        </button>
       </div>
     </div>
   );

@@ -529,7 +529,9 @@ export class CityWorld {
     this.poseCamera();
     const p = this.local(e);
     const road = Boolean(this.sim?.started && this.currentTool?.kind === "road");
-    const zone = Boolean(this.sim?.started && this.currentTool?.kind === "zone");
+    const zone = Boolean(
+      this.sim?.started && (this.currentTool?.kind === "zone" || this.currentTool?.kind === "demolish"),
+    );
     const placing = Boolean(
       this.sim?.started &&
         (this.currentTool?.kind === "build" || this.currentTool?.kind === "bulldoze"),
@@ -628,9 +630,10 @@ export class CityWorld {
     if (drag.zone && this.zone) {
       const end = this.hover ?? this.rayCell(e);
       const district = this.sim?.district ?? null;
+      const demolish = this.currentTool?.kind === "demolish";
       const tooSmall = Math.abs(end.c - this.zone.c) < 3 || Math.abs(end.r - this.zone.r) < 3;
       this.zoneMesh.visible = false;
-      if (district) {
+      if (district || demolish) {
         this.callbacks.zone({
           c0: Math.min(this.zone.c, end.c),
           r0: Math.min(this.zone.r, end.r),
@@ -698,7 +701,9 @@ export class CityWorld {
   };
 
   private drawZone(start: Cell, end: Cell) {
-    const district = this.sim?.district ?? null;
+    const demolish = this.currentTool?.kind === "demolish";
+    (this.zoneMesh.material as THREE.MeshBasicMaterial).color.set(demolish ? "#e5484d" : "#29c995");
+    const district = demolish ? null : (this.sim?.district ?? null);
     const parcels = district
       ? sectorsForZone(
           district,

@@ -321,18 +321,44 @@ export function borrowFrom(
   };
 }
 
-/** Pay back early everything you owe this person, if you can. */
-export function repayNpc(s: Sim, id: NpcId) {
+/**
+ * Pay back early what you owe this person: everything (no amount), or part of it.
+ * A partial payment clears the oldest loans first.
+ */
+export function repayNpc(s: Sim, id: NpcId, amount?: number) {
   const n = npcOf(s, id);
   const total = n.iOwe.reduce((t, l) => t + l.left, 0);
   if (total <= 0) return { ok: false, msg: t("ما عليك له شي") };
-  if (s.coins < total) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(total) }) };
-  s.coins -= total;
-  n.cash += total;
-  n.iOwe = [];
-  n.trust = Math.min(100, n.trust + 8);
-  say(n, "them", t("وصلت، الله يبارك لك. رجال وكفو"));
-  return { ok: true, msg: t("سدّدت دينك كاملاً") };
+  const want = amount === undefined ? total : Math.min(total, Math.max(0, amount));
+  if (!(want > 0)) return { ok: false, msg: t("مبلغ غير صحيح") };
+  if (amount === undefined && s.coins < total)
+    return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: fmt(total) }) };
+  let pay = Math.min(want, Math.max(0, s.coins));
+  if (pay <= 0) return { ok: false, msg: t("الرصيد ما يكفي للسداد") };
+  const paid = pay;
+  s.coins -= pay;
+  n.cash += pay;
+  for (const loan of n.iOwe) {
+    const part = Math.min(loan.left, pay);
+    loan.left -= part;
+    pay -= part;
+    if (loan.left > 0.5) loan.installment = Math.min(loan.installment, loan.left);
+    if (pay <= 0) break;
+  }
+  n.iOwe = n.iOwe.filter((l) => l.left > 0.5);
+  if (!n.iOwe.length) {
+    n.trust = Math.min(100, n.trust + 8);
+    say(n, "them", t("وصلت، الله يبارك لك. رجال وكفو"));
+    return { ok: true, msg: t("سدّدت دينك كاملاً") };
+  }
+  n.trust = Math.min(100, n.trust + 2);
+  say(n, "them", t("وصلني {amount} د.ك، مشكور", { amount: fmt(paid) }));
+  return { ok: true, msg: t("سدّدت {amount} د.ك من دينك", { amount: fmt(paid) }) };
+}
+
+/** Everything you still owe this person. */
+export function owedTo(s: Sim, id: NpcId) {
+  return npcOf(s, id).iOwe.reduce((t, l) => t + l.left, 0);
 }
 
 /**

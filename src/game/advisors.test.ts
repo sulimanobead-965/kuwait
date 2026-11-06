@@ -380,3 +380,50 @@ test("25 laws and 25 cost-of-living items, all wired into the city", () => {
   s.costs.internet = 300;
   assert.ok(feeRevenue(s) > fees, "a new cost item brings in money");
 });
+
+test("obligations can be paid one by one or all together, in full or in part", async () => {
+  const { obligations, payObligations, totalObligations } = await import("./obligations.ts");
+  const { repayMurabaha, takeMurabaha } = await import("./finance.ts");
+  const { repayNpc } = await import("./npcs.ts");
+  const s = town();
+  s.coins = 0;
+  assert.equal(takeLoan(s, 100_000, 0.1).ok, true);
+  assert.equal(takeMurabaha(s, 50_000, 0.1, 12).ok, true);
+  assert.equal(borrowFrom(s, "abufahad", 20_000, 0, 12, () => 0).ok, true);
+  assert.equal(obligations(s).length, 3);
+  const all = totalObligations(s);
+  // Partial payment on one murabaha.
+  const m = s.finance.murabaha[0]!;
+  const before = m.left;
+  assert.equal(repayMurabaha(s, m.id, 5_000).ok, true);
+  assert.equal(Math.round(before - s.finance.murabaha[0]!.left), 5_000);
+  // Partial payment on a personal debt, then the rest in full.
+  assert.equal(repayNpc(s, "abufahad", 4_000).ok, true);
+  const owed = s.npcs.find((n) => n.id === "abufahad")!.iOwe.reduce((a, l) => a + l.left, 0);
+  assert.equal(Math.round(owed), 16_000);
+  // Pay part of everything: the bank loan goes first.
+  const loan = s.loan;
+  assert.equal(payObligations(s, 30_000).ok, true);
+  assert.equal(Math.round(loan - s.loan), 30_000);
+  assert.ok(totalObligations(s) < all - 38_000);
+  // Pay everything that is left.
+  s.coins = 10_000_000;
+  assert.equal(payObligations(s).ok, true);
+  assert.equal(totalObligations(s), 0);
+  assert.equal(payObligations(s).ok, false, "nothing left to pay");
+});
+
+test("a selected area is demolished in one go, protected cells stay", async () => {
+  const { bulldozeArea, demolishPreview } = await import("./sim.ts");
+  const s = town();
+  s.coins = 10_000_000;
+  const start = s.buildings.length;
+  const p = demolishPreview(s, 0, 0, 999, 999);
+  assert.ok(p.buildings > 0);
+  const coins = s.coins;
+  const act = bulldozeArea(s, 0, 0, 999, 999);
+  assert.equal(act.ok, true);
+  assert.equal(s.buildings.length, start - p.buildings);
+  assert.equal(s.coins, coins + p.refund);
+  assert.equal(bulldozeArea(s, 0, 0, 999, 999).ok, false, "nothing left to demolish");
+});

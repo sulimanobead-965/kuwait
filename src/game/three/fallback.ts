@@ -163,7 +163,9 @@ export class FallbackCityWorld {
     this.callbacks.strokeEnd();
     const rect = this.canvas.getBoundingClientRect();
     const road = Boolean(this.sim?.started && this.tool?.kind === "road");
-    const zone = Boolean(this.sim?.started && this.tool?.kind === "zone");
+    const zone = Boolean(
+      this.sim?.started && (this.tool?.kind === "zone" || this.tool?.kind === "demolish"),
+    );
     this.drag = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
@@ -223,7 +225,7 @@ export class FallbackCityWorld {
     if (drag.zone && drag.start) {
       const end = this.at(e);
       const district = this.sim?.district ?? null;
-      if (district) {
+      if (district || this.tool?.kind === "demolish") {
         this.callbacks.zone({
           c0: Math.min(drag.start.c, end.c),
           r0: Math.min(drag.start.r, end.r),

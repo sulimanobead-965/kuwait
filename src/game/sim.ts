@@ -2015,6 +2015,64 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
   return { ok: false, msg: t("ما في شيء تهدّه هنا") };
 }
 
+/** What demolishing a rectangle would remove (fenced sites and fixed main roads are kept). */
+export function demolishPreview(s: Sim, c0: number, r0: number, c1: number, r1: number) {
+  const [ca, cb] = c0 <= c1 ? [c0, c1] : [c1, c0];
+  const [ra, rb] = r0 <= r1 ? [r0, r1] : [r1, r0];
+  const inside = (c: number, r: number) => c >= ca && c <= cb && r >= ra && r <= rb;
+  let buildings = 0;
+  let roads = 0;
+  let refund = 0;
+  let kept = 0;
+  for (const b of s.buildings) {
+    if (!inside(b.c, b.r)) continue;
+    if (fenced(s, b.c, b.r)) {
+      kept += 1;
+      continue;
+    }
+    buildings += 1;
+    refund += Math.round(priceOf(spent(b), s) * 0.5);
+  }
+  const roadKeys: string[] = [];
+  for (const k of s.roads) {
+    const [c, r] = k.split(",").map(Number) as [number, number];
+    if (!inside(c, r)) continue;
+    if (fenced(s, c, r) || roadIsSchematic(s.district, k)) {
+      kept += 1;
+      continue;
+    }
+    roads += 1;
+    roadKeys.push(k);
+    refund += Math.round(priceOf(ROAD_COST, s) * 0.5);
+  }
+  return { c0: ca, r0: ra, c1: cb, r1: rb, buildings, roads, refund, kept, roadKeys };
+}
+
+/**
+ * Demolish everything in a rectangle at once: buildings and roads go, half of what
+ * they cost comes back. Fenced development sites and the district's fixed main
+ * road are left standing.
+ */
+export function bulldozeArea(s: Sim, c0: number, r0: number, c1: number, r1: number): Act & { removed?: number } {
+  const p = demolishPreview(s, c0, r0, c1, r1);
+  if (p.buildings + p.roads === 0)
+    return { ok: false, msg: t(p.kept ? "كل ما في المنطقة محمي" : "ما في شيء تهدّه هنا") };
+  const inside = (c: number, r: number) => c >= p.c0 && c <= p.c1 && r >= p.r0 && r <= p.r1;
+  s.buildings = s.buildings.filter((b) => !inside(b.c, b.r) || Boolean(fenced(s, b.c, b.r)));
+  const gone = new Set(p.roadKeys);
+  s.roads = s.roads.filter((k) => !gone.has(k));
+  s.coins += p.refund;
+  pushLog(
+    s,
+    msg("هدم منطقة: {buildings} مبنى و{roads} شارع، استرجعت {amount} د.ك", {
+      buildings: p.buildings,
+      roads: p.roads,
+      amount: p.refund,
+    }),
+  );
+  return { ok: true, removed: p.buildings + p.roads };
+}
+
 /** Share of an upgrade's price that residents pay to the governor; the rest is the developer's fee. */
 export const GOVERNOR_UPGRADE_SHARE = 0.99;
 

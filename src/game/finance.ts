@@ -359,6 +359,37 @@ export function murabahaInstallment(s: Sim) {
   return s.finance.murabaha.reduce((t, m) => t + Math.min(m.installment, m.left), 0);
 }
 
+/**
+ * Pay a murabaha early: one contract (by id) or all of them, in full (no amount)
+ * or in part. Early payment cuts what is left; installments stay the same, so the
+ * contract simply ends sooner.
+ */
+export function repayMurabaha(s: Sim, id: string | null, amount?: number): Act {
+  const list = s.finance.murabaha.filter((m) => id === null || m.id === id);
+  const total = list.reduce((t, m) => t + m.left, 0);
+  if (total <= 0.5) return { ok: false, msg: t("ما عليك تمويل مرابحة") };
+  const want = amount === undefined ? total : Math.min(total, Math.max(0, amount));
+  if (!(want > 0)) return { ok: false, msg: t("مبلغ غير صحيح") };
+  let pay = Math.min(want, Math.max(0, s.coins));
+  if (pay <= 0) return { ok: false, msg: t("الرصيد ما يكفي للسداد") };
+  const paid = pay;
+  s.coins -= pay;
+  for (const m of list) {
+    const part = Math.min(m.left, pay);
+    m.left -= part;
+    pay -= part;
+    if (pay <= 0) break;
+  }
+  s.finance.murabaha = s.finance.murabaha.filter((m) => m.left > 0.5);
+  return {
+    ok: true,
+    msg:
+      paid >= total - 0.5
+        ? t("سدّدت تمويل المرابحة كاملاً")
+        : t("سدّدت {amount} د.ك من المرابحة", { amount: fmt(paid) }),
+  };
+}
+
 /** Mudaraba deposit: the bank invests it and shares the real profit (or loss). */
 export function depositMudaraba(s: Sim, amount: number, expected: number): Act {
   if (!isOpen(s, "islamic")) return { ok: false, msg: t("المصرف الإسلامي مغلق") };
