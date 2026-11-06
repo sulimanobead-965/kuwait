@@ -1205,8 +1205,20 @@ function memo(s: Sim, key: string, fn: () => number) {
   return v;
 }
 
+const liveStats = new WeakMap<Sim, { sig: string; st: CityStats }>();
+
 export function stats(s: Sim): CityStats {
-  if (!snapshots.has(s)) return computeStats(s);
+  if (!snapshots.has(s)) {
+    // Big live cities: once per game day and layout (the month's accounting asked
+    // for a full pass over every building dozens of times).
+    if (s.buildings.length < 1500) return computeStats(s);
+    const sig = `${Math.floor(s.day)}|${s.buildings.length}|${s.roads.length}|${s.tax}|${s.occupancy}|${s.coins < 0}`;
+    const hit = liveStats.get(s);
+    if (hit && hit.sig === sig) return hit.st;
+    const st = computeStats(s);
+    liveStats.set(s, { sig, st });
+    return st;
+  }
   let st = statsMemo.get(s);
   if (!st) statsMemo.set(s, (st = computeStats(s)));
   return st;
@@ -2604,9 +2616,22 @@ export function lawMonthly(s: Sim, key: keyof Ordinances) {
  */
 export function lawStrength(s: Sim, key: keyof Ordinances) {
   if (!s.ordinances[key] || measuringLawBase) return 0;
+  // Asked for every building's income, many times a month; a law funded as a share
+  // of income measures the whole city's income each time. Keep it for the game day
+  // (and the law's budget and city size) instead.
+  const b = s.lawBudget[key];
+  const sig = `${Math.floor(s.day)}|${s.buildings.length}|${b.mode}|${b.value}|${b.period}|${s.occupancy}`;
+  let m = strengthMemo.get(s);
+  if (!m) strengthMemo.set(s, (m = new Map()));
+  const hit = m.get(key);
+  if (hit && hit.sig === sig) return hit.v;
   const reference = ORDINANCE_COST[key] * Math.max(1, stats0(s).residents / 10_000);
-  return Math.min(3, Math.sqrt(lawMonthly(s, key) / reference));
+  const v = Math.min(3, Math.sqrt(lawMonthly(s, key) / reference));
+  m.set(key, { sig, v });
+  return v;
 }
+
+const strengthMemo = new WeakMap<Sim, Map<string, { sig: string; v: number }>>();
 
 /** Residents without recursion into happiness (laws feed into stats). */
 function stats0(s: Sim) {
