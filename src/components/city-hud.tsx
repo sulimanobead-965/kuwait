@@ -934,7 +934,7 @@ export function CityHud({
             )}
             {tool?.kind === "demolish" && !zone && (
               <p className="px-3 pt-2 text-xs font-bold text-sc-gold">
-                {t("اسحب على الخريطة لتحديد منطقة الهدم، ثم أكّد.")}
+                {t("اسحب بإصبع لتحديد منطقة الهدم ثم أكّد. حرّك الخريطة بإصبعين، أو اسحب إلى طرف الشاشة لتتحرك معك.")}
               </p>
             )}
             {more && (

@@ -26,6 +26,7 @@ export class FallbackCityWorld {
   private viewHeightGoal = 65;
   private target = { x: 6, z: 8 };
   private tool: HudTool = null;
+  private mid: { x: number; y: number } | null = null;
   private zoneBox: { c0: number; r0: number; c1: number; r1: number } | null = null;
   private sim: Sim | null = null;
   private district: Sim["district"] = null;
@@ -187,8 +188,21 @@ export class FallbackCityWorld {
         15,
         Math.min(150, (this.viewHeight * 170) / Math.max(30, Math.hypot(a!.x - b!.x, a!.y - b!.y))),
       );
+      // Two fingers also move the map, so it can be panned while a tool is active.
+      const mx = (a!.x + b!.x) / 2,
+        my = (a!.y + b!.y) / 2;
+      if (this.mid) {
+        const scale = this.height / this.viewHeight;
+        const px = -(mx - this.mid.x) / (Math.SQRT1_2 * scale),
+          py = -(my - this.mid.y) / (0.268 * scale);
+        this.target.x += (px + py) / 2;
+        this.target.z += (py - px) / 2;
+      }
+      this.mid = { x: mx, y: my };
+      this.drag = null;
       return;
     }
+    this.mid = null;
     if (!this.drag) return;
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left,

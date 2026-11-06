@@ -1024,7 +1024,7 @@ export const EN: Record<string, string> = {
   "تم السداد، والباقي {left} د.ك": "Paid, {left} KD left",
   "تم هدم {n} عنصر": "Demolished {n} items",
   "هدم منطقة": "Demolish area",
-  "اسحب على الخريطة لتحديد منطقة الهدم، ثم أكّد.": "Drag on the map to select the area to demolish, then confirm.",
+  "اسحب بإصبع لتحديد منطقة الهدم ثم أكّد. حرّك الخريطة بإصبعين، أو اسحب إلى طرف الشاشة لتتحرك معك.": "Drag with one finger to select the area to demolish, then confirm. Move the map with two fingers, or drag to a screen edge to scroll.",
   "تمويل مرابحة": "Murabaha financing",
   "دين {name}": "Debt to {name}",
   "الالتزامات": "Obligations",

@@ -550,7 +550,12 @@ export function CityGame() {
     if (!snap.started) return;
     const footer = document.querySelector("main.game-shell footer");
     if (!footer) return;
-    const watch = new ResizeObserver(() => worldRef.current?.frameDistrict());
+    // Re-frame while the HUD settles after opening a district; later footer changes
+    // (hints, cards) must not yank the camera away from where the player moved it.
+    const until = performance.now() + 1500;
+    const watch = new ResizeObserver(() => {
+      if (performance.now() < until) worldRef.current?.frameDistrict();
+    });
     watch.observe(footer);
     worldRef.current?.frameDistrict();
     return () => watch.disconnect();

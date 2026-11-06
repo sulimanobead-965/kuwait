@@ -240,7 +240,9 @@ export class CityWorld {
     place: Cell | null;
     id: number;
   } | null = null;
-  private pinch: { dist: number; zoom: number } | null = null;
+  private pinch: { dist: number; zoom: number; mx: number; my: number } | null = null;
+  /** Last pointer position while dragging out a zone/demolish box (for edge scrolling). */
+  private edgePointer: { x: number; y: number } | null = null;
   private hover: Cell | null = null;
   private zone: Cell | null = null;
   private dirtyShadows = true;
@@ -516,7 +518,20 @@ export class CityWorld {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()];
-      this.pinch = { dist: Math.hypot(a!.x - b!.x, a!.y - b!.y), zoom: this.viewHeightGoal };
+      const rect = this.canvas.getBoundingClientRect();
+      this.pinch = {
+        dist: Math.hypot(a!.x - b!.x, a!.y - b!.y),
+        zoom: this.viewHeightGoal,
+        mx: (a!.x + b!.x) / 2 - rect.left,
+        my: (a!.y + b!.y) / 2 - rect.top,
+      };
+      // A second finger turns a half-drawn selection box into a map move; any box
+      // already chosen stays on the map.
+      if (this.pointerDown?.zone && this.zone) {
+        this.zone = null;
+        this.zoneMesh.visible = false;
+      }
+      this.edgePointer = null;
       this.pointerDown = null;
       this.callbacks.strokeEnd();
       return;
@@ -562,6 +577,20 @@ export class CityWorld {
         10,
         MAX_VIEW,
       );
+      // Two fingers also move the map, so it can be panned while a tool is active.
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = (a!.x + b!.x) / 2 - rect.left;
+      const my = (a!.y + b!.y) / 2 - rect.top;
+      const before = this.groundAt(this.pinch.mx, this.pinch.my);
+      const after = this.groundAt(mx, my);
+      this.pinch.mx = mx;
+      this.pinch.my = my;
+      if (before && after) {
+        this.target.add(before.sub(after));
+        clampCameraTarget(this.target, this.viewHeight);
+        this.targetGoal.copy(this.target);
+        this.poseCamera();
+      }
       return;
     }
     const drag = this.pointerDown;
@@ -577,6 +606,7 @@ export class CityWorld {
       return;
     }
     if (drag.zone && this.zone) {
+      this.edgePointer = { x: p.x, y: p.y };
       this.drawZone(this.zone, this.hover);
       return;
     }
@@ -627,6 +657,7 @@ export class CityWorld {
       this.pointerDown = null;
       this.callbacks.strokeEnd();
     }
+    this.edgePointer = null;
     if (drag.zone && this.zone) {
       const end = this.hover ?? this.rayCell(e);
       const district = this.sim?.district ?? null;
@@ -1539,6 +1570,31 @@ export class CityWorld {
     this.highlight.visible = true;
   }
 
+  /**
+   * While a selection box is being dragged, holding the finger near a screen edge
+   * scrolls the map that way, so the box can reach past what is on screen.
+   */
+  private edgeScroll(dt: number) {
+    const at = this.edgePointer;
+    if (!at || !this.zone || !this.pointerDown?.zone) return;
+    const band = Math.min(64, Math.min(this.width, this.height) * 0.12);
+    const push = (v: number, size: number) =>
+      v < band ? -(band - v) / band : v > size - band ? (v - (size - band)) / band : 0;
+    const px = push(at.x, this.width);
+    const py = push(at.y, this.height);
+    if (!px && !py) return;
+    const speed = 520 * dt;
+    const before = this.groundAt(at.x, at.y);
+    const after = this.groundAt(at.x + px * speed, at.y + py * speed);
+    if (!before || !after) return;
+    this.target.add(after.sub(before));
+    clampCameraTarget(this.target, this.viewHeight);
+    this.targetGoal.copy(this.target);
+    this.poseCamera();
+    this.hover = this.cellAt(at.x, at.y);
+    this.drawZone(this.zone, this.hover);
+  }
+
   private frame() {
     const started = performance.now();
     this.timer.update();
@@ -1558,6 +1614,7 @@ export class CityWorld {
       this.labelsHeight = this.viewHeight;
       updatePlaceLabels(this.placeLabels, this.viewHeight);
     }
+    this.edgeScroll(dt);
     if (this.sim) this.updateCars();
     this.updateLighting(dt);
     this.updateFx(dt);
