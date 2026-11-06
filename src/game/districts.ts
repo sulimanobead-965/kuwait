@@ -52,7 +52,7 @@ const definitions: readonly Definition[] = [
   {
     id: "surra",
     name: "السرة",
-    description: "ممشى رئيسي متعرّج بين عمودين، وتقاطعان يفصلان القطع الست.",
+    description: "شارع رئيسي مستقيم بين عمودين، وتقاطعان أفقيان يفصلان القطع الست.",
     main: () => [36, 37],
     blocks: [
       [1, "l", 19, 22],
