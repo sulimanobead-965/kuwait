@@ -57,8 +57,10 @@ export function framedView(
   return { viewHeight, shift: ((occludedBottom / 2) * viewHeight) / sinPitch };
 }
 
-export function lodFor(viewHeight: number, distance: number): 0 | 1 | 2 {
+export function lodFor(viewHeight: number, distance: number): 0 | 1 | 2 | 3 {
   if (viewHeight <= 32 && distance <= 55) return 0;
   if (viewHeight <= 66 && distance <= 105) return 1;
+  // Zoomed far out (whole regions in view) buildings are a few pixels: plain blocks.
+  if (viewHeight > 110 || distance > 190) return 3;
   return 2;
 }

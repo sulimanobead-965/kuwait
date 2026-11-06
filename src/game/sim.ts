@@ -959,6 +959,12 @@ export function createInitial(): Sim {
 }
 
 export function cloneSim(s: Sim): Sim {
+  const copy = cloneParts(s);
+  snapshots.add(copy);
+  return copy;
+}
+
+function cloneParts(s: Sim): Sim {
   return {
     ...s,
     roads: [...s.roads],
@@ -1013,7 +1019,14 @@ export function cloneSim(s: Sim): Sim {
 }
 
 function countKind(s: Sim, kind: Kind) {
-  return s.buildings.filter((b) => b.kind === kind).length;
+  if (!snapshots.has(s)) return s.buildings.filter((b) => b.kind === kind).length;
+  let counts = countMemo.get(s);
+  if (!counts) {
+    counts = new Map();
+    for (const b of s.buildings) counts.set(b.kind, (counts.get(b.kind) ?? 0) + 1);
+    countMemo.set(s, counts);
+  }
+  return counts.get(kind) ?? 0;
 }
 
 /** How many buildings of a kind the city has. */
@@ -1158,7 +1171,23 @@ export const QUESTS: {
   },
 ];
 
+/**
+ * Snapshots (cloneSim) are what the interface renders, and are never changed after
+ * they are made, so their statistics are worked out once, not on every read: a full
+ * pass over a big city's buildings, many times per refresh, made the game stutter.
+ */
+const snapshots = new WeakSet<Sim>();
+const statsMemo = new WeakMap<Sim, CityStats>();
+const countMemo = new WeakMap<Sim, Map<Kind, number>>();
+
 export function stats(s: Sim): CityStats {
+  if (!snapshots.has(s)) return computeStats(s);
+  let st = statsMemo.get(s);
+  if (!st) statsMemo.set(s, (st = computeStats(s)));
+  return st;
+}
+
+function computeStats(s: Sim): CityStats {
   let pop = 0;
   let happy = 52;
   let powerUse = 0;

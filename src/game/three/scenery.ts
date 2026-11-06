@@ -399,12 +399,34 @@ export function createRoads(roadKeys: readonly string[], all?: ReadonlySet<strin
   const asphalt: BoxBatch = [];
   const markings: BoxBatch = [];
   const lights: BoxBatch = [];
+  /** Lamp posts: hidden with the paint and lamps when zoomed far out. */
+  const posts: BoxBatch = [];
   const roads = all ?? new Set(roadKeys);
+  // Continuous charcoal asphalt: one slab per run of road along a row (a whole
+  // street is one box, not one per cell), interior paint only, never curbs.
+  const rows = new Map<number, number[]>();
+  for (const key of roadKeys) {
+    const comma = key.indexOf(",");
+    const c = +key.slice(0, comma),
+      r = +key.slice(comma + 1);
+    let list = rows.get(r);
+    if (!list) rows.set(r, (list = []));
+    list.push(c);
+  }
+  for (const [r, cs] of rows) {
+    cs.sort((a, b) => a - b);
+    for (let i = 0; i < cs.length; ) {
+      let j = i;
+      while (j + 1 < cs.length && cs[j + 1] === cs[j]! + 1) j += 1;
+      const a = cellWorld(cs[i]!, r),
+        b = cellWorld(cs[j]!, r);
+      addBox(asphalt, (a.x + b.x) / 2, LAND_HEIGHT + 0.005, a.z, CELL_SIZE * (j - i + 1), 0.016, CELL_SIZE, P.asphalt);
+      i = j + 1;
+    }
+  }
   for (const key of [...roadKeys].sort()) {
     const [c, r] = key.split(",").map(Number);
     const { x, z } = cellWorld(c!, r!);
-    // Continuous charcoal asphalt: interior paint only, never perimeter curbs/borders.
-    addBox(asphalt, x, LAND_HEIGHT + 0.005, z, CELL_SIZE, 0.016, CELL_SIZE, P.asphalt);
     if (LAND[r!]?.[c!] === 0) {
       // A bridge over the sea: concrete deck, piers down into the water, and railings
       // along the sides that do not continue the bridge.
@@ -432,11 +454,11 @@ export function createRoads(roadKeys: readonly string[], all?: ReadonlySet<strin
     if ((c! + r!) % 4 === 0 && (horizontal || vertical)) {
       const lx = x + (horizontal ? 0 : CELL_SIZE * 0.405);
       const lz = z + (horizontal ? -CELL_SIZE * 0.45 : 0);
-      addBox(asphalt, lx, LAND_HEIGHT + 0.463, lz, 0.042, 0.9, 0.042, P.dark);
+      addBox(posts, lx, LAND_HEIGHT + 0.463, lz, 0.042, 0.9, 0.042, P.dark);
       const armX = lx + (horizontal ? 0 : -0.08);
       const armZ = lz + (horizontal ? 0.08 : 0);
       addBox(
-        asphalt,
+        posts,
         armX,
         LAND_HEIGHT + 0.89,
         armZ,
@@ -457,7 +479,7 @@ export function createRoads(roadKeys: readonly string[], all?: ReadonlySet<strin
       );
     }
   }
-  const details = new THREE.BoxGeometry(0, 0, 0);
+  const details = buildBoxes(posts);
   return {
     asphalt: buildBoxes(asphalt),
     markings: buildBoxes(markings),

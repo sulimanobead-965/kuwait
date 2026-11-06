@@ -144,7 +144,7 @@ test("roads keep interior paint separate from charcoal asphalt, with no pale bor
     const color = new THREE.Color().fromBufferAttribute(colors, i);
     assert.ok(
       asphaltHex.has(color.getHex()),
-      "only asphalt and dark lamp posts, never paving/white",
+      "only asphalt, never paving/white",
     );
   }
   for (let i = 0; i < positions.count; i++) {
@@ -152,7 +152,8 @@ test("roads keep interior paint separate from charcoal asphalt, with no pale bor
     assert.ok(y >= LAND_HEIGHT - 0.006, "road foundation intersects land by at most 3mm");
   }
   assert.ok(roads.markings.getAttribute("position").count > 0, "real interior road paint is batched");
-  assert.equal(positions.count, 120, "three complete asphalt cubes and one two-part streetlamp");
+  assert.equal(positions.count, 48, "two asphalt slabs: a merged two-cell run and one cell");
+  assert.equal(roads.details.getAttribute("position").count, 48, "one two-part streetlamp post");
   assert.equal(roads.lights.getAttribute("position").count, 24);
   for (const geometry of [roads.asphalt, roads.markings, roads.details, roads.lights]) geometry.dispose();
   let lot = "0,0";

@@ -1784,12 +1784,53 @@ function shaheed(p: ModelParts, detail: number) {
 
 const cache = new Map<string, BuildingModel>();
 
-export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): BuildingModel {
+/** 0 = close-up … 2 = far; 3 = the whole country in view: one block per building. */
+export type Detail = 0 | 1 | 2 | 3;
+
+const BLOCK_TINT: Partial<Record<Kind, string>> = {
+  villa: P.sand,
+  modern: P.plaster,
+  apartments: P.paleStone,
+  shop: P.blue,
+  tower: P.deepGlass,
+  park: P.leaf,
+  shaheed: P.leaf,
+  chalet: P.white,
+  power: P.silver,
+  water: P.gulf,
+  factory: P.silver,
+  port: P.gold,
+  refinery: P.silver,
+  runway: P.asphalt,
+  rail: P.wood,
+  terminal: P.white,
+  station: P.gulf,
+};
+
+/** The far model: a single box the size of the detailed one, in the kind's colour. */
+function blockModel(kind: Kind, level: number, p: ModelParts) {
+  const near = buildingModel(kind, level, 2);
+  const bounds = new THREE.Box3();
+  for (const bucket of ["opaque", "metal", "glass", "windows"] as const) {
+    const geo = near[bucket];
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    if (!geo.boundingBox!.isEmpty()) bounds.union(geo.boundingBox!);
+  }
+  if (bounds.isEmpty()) return;
+  const size = bounds.getSize(new THREE.Vector3());
+  const mid = bounds.getCenter(new THREE.Vector3());
+  const tall = (level >= 4 && kind !== "villa") || kind === "tower";
+  box(p, mid.x, size.y / 2, mid.z, Math.min(size.x, 2.08), Math.max(0.06, size.y), Math.min(size.z, 2.08),
+    BLOCK_TINT[kind] ?? (tall ? P.deepGlass : P.limestone));
+}
+
+export function buildingModel(kind: Kind, level: number, detail: Detail): BuildingModel {
   const key = `${kind}:${level}:${detail}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const p = emptyParts();
-  switch (kind) {
+  if (detail === 3) blockModel(kind, level, p);
+  else switch (kind) {
     case "villa":
       villa(p, detail);
       break;
@@ -1919,7 +1960,7 @@ export function buildingModel(kind: Kind, level: number, detail: 0 | 1 | 2): Bui
 export function createBuildingObject(
   kind: Kind,
   level: number,
-  detail: 0 | 1 | 2,
+  detail: Detail,
   materials: CityMaterials,
 ) {
   const model = buildingModel(kind, level, detail);
@@ -1936,7 +1977,7 @@ export function createBuildingObject(
   return { object, meshes };
 }
 
-export function modelTriangles(kind: Kind, detail: 0 | 1 | 2) {
+export function modelTriangles(kind: Kind, detail: Detail) {
   const model = buildingModel(kind, 1, detail);
   return Object.values(model).reduce(
     (n, g) => n + (g.index ? g.index.count / 3 : (g.attributes.position?.count ?? 0) / 3),
@@ -1944,7 +1985,7 @@ export function modelTriangles(kind: Kind, detail: 0 | 1 | 2) {
   );
 }
 
-export function modelVertices(kind: Kind, detail: 0 | 1 | 2) {
+export function modelVertices(kind: Kind, detail: Detail) {
   const model = buildingModel(kind, 1, detail);
   return Object.values(model).reduce((n, g) => n + g.attributes.position!.count, 0);
 }
@@ -1952,7 +1993,7 @@ export function modelVertices(kind: Kind, detail: 0 | 1 | 2) {
 const heights = new Map<string, number>();
 
 /** Top of a model above its base (world units), cached per kind/level/detail. */
-export function modelHeight(kind: Kind, level: number, detail: 0 | 1 | 2) {
+export function modelHeight(kind: Kind, level: number, detail: Detail) {
   const key = `${kind}:${level}:${detail}`;
   let top = heights.get(key);
   if (top === undefined) {
@@ -1988,7 +2029,7 @@ export class BuildingBatch<T extends BatchItem> {
     model: BuildingModel,
     materials: CityMaterials,
     parent: THREE.Object3D,
-    readonly detail: 0 | 1 | 2,
+    readonly detail: Detail,
     capacity = 8,
   ) {
     this.matrices = this.allocate(capacity);

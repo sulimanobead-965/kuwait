@@ -20,7 +20,7 @@ import {
   type Cell,
 } from "./camera.ts";
 import { lightingAt, type DayMode } from "./day-night.ts";
-import { BuildingBatch, buildingModel, modelHeight } from "./models.ts";
+import { BuildingBatch, buildingModel, modelHeight, type Detail } from "./models.ts";
 import { createSiteObject, disposeSiteObject, updateSiteObject, type SiteObject } from "./construction.ts";
 import { progressOf } from "../developments.ts";
 import { CityFx, type FxCell, type FxInput } from "./fx.ts";
@@ -89,7 +89,7 @@ type BuildingRecord = {
   z: number;
   born: number;
   orientation: number;
-  lod: 0 | 1 | 2;
+  lod: Detail;
   /** Close enough to the camera target to fall inside the sun's shadow box. */
   shadow: boolean;
   /** Near enough to the screen (at the last re-bucket) to be drawn. */
@@ -229,6 +229,8 @@ export class CityWorld {
   private stamp = 0;
   /** Instanced batches by model key; every building is an instance in one of them. */
   private batches = new Map<string, BuildingBatch<BuildingRecord>>();
+  /** Whether lane markings and street lamps are drawn (off when zoomed far out). */
+  private roadDetail = true;
   private dirtyBatches = new Set<BuildingBatch<BuildingRecord>>();
   private buildingLayer = new THREE.Group();
   private rising = new Set<BuildingRecord>();
@@ -567,6 +569,7 @@ export class CityWorld {
     if (next === this.quality && this.qualityAt) return;
     this.quality = next;
     this.qualityAt = performance.now();
+    this.lodView.at = 0; // re-pick building detail for the new level
     // Remember what this device can carry, so the next launch starts there.
     if (this.qualityMode === "auto")
       try {
@@ -1003,6 +1006,7 @@ export class CityWorld {
   }
 
   focus(cell: Cell, viewHeight = 32) {
+    viewHeight = THREE.MathUtils.clamp(viewHeight, 10, MAX_VIEW);
     const at = cellWorld(cell.c, cell.r);
     this.targetGoal.set(at.x, LAND_HEIGHT, at.z);
     this.target.copy(this.targetGoal);
@@ -1109,7 +1113,8 @@ export class CityWorld {
       const aspect = this.width / Math.max(1, this.height);
       this.focus(
         { c: mean.c / input.buildings.length, r: mean.r / input.buildings.length },
-        (14 + input.buildings.length) * Math.max(1, 0.9 / aspect),
+        // A small town fits whole; a big city opens on a readable neighbourhood.
+        Math.min(60, 14 + input.buildings.length) * Math.max(1, 0.9 / aspect),
       );
     }
     if (preview && force) this.focus(PREVIEW_FOCUS, 31);
@@ -1246,15 +1251,21 @@ export class CityWorld {
       if (built.markings.getAttribute("position").count > 24) {
         const markings = new THREE.Mesh(built.markings, this.materials.opaque);
         markings.receiveShadow = true;
+        markings.userData.roadDetail = true;
         meshes.push(markings);
       } else built.markings.dispose();
       if (built.lights.getAttribute("position").count > 24)
-        meshes.push(new THREE.Mesh(built.lights, this.materials.lamps));
+        meshes.push(Object.assign(new THREE.Mesh(built.lights, this.materials.lamps), { userData: { roadDetail: true } }));
       else built.lights.dispose();
-      built.details.dispose();
+      if (built.details.getAttribute("position").count > 24) {
+        const posts = new THREE.Mesh(built.details, this.materials.opaque);
+        posts.userData.roadDetail = true;
+        meshes.push(posts);
+      } else built.details.dispose();
       for (const mesh of meshes) {
         mesh.matrixAutoUpdate = false;
         mesh.name = "roads";
+        if (mesh.userData.roadDetail) mesh.visible = this.roadDetail;
         this.scene.add(mesh);
       }
       this.roadChunks.set(id, meshes);
@@ -1426,8 +1437,9 @@ export class CityWorld {
     else delete this.lodCounts[lod];
   }
 
-  private detailOf(rec: BuildingRecord): 0 | 1 | 2 {
-    return rec.lod === 2 && isLandmark(rec.kind) ? 1 : rec.lod;
+  private detailOf(rec: BuildingRecord): Detail {
+    if (isLandmark(rec.kind)) return rec.lod >= 2 ? (rec.lod === 3 ? 2 : 1) : rec.lod;
+    return rec.lod;
   }
 
   /** Puts a record in the batch its model and visibility call for (or none). */
@@ -1455,7 +1467,7 @@ export class CityWorld {
   private batchFor(
     kind: BuildingRecord["kind"],
     level: number,
-    detail: 0 | 1 | 2,
+    detail: Detail,
     shadow: boolean,
   ) {
     const key = `${kind}:${level}:${detail}${shadow ? "" : ":flat"}`;
@@ -1508,7 +1520,9 @@ export class CityWorld {
   }
 
   private lodOf(rec: BuildingRecord) {
-    return lodFor(this.viewHeight, Math.hypot(this.target.x - rec.x, this.target.z - rec.z));
+    // On a struggling device (lower graphics level) simpler models start closer in.
+    const ease = 1 + this.quality * 0.45;
+    return lodFor(this.viewHeight * ease, Math.hypot(this.target.x - rec.x, this.target.z - rec.z) * ease);
   }
 
   /**
@@ -1572,6 +1586,14 @@ export class CityWorld {
     // A building's footprint, in clip units, around its base point.
     view.pad.x = (CELL_SIZE * 2) / ((this.viewHeight * view.aspect) / 2);
     view.pad.y = (CELL_SIZE * 2) / (this.viewHeight / 2);
+    // Lane paint and street lamps vanish when zoomed far out (sub-pixel anyway).
+    const roadDetail = this.viewHeight <= 60;
+    if (roadDetail !== this.roadDetail) {
+      this.roadDetail = roadDetail;
+      for (const list of this.roadChunks.values())
+        for (const mesh of list) if (mesh.userData.roadDetail) mesh.visible = roadDetail;
+      this.dirtyShadows = true;
+    }
     let moves = 0;
     for (const rec of this.records.values()) {
       const lod = this.lodOf(rec);
