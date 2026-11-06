@@ -13,6 +13,8 @@ import { CATALOG, maxLevelOf, type Kind } from "./catalog";
 import { siteAt } from "./developments";
 import {
   cellKey,
+  cellTaken,
+  roadSet,
   isLand,
   placeBuilding,
   priceOf,
@@ -68,10 +70,13 @@ type Plan = { label: string; cost: number; run: () => boolean };
 function upgradePlan(s: Sim, b: Building, label: string): Plan | null {
   if (b.level >= maxLevelOf(b.kind)) return null;
   const cost = priceOf(upgradeCost(b.kind, b.level), s);
+  const level = b.level;
   return {
     label,
     cost,
     run: () => {
+      // Planned for this level; skip quietly if it changed meanwhile.
+      if (b.level !== level || b.level >= maxLevelOf(b.kind)) return false;
       if (!settleUpgrade(s, cost).ok) return false;
       b.level += 1;
       return true;
@@ -86,6 +91,7 @@ function replacePlan(s: Sim, b: Building): Plan {
     label: "عمارة بدل فيلا",
     cost,
     run: () => {
+      if (b.kind !== "villa" && b.kind !== "modern") return false;
       if (!settleUpgrade(s, cost).ok) return false;
       b.kind = "apartments";
       b.level = 1;
@@ -95,85 +101,130 @@ function replacePlan(s: Sim, b: Building): Plan {
   };
 }
 
-/** An open lot beside a road, near the existing city. */
-function openLot(s: Sim) {
-  const taken = new Set(s.roads);
-  for (const b of s.buildings) taken.add(cellKey(b.c, b.r));
-  const near = s.buildings.length ? s.buildings : [];
-  for (const b of near) {
-    for (const [dc, dr] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-      [1, 1],
-      [-1, -1],
-      [1, -1],
-      [-1, 1],
-    ] as const) {
+/**
+ * Free lots that touch a road and sit next to existing buildings, collected once per
+ * month (O(buildings)) and handed out one by one.
+ */
+function lotFinder(s: Sim) {
+  const roads = roadSet(s);
+  const seen = new Set<string>();
+  const lots: { c: number; r: number }[] = [];
+  const around = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+  ] as const;
+  for (const b of s.buildings)
+    for (const [dc, dr] of around) {
       const c = b.c + dc;
       const r = b.r + dr;
       const key = cellKey(c, r);
-      if (!isLand(c, r) || taken.has(key) || siteAt(s.sites, c, r)) continue;
-      const fronts = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ].some(([x, y]) => s.roads.includes(cellKey(c + x!, r + y!)));
-      if (fronts) return { c, r };
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!isLand(c, r) || cellTaken(s, c, r) || siteAt(s.sites, c, r)) continue;
+      if (
+        roads.has(cellKey(c + 1, r)) ||
+        roads.has(cellKey(c - 1, r)) ||
+        roads.has(cellKey(c, r + 1)) ||
+        roads.has(cellKey(c, r - 1))
+      )
+        lots.push({ c, r });
     }
-  }
-  return null;
-}
-
-function buildPlan(s: Sim, kind: Kind, label: string): Plan | null {
-  const lot = openLot(s);
-  if (!lot) return null;
-  const cost = priceOf(CATALOG[kind].cost, s);
-  return {
-    label,
-    cost,
-    run: () => placeBuilding(s, kind, lot.c, lot.r, 0).ok,
+  let next = 0;
+  return () => {
+    while (next < lots.length) {
+      const lot = lots[next++]!;
+      if (!cellTaken(s, lot.c, lot.r)) return lot;
+    }
+    return null;
   };
 }
 
-function nextPlan(s: Sim): Plan | null {
+/**
+ * The month's work list, in priority order, computed once from a single look at the
+ * city (the old version re-scanned the whole city before every single job):
+ * short services → villas into apartment blocks → apartment floors, lowest first →
+ * parks → shops and towers → everything else.
+ */
+function* plans(s: Sim): Generator<Plan> {
   const st = stats(s);
   const cover = serviceCoverage(s);
-  const short: [number, Kind, string][] = [
-    [st.powerGive >= st.powerUse ? 1 : 0, "power", "محطة كهرباء"],
-    [st.waterGive >= st.waterUse ? 1 : 0, "water", "محطة تحلية"],
-    [cover.school, "school", "مدرسة"],
-    [cover.clinic, "clinic", "مستوصف"],
-    [cover.police, "police", "مركز شرطة"],
-    [cover.fire, "fire", "مركز إطفاء"],
+  const lot = lotFinder(s);
+  const build = (kind: Kind, label: string): Plan | null => {
+    const at = lot();
+    if (!at) return null;
+    return {
+      label,
+      cost: priceOf(CATALOG[kind].cost, s),
+      run: () => placeBuilding(s, kind, at.c, at.r, 0).ok,
+    };
+  };
+  // Services that are badly short: enough new ones to reach ~60٪ coverage.
+  const homes = st.capacity;
+  const services: [number, Kind, string, number][] = [
+    [st.powerGive >= st.powerUse ? 1 : 0, "power", "محطة كهرباء", 0],
+    [st.waterGive >= st.waterUse ? 1 : 0, "water", "محطة تحلية", 0],
+    [cover.school, "school", "مدرسة", 260],
+    [cover.clinic, "clinic", "مستوصف", 300],
+    [cover.police, "police", "مركز شرطة", 280],
+    [cover.fire, "fire", "مركز إطفاء", 420],
   ];
-  short.sort((a, b) => a[0] - b[0]);
-  const worst = short[0]!;
-  if (worst[0] < 0.6) {
-    const plan = buildPlan(s, worst[1], worst[2]);
-    if (plan) return plan;
+  services.sort((a, b) => a[0] - b[0]);
+  for (const [level, kind, label, per] of services) {
+    if (level >= 0.6) continue;
+    const need = per ? Math.ceil(((0.6 - level) * homes) / per) : 1;
+    for (let k = 0; k < Math.min(need, 50); k += 1) {
+      const plan = build(kind, label);
+      if (!plan) break;
+      yield plan;
+    }
   }
-  const villa = s.buildings.find((b) => b.kind === "villa" || b.kind === "modern");
-  if (villa) return replacePlan(s, villa);
-  const flats = s.buildings
-    .filter((b) => b.kind === "apartments" && b.level < maxLevelOf(b.kind))
-    .sort((a, b) => a.level - b.level)[0];
-  if (flats) return upgradePlan(s, flats, flats.level >= 3 ? "ناطحة سكنية" : "دور إضافي لعمارة");
+  for (const b of s.buildings)
+    if (b.kind === "villa" || b.kind === "modern") yield replacePlan(s, b);
+  const rounds = (pick: (b: Building) => boolean, label: (b: Building) => string) => {
+    const list = s.buildings.filter(pick);
+    const out: Plan[] = [];
+    for (let level = 1; level < 5; level += 1)
+      for (const b of list)
+        if (b.level === level) {
+          const plan = upgradePlan(s, b, label(b));
+          if (plan) out.push(plan);
+        }
+    return out;
+  };
+  // Apartment floors are planned level by level; each plan re-checks the level when run.
+  for (const plan of rounds(
+    (b) => b.kind === "apartments",
+    (b) => (b.level >= 3 ? "ناطحة سكنية" : "دور إضافي لعمارة"),
+  ))
+    yield plan;
   if (cover.park < 0.8) {
-    const plan = buildPlan(s, "park", "حديقة");
-    if (plan) return plan;
+    const need = Math.ceil(((0.8 - cover.park) * homes) / 140);
+    for (let k = 0; k < Math.min(need, 50); k += 1) {
+      const plan = build("park", "حديقة");
+      if (!plan) break;
+      yield plan;
+    }
   }
-  const trade = s.buildings
-    .filter((b) => (b.kind === "shop" || b.kind === "tower") && b.level < maxLevelOf(b.kind))
-    .sort((a, b) => a.level - b.level)[0];
-  if (trade) return upgradePlan(s, trade, trade.level >= 3 ? "ناطحة تجارية" : "ترقية تجارية");
-  const other = s.buildings
-    .filter((b) => b.level < maxLevelOf(b.kind) && CATALOG[b.kind].cat !== "landmarks")
-    .sort((a, b) => a.level - b.level)[0];
-  if (other) return upgradePlan(s, other, msg("ترقية {name}", { name: CATALOG[other.kind].name }));
-  return null;
+  for (const plan of rounds(
+    (b) => b.kind === "shop" || b.kind === "tower",
+    (b) => (b.level >= 3 ? "ناطحة تجارية" : "ترقية تجارية"),
+  ))
+    yield plan;
+  for (const plan of rounds(
+    (b) =>
+      b.kind !== "apartments" &&
+      b.kind !== "shop" &&
+      b.kind !== "tower" &&
+      CATALOG[b.kind].cat !== "landmarks",
+    (b) => msg("ترقية {name}", { name: CATALOG[b.kind].name }),
+  ))
+    yield plan;
 }
 
 /**
@@ -188,10 +239,12 @@ export function builderMonth(s: Sim) {
   let left = budget;
   let spent = 0;
   const done = new Map<string, number>();
-  for (let guard = 0; guard < 400; guard += 1) {
-    const plan = nextPlan(s);
-    if (!plan || plan.cost > left) break;
-    if (!plan.run()) break;
+  let guard = 0;
+  for (const plan of plans(s)) {
+    if (guard++ >= 2000) break;
+    // Skip jobs that don't fit what's left; smaller ones further down may still fit.
+    if (plan.cost > left) continue;
+    if (!plan.run()) continue;
     // The budget caps the volume of works, whoever ends up paying for them.
     left -= plan.cost;
     spent += plan.cost;

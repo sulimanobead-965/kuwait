@@ -563,14 +563,25 @@ export function startCrisis(s: Sim, kind: CrisisKind, random = Math.random) {
 // ---------------------------------------------------------------- calendar
 
 /** Kuwait National Day / Liberation Day week, and Ramadan with its Eid. */
+let moodMemo: { day: number; mood: { national: boolean; ramadan: boolean; eid: boolean } } | null =
+  null;
+
 export function calendarMood(s: Sim) {
-  const d = new Date(EPOCH + Math.floor(s.day) * 86400000);
+  const day = Math.floor(s.day);
+  if (moodMemo && moodMemo.day === day) return moodMemo.mood;
+  const mood = computeMood(day);
+  moodMemo = { day, mood };
+  return mood;
+}
+
+function computeMood(day: number) {
+  const d = new Date(EPOCH + day * 86400000);
   const month = d.getUTCMonth();
   const date = d.getUTCDate();
   const national = month === 1 && date >= 20 && date <= 28;
   // Ramadan 1380 AH began on 17 Feb 1961; the lunar year is ~354.37 days.
   const lunar = 354.367;
-  const since = (Math.floor(s.day) - 4 + lunar * 10) % lunar;
+  const since = (day - 4 + lunar * 10) % lunar;
   const ramadan = since < 30;
   const eid = since >= 30 && since < 33;
   return { national, ramadan, eid };
@@ -583,27 +594,45 @@ export function isCelebrating(s: Sim) {
 
 // ---------------------------------------------------------------- neighbors
 
-const neighborCache = new WeakMap<Sim, { sig: string; map: Map<string, Kind> }>();
-
-function kindGrid(s: Sim) {
-  const last = s.buildings[s.buildings.length - 1];
-  const sig = `${s.buildings.length}:${last?.id ?? ""}:${last?.kind ?? ""}`;
-  const hit = neighborCache.get(s);
-  if (hit && hit.sig === sig) return hit.map;
-  const map = new Map<string, Kind>();
-  for (const b of s.buildings) map.set(cellKey(b.c, b.r), b.kind);
-  neighborCache.set(s, { sig, map });
-  return map;
-}
 
 /** Income multiplier from neighbors, with readable reasons. */
+/** Income multiplier from neighbors only (the hot path; no text). */
+export function neighborMult(s: Sim, b: Building) {
+  const d = CATALOG[b.kind];
+  const housing = d.pop > 0;
+  const trade = !housing && (d.cat === "commerce" || b.kind === "avenues" || b.kind === "mubarakiya" || b.kind === "hamra");
+  if (!housing && !trade) return 1;
+  const lots = cityIndex(s).lots;
+  let parks = 0,
+    shops = 0,
+    plants = 0,
+    homes = 0;
+  for (let dr = -1; dr <= 1; dr += 1)
+    for (let dc = -1; dc <= 1; dc += 1) {
+      if (!dc && !dr) continue;
+      const k = lots.get(cellKey(b.c + dc, b.r + dr))?.kind;
+      if (!k) continue;
+      if (k === "park") parks += 1;
+      else if (k === "shop" || k === "mubarakiya" || k === "avenues") shops += 1;
+      else if (k === "power" || k === "water") plants += 1;
+      if (CATALOG[k].pop > 0) homes += 1;
+    }
+  if (housing)
+    return (
+      (1 + Math.min(2, parks) * 0.12) *
+      (1 + Math.min(2, shops) * 0.06) *
+      Math.max(0.5, 1 - plants * 0.15)
+    );
+  return 1 + Math.min(4, homes) * 0.05;
+}
+
 export function neighborEffect(s: Sim, b: Building) {
-  const grid = kindGrid(s);
+  const lots = cityIndex(s).lots;
   const near: Kind[] = [];
   for (let dr = -1; dr <= 1; dr += 1)
     for (let dc = -1; dc <= 1; dc += 1) {
       if (!dc && !dr) continue;
-      const k = grid.get(cellKey(b.c + dc, b.r + dr));
+      const k = lots.get(cellKey(b.c + dc, b.r + dr))?.kind;
       if (k) near.push(k);
     }
   const count = (kinds: Kind[]) => near.filter((k) => kinds.includes(k)).length;
@@ -1112,31 +1141,115 @@ export function stats(s: Sim): CityStats {
   };
 }
 
-const roadCache = new WeakMap<Sim, { n: number; last: string; set: Set<string> }>();
+/**
+ * Fast lookups for big cities: road cells and building lots by cell key. Built once
+ * and then updated in place when a road or building is added; any other change
+ * (bulldozing, loading) is detected by length/last-item and triggers a rebuild.
+ */
+type CityIndex = {
+  rn: number;
+  rlast: string;
+  bn: number;
+  blast: string;
+  roads: Set<string>;
+  lots: Map<string, Building>;
+};
+const indexCache = new WeakMap<Sim, CityIndex>();
 
-function roadSet(s: Sim) {
-  const last = s.roads[s.roads.length - 1] ?? "";
-  const hit = roadCache.get(s);
-  if (hit && hit.n === s.roads.length && hit.last === last) return hit.set;
-  const set = new Set(s.roads);
-  roadCache.set(s, { n: s.roads.length, last, set });
-  return set;
+function cityIndex(s: Sim): CityIndex {
+  const rlast = s.roads[s.roads.length - 1] ?? "";
+  const blast = s.buildings[s.buildings.length - 1]?.id ?? "";
+  const hit = indexCache.get(s);
+  if (
+    hit &&
+    hit.rn === s.roads.length &&
+    hit.rlast === rlast &&
+    hit.bn === s.buildings.length &&
+    hit.blast === blast
+  )
+    return hit;
+  const lots = new Map<string, Building>();
+  for (const b of s.buildings) lots.set(cellKey(b.c, b.r), b);
+  const fresh = { rn: s.roads.length, rlast, bn: s.buildings.length, blast, roads: new Set(s.roads), lots };
+  indexCache.set(s, fresh);
+  return fresh;
+}
+
+function indexRoadAdded(s: Sim, key: string) {
+  const ix = indexCache.get(s);
+  if (!ix || ix.rn !== s.roads.length - 1) return;
+  ix.roads.add(key);
+  ix.rn = s.roads.length;
+  ix.rlast = key;
+}
+
+function indexBuildingAdded(s: Sim, b: Building) {
+  const ix = indexCache.get(s);
+  if (!ix || ix.bn !== s.buildings.length - 1) return;
+  ix.lots.set(cellKey(b.c, b.r), b);
+  ix.bn = s.buildings.length;
+  ix.blast = b.id;
+}
+
+export function roadSet(s: Sim) {
+  return cityIndex(s).roads;
+}
+
+/** Is there a building or a road on this cell? */
+export function cellTaken(s: Sim, c: number, r: number) {
+  const ix = cityIndex(s);
+  const k = cellKey(c, r);
+  return ix.roads.has(k) || ix.lots.has(k);
+}
+
+export function buildingAt(s: Sim, c: number, r: number) {
+  return cityIndex(s).lots.get(cellKey(c, r)) ?? null;
 }
 
 function besideRoad(c: number, r: number, roads: Set<string>) {
   return DIRS.some(([dc, dr]) => roads.has(cellKey(c + dc, r + dr)));
 }
 
+/**
+ * Per-building factors that only change when roads or buildings change (road access,
+ * neighbors, coast), cached by building id and rebuilt when the city index changes.
+ */
+const placeCache = new WeakMap<
+  Sim,
+  { ix: CityIndex; rn: number; bn: number; map: Map<string, { kind: Kind; value: number }> }
+>();
+
+function placeFactor(s: Sim, b: Building) {
+  const ix = cityIndex(s);
+  let cache = placeCache.get(s);
+  if (!cache || cache.ix !== ix || cache.rn !== ix.rn || cache.bn !== ix.bn) {
+    cache = { ix, rn: ix.rn, bn: ix.bn, map: new Map() };
+    placeCache.set(s, cache);
+  }
+  const hit = cache.map.get(b.id);
+  if (hit && hit.kind === b.kind) return hit.value;
+  const d = CATALOG[b.kind];
+  let value = 1;
+  if (d.needsRoad && !besideRoad(b.c, b.r, ix.roads)) value = 0;
+  else {
+    value *= neighborMult(s, b);
+    if (d.coastBoost && coastal(b.c, b.r)) value *= 1.15;
+  }
+  cache.map.set(b.id, { kind: b.kind, value });
+  return value;
+}
+
 export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
   const d = CATALOG[b.kind];
   if (d.income <= 0) return 0;
-  if (d.needsRoad && !besideRoad(b.c, b.r, roadSet(s))) return 0;
+  const place = placeFactor(s, b);
+  if (place === 0) return 0;
   let v = d.income * (1 + (b.level - 1) * 0.62) * (b.level >= 4 ? 1.5 : 1);
-  v *= neighborEffect(s, b).mult;
-  if (calendarMood(s).ramadan && ["shop", "avenues", "mubarakiya"].includes(b.kind)) v *= 1.1;
+  v *= place;
+  if ((b.kind === "shop" || b.kind === "avenues" || b.kind === "mubarakiya") && calendarMood(s).ramadan)
+    v *= 1.1;
   if (d.needsPop > 0 && st.pop < d.needsPop) v *= 0.35;
   if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1);
-  if (d.coastBoost && coastal(b.c, b.r)) v *= 1.15;
   if (s.ordinances.smokeBan && (b.kind === "shop" || b.kind === "tower")) v *= 0.9;
   const tax = 0.55 + (clamp(s.tax, 0, 300) / 100) * 1.2;
   return v * st.mult * tax;
@@ -1207,13 +1320,14 @@ export function placeRoad(s: Sim, c: number, r: number): Act {
     isDistrictLand(s.district, cellKey(c, r))
   )
     return { ok: false, msg: t("المخطط يفصل القطع؛ ارصف الشارع الجانبي على حدود القطعة") };
-  if (s.buildings.some((b) => b.c === c && b.r === r)) return { ok: false, msg: t("في مبنى هنا") };
+  if (buildingAt(s, c, r)) return { ok: false, msg: t("في مبنى هنا") };
   const k = cellKey(c, r);
-  if (s.roads.includes(k)) return { ok: true, fresh: false };
+  if (roadSet(s).has(k)) return { ok: true, fresh: false };
   const cost = priceOf(ROAD_COST, s);
   if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي للطريق") };
   s.coins -= cost;
   s.roads.push(k);
+  indexRoadAdded(s, k);
   return { ok: true, fresh: true };
 }
 
@@ -1221,7 +1335,7 @@ export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: num
   const fence = fenced(s, c, r);
   if (fence) return { ok: false, msg: fence };
   if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع البناء في البحر") };
-  if (s.roads.includes(cellKey(c, r)) || s.buildings.some((b) => b.c === c && b.r === r)) {
+  if (cellTaken(s, c, r)) {
     return { ok: false, msg: t("الأرض مشغولة") };
   }
   if (CATALOG[kind].needsCoast && !coastal(c, r))
@@ -1240,6 +1354,7 @@ export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: num
     stored: 0,
     born: now,
   });
+  indexBuildingAdded(s, s.buildings[s.buildings.length - 1]!);
   return { ok: true };
 }
 
@@ -1252,7 +1367,7 @@ export function nearestOpenLot(s: Sim, c: number, r: number, radius = 1) {
       const rr = r + dr;
       const key = cellKey(cc, rr);
       if (!isLand(cc, rr)) continue;
-      if (s.roads.includes(key) || s.buildings.some((b) => b.c === cc && b.r === rr)) continue;
+      if (cellTaken(s, cc, rr)) continue;
       const d = dc * dc + dr * dr;
       if (!best || d < best.d) best = { c: cc, r: rr, d };
     }
@@ -1277,8 +1392,7 @@ function fillParcel(
   const open = cells.filter(
     ({ c, r }) =>
       isLand(c, r) &&
-      !s.roads.includes(cellKey(c, r)) &&
-      !s.buildings.some((b) => b.c === c && b.r === r),
+      !cellTaken(s, c, r),
   );
   const midC = open.reduce((n, cell) => n + cell.c, 0) / Math.max(1, open.length);
   const midR = open.reduce((n, cell) => n + cell.r, 0) / Math.max(1, open.length);
@@ -1345,7 +1459,7 @@ function collectOpen(
     for (let c = cA; c <= cB; c += 1) {
       const key = cellKey(c, r);
       if (!isLand(c, r) || skip.has(key) || roadIsSchematic(s.district, key)) continue;
-      if (s.roads.includes(key) || s.buildings.some((b) => b.c === c && b.r === r)) continue;
+      if (cellTaken(s, c, r)) continue;
       cells.push({ c, r });
     }
   }
@@ -1459,8 +1573,7 @@ export function planZone(
       for (let c = cols[bi]! + 1; c < cols[bi + 1]!; c += 1) {
         for (let r = rows[bj]! + 1; r < rows[bj + 1]!; r += 1) {
           if (!isLand(c, r)) continue;
-          if (s.roads.includes(cellKey(c, r))) continue;
-          if (s.buildings.some((b) => b.c === c && b.r === r)) continue;
+          if (cellTaken(s, c, r)) continue;
           const score = Math.abs(c - midC) + Math.abs(r - midR);
           const item = { c, r, score };
           if (besideRoad(c, r, roadSet(s))) front.push(item);
@@ -1473,8 +1586,7 @@ export function planZone(
     for (let r = rA; r <= rB; r += 1) {
       for (let c = cA; c <= cB; c += 1) {
         if (!isLand(c, r)) continue;
-        if (s.roads.includes(cellKey(c, r))) continue;
-        if (s.buildings.some((b) => b.c === c && b.r === r)) continue;
+        if (cellTaken(s, c, r)) continue;
         front.push({ c, r, score: Math.abs(c - midC) + Math.abs(r - midR) });
       }
     }
@@ -1575,29 +1687,62 @@ function cityCenter(s: Sim) {
 }
 
 /** Open, buildable rectangle closest to the city. Districts keep their numbered parcels. */
-export function findModelSite(s: Sim, w: number, h: number) {
-  const taken = new Set(s.roads);
-  for (const b of s.buildings) taken.add(cellKey(b.c, b.r));
-  const free = (c: number, r: number) => {
-    if (s.sites.length && siteAt(s.sites, c, r)) return false;
-    const k = cellKey(c, r);
-    if (!isLand(c, r) || taken.has(k)) return false;
-    if (s.district && s.district !== "free" && isDistrictLand(s.district, k)) return false;
-    return !roadIsSchematic(s.district, k);
+/**
+ * Summed-area tables over the map: one counts blocked cells, the other coastal cells,
+ * so whether any w×h rectangle is free (and touches the sea) is an O(1) lookup.
+ */
+function areaTables(s: Sim, blockParcels: boolean, blockSchematic: boolean) {
+  const W = COLS + 1;
+  const blocked = new Int32Array(W * (ROWS + 1));
+  const shore = new Int32Array(W * (ROWS + 1));
+  const ix = cityIndex(s);
+  for (let r = 0; r < ROWS; r += 1) {
+    let rowB = 0;
+    let rowS = 0;
+    for (let c = 0; c < COLS; c += 1) {
+      const k = cellKey(c, r);
+      const bad =
+        !isLand(c, r) ||
+        ix.roads.has(k) ||
+        ix.lots.has(k) ||
+        (s.sites.length > 0 && siteAt(s.sites, c, r) !== null) ||
+        (blockParcels && !!s.district && s.district !== "free" && isDistrictLand(s.district, k)) ||
+        (blockSchematic && roadIsSchematic(s.district, k));
+      rowB += bad ? 1 : 0;
+      rowS += isLand(c, r) && coastal(c, r) ? 1 : 0;
+      blocked[(r + 1) * W + c + 1] = blocked[r * W + c + 1]! + rowB;
+      shore[(r + 1) * W + c + 1] = shore[r * W + c + 1]! + rowS;
+    }
+  }
+  const sum = (t: Int32Array, c: number, r: number, w: number, h: number) =>
+    t[(r + h) * W + c + w]! - t[r * W + c + w]! - t[(r + h) * W + c]! + t[r * W + c]!;
+  return {
+    free: (c: number, r: number, w: number, h: number) => sum(blocked, c, r, w, h) === 0,
+    coast: (c: number, r: number, w: number, h: number) => sum(shore, c, r, w, h) > 0,
   };
-  const mid = cityCenter(s);
+}
+
+/** The free w×h rectangle closest to a point, or null. */
+function nearestRect(
+  w: number,
+  h: number,
+  mid: { c: number; r: number },
+  ok: (c: number, r: number) => boolean,
+) {
   let best: { c: number; r: number; d: number } | null = null;
-  for (let r = 0; r + h <= ROWS; r += 1) {
+  for (let r = 0; r + h <= ROWS; r += 1)
     for (let c = 0; c + w <= COLS; c += 1) {
       const d = Math.abs(c + w / 2 - mid.c) + Math.abs(r + h / 2 - mid.r);
       if (best && d >= best.d) continue;
-      let ok = true;
-      for (let y = r; y < r + h && ok; y += 1)
-        for (let x = c; x < c + w && ok; x += 1) ok = free(x, y);
-      if (ok) best = { c, r, d };
+      if (ok(c, r)) best = { c, r, d };
     }
-  }
   return best ? { c: best.c, r: best.r } : null;
+}
+
+/** Open, buildable rectangle closest to the city. Districts keep their numbered parcels. */
+export function findModelSite(s: Sim, w: number, h: number) {
+  const area = areaTables(s, true, true);
+  return nearestRect(w, h, cityCenter(s), (c, r) => area.free(c, r, w, h));
 }
 
 export function buyModelArea(
@@ -1647,7 +1792,7 @@ export function placePackage(
     const lots: { c: number; r: number }[] = [];
     for (let r = r0 + 1; r < r1; r += 1)
       for (let c = c0 + 1; c < c1; c += 1)
-        if (!s.roads.includes(cellKey(c, r))) lots.push({ c, r });
+        if (!roadSet(s).has(cellKey(c, r))) lots.push({ c, r });
     const plan = [...def.plan];
     let i = 0;
     for (const lot of lots) {
@@ -1665,15 +1810,12 @@ export function placePackage(
 /** Why a site can't host this development at (c, r) top-left, or null if it can. */
 export function developmentBlocker(s: Sim, kind: DevelopmentKind, c: number, r: number) {
   const def = DEVELOPMENTS[kind];
-  const taken = new Set(s.roads);
-  for (const b of s.buildings) taken.add(cellKey(b.c, b.r));
   let shore = false;
   for (let y = r; y < r + def.h; y += 1)
     for (let x = c; x < c + def.w; x += 1) {
       if (!isLand(x, y)) return t("الموقع يدخل البحر أو خارج الخريطة");
-      const k = cellKey(x, y);
-      if (taken.has(k)) return t("الموقع فيه مبانٍ أو طرق");
-      if (s.district && s.district !== "free" && isDistrictLand(s.district, k))
+      if (cellTaken(s, x, y)) return t("الموقع فيه مبانٍ أو طرق");
+      if (s.district && s.district !== "free" && isDistrictLand(s.district, cellKey(x, y)))
         return t("الموقع داخل قطع الحي المرقّمة");
       if (siteAt(s.sites, x, y)) return t("الموقع داخل مشروع آخر");
       if (coastal(x, y)) shore = true;
@@ -1689,15 +1831,10 @@ export function findDevelopmentSite(
   near?: { c: number; r: number },
 ) {
   const def = DEVELOPMENTS[kind];
-  const mid = near ?? cityCenter(s);
-  let best: { c: number; r: number; d: number } | null = null;
-  for (let r = 0; r + def.h <= ROWS; r += 1)
-    for (let c = 0; c + def.w <= COLS; c += 1) {
-      const d = Math.abs(c + def.w / 2 - mid.c) + Math.abs(r + def.h / 2 - mid.r);
-      if (best && d >= best.d) continue;
-      if (!developmentBlocker(s, kind, c, r)) best = { c, r, d };
-    }
-  return best ? { c: best.c, r: best.r } : null;
+  const area = areaTables(s, true, false);
+  return nearestRect(def.w, def.h, near ?? cityCenter(s), (c, r) =>
+    area.free(c, r, def.w, def.h) && (!def.coast || area.coast(c, r, def.w, def.h)),
+  );
 }
 
 /**

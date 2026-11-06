@@ -192,12 +192,25 @@ export function CityGame() {
     }, 2400);
   }
 
+  // Saving a big city writes ~0.5 MB to localStorage; do it at most every 3 s while
+  // playing, and right away when the page is hidden or closed.
+  const lastSave = useRef(0);
   function sync() {
     simRef.current.lastSeen = Date.now();
     const next = cloneSim(simRef.current);
     setSnap(next);
-    saveSim(simRef.current);
+    const now = Date.now();
+    if (now - lastSave.current > 3000) {
+      lastSave.current = now;
+      saveSim(simRef.current);
+    }
   }
+  function flushSave() {
+    lastSave.current = Date.now();
+    if (simRef.current.started) saveSim(simRef.current);
+  }
+  const flushRef = useRef(flushSave);
+  flushRef.current = flushSave;
 
   syncRef.current = sync;
   toastRef.current = pushToast;
@@ -391,9 +404,12 @@ export function CityGame() {
         const scale = sim.speed === 1 ? 1 : sim.speed === 2 ? 4 : 12;
         const daysPerSec = sim.speed === 1 ? 6 : sim.speed === 2 ? 24 : 72;
         acc += dt * scale;
-        while (acc >= 0.25) {
-          tick(sim, 0.25);
-          acc -= 0.25;
+        // Income is linear in time, so one tick per frame covers all elapsed steps
+        // (big cities used to run dozens of full ticks per frame at top speed).
+        if (acc >= 0.25) {
+          const step = Math.floor(acc / 0.25) * 0.25;
+          tick(sim, step);
+          acc -= step;
         }
         const logBefore = sim.log[0];
         advanceDays(sim, dt * daysPerSec);
@@ -415,6 +431,7 @@ export function CityGame() {
     }
     function onVisibility() {
       if (document.hidden) {
+        flushRef.current();
         hiddenAt = performance.now();
         previous = 0;
       } else if (hiddenAt && simRef.current.started) {
@@ -440,6 +457,8 @@ export function CityGame() {
       setGraphicsError(true);
     }
     document.addEventListener("visibilitychange", onVisibility);
+    const onPageHide = () => flushRef.current();
+    window.addEventListener("pagehide", onPageHide);
     window.addEventListener("city-graphics-lost", onGraphicsLost);
     canvas.addEventListener("webglcontextrestored", restoreGraphics);
     window.__city = {
@@ -480,6 +499,7 @@ export function CityGame() {
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("city-graphics-lost", onGraphicsLost);
       canvas.removeEventListener("webglcontextrestored", restoreGraphics);
       world?.dispose();
