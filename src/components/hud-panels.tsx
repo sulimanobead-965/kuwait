@@ -22,6 +22,7 @@ import {
   X,
   ShieldCheck,
   MessageSquare,
+  Briefcase,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
@@ -137,6 +138,7 @@ export type MoreAction =
   | "profile"
   | "people"
   | "voices"
+  | "board"
   | "language";
 
 export function MoreSheet({
@@ -170,6 +172,11 @@ export function MoreSheet({
       id: "mute",
       label: t(snap.mute ? "تشغيل الأصوات" : "كتم الأصوات"),
       icon: snap.mute ? <VolumeX size={20} /> : <Volume2 size={20} />,
+    },
+    {
+      id: "board",
+      label: snap.board?.auto ? t("مجلس الإدارة (آلي)") : t("مجلس الإدارة"),
+      icon: <Briefcase size={20} />,
     },
     {
       id: "voices",

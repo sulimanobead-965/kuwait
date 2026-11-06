@@ -503,3 +503,41 @@ test("residents speak up about real problems every month", async () => {
   for (let i = 0; i < 60; i += 1) sim.residentsSpeak(s);
   assert.ok(s.voices.length <= 80);
 });
+
+test("the board of directors runs projects, and in automatic play runs the city and is paid", async () => {
+  const sim = await import("./sim.ts");
+  const board = await import("./board.ts");
+  const s = town();
+  s.coins = 2_000_000;
+  // A department project, approved by hand: paid now, earns once finished.
+  const before = s.coins;
+  assert.equal(board.approveProject(s, "eTax").ok, true);
+  assert.ok(s.coins < before);
+  assert.equal(board.projectMoney(s).income, 0, "nothing until it is finished");
+  sim.advanceDays(s, board.PROJECTS.eTax!.months * 30 + 31);
+  assert.ok(s.board.projects[0]!.open);
+  assert.ok(board.projectMoney(s).income > 0);
+  // A project with buildings places them when finished.
+  const homes = s.buildings.filter((b) => b.kind === "apartments").length;
+  assert.equal(board.approveProject(s, "housing").ok, true);
+  sim.advanceDays(s, board.PROJECTS.housing!.months * 30 + 31);
+  assert.ok(s.buildings.filter((b) => b.kind === "apartments").length > homes);
+  // Automatic play: the board builds and decides, and takes its pay.
+  const count = s.buildings.length;
+  s.board.auto = true;
+  sim.advanceDays(s, 90);
+  assert.ok(s.board.log.length > 0, "the board decided things");
+  assert.ok(s.board.paid > 0, "the board was paid");
+  assert.ok(s.buildings.length >= count);
+  // A deficit is covered by the finance director.
+  s.coins = -50_000;
+  sim.advanceDays(s, 31);
+  assert.ok(s.coins >= 0 || s.loan > 0);
+  // The governor keeps every power while the board is in charge.
+  assert.equal(sim.takeLoan(s, 10_000, 0.05).ok, true);
+  // Turning automatic play off stops the pay.
+  s.board.auto = false;
+  const paid = s.board.paid;
+  sim.advanceDays(s, 62);
+  assert.equal(s.board.paid, paid);
+});

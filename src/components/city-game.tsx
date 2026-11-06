@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
+import { approveProject } from "@/game/board";
 import { DistrictSelector } from "@/components/district-selector";
 import { districtById, isDistrictId, type DistrictId } from "@/game/districts";
 import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
@@ -1089,6 +1090,21 @@ export function CityGame() {
         heading={heading}
         zone={zone}
         onZoneApply={onZoneApply}
+        onBoard={(patch) => {
+          Object.assign(simRef.current.board, patch);
+          if (patch.auto !== undefined)
+            pushToast(
+              patch.auto
+                ? t("المجلس يدير المدينة الآن، وصلاحياتك كلها باقية")
+                : t("استعدت الإدارة من المجلس"),
+            );
+          sync();
+        }}
+        onPower={(dept, on) => {
+          simRef.current.board.powers = { ...simRef.current.board.powers, [dept]: on };
+          sync();
+        }}
+        onApprove={(key) => finance(approveProject(simRef.current, key))}
         onVoicesSeen={() => {
           simRef.current.voicesSeen = simRef.current.day;
           sync();

@@ -11,6 +11,17 @@ import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./bu
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import { loadVoices, voicesMonth, type Voice } from "./voices";
+import { boardEffect, boardMonth, boardYear, emptyBoard, loadBoard, type BoardState, type ProjectEffects } from "./board";
+
+const BOARD_EFFECT_KEYS = {
+  happy: 1,
+  pollution: 1,
+  traffic: 1,
+  crime: 1,
+  health: 1,
+  education: 1,
+  unemployment: 1,
+} as const;
 import {
   DEVELOPERS,
   DEVELOPER_IDS,
@@ -104,6 +115,8 @@ export type Sim = {
   builder: BuilderState;
   /** Virtual players: chats and loans in both directions. */
   npcs: NpcState[];
+  /** The board of directors: departments, their projects, and automatic play. */
+  board: BoardState;
   /** What residents say: complaints, thanks and ideas, newest first. */
   voices: Voice[];
   /** Day the player last read the residents' voices. */
@@ -224,7 +237,8 @@ export function emptyOrdinances(): Ordinances {
 
 /** Sum of one effect over all active laws, each weighted by its funding strength. */
 export function lawEffect(s: Sim, effect: keyof LawEffects) {
-  let total = 0;
+  // Running board projects add to the same city indices as laws.
+  let total = effect in BOARD_EFFECT_KEYS ? boardEffect(s, effect as keyof ProjectEffects) : 0;
   for (const key of LAW_KEYS) {
     const v = (LAW_DEFS[key].effects as LawEffects)[effect];
     if (v && s.ordinances[key]) total += v * lawStrength(s, key);
@@ -927,6 +941,7 @@ export function createInitial(): Sim {
     npcs: emptyNpcs(),
     voices: [],
     voicesSeen: -1,
+    board: emptyBoard(),
     flags: [],
     achievements: [],
     collected: 0,
@@ -958,6 +973,12 @@ export function cloneSim(s: Sim): Sim {
     builder: { ...s.builder },
     sites: s.sites.map((x) => ({ ...x })),
     voices: [...(s.voices ?? [])],
+    board: {
+      ...s.board,
+      powers: { ...s.board.powers },
+      projects: s.board.projects.map((p) => ({ ...p })),
+      log: [...s.board.log],
+    },
     npcs: s.npcs.map((n) => ({
       ...n,
       owesMe: n.owesMe.map((l) => ({ ...l })),
@@ -979,6 +1000,9 @@ export function cloneSim(s: Sim): Sim {
 function countKind(s: Sim, kind: Kind) {
   return s.buildings.filter((b) => b.kind === kind).length;
 }
+
+/** How many buildings of a kind the city has. */
+export const countOf = countKind;
 
 export const QUESTS: {
   text: string;
@@ -2492,6 +2516,7 @@ export function advanceDays(s: Sim, days: number) {
     const works = builderMonth(s);
     if (works) pushLog(s, msg("مستشار البناء: {works}", { works }));
     for (const line of npcMonth(s)) pushLog(s, line);
+    boardMonth(s);
     residentsSpeak(s);
     s.coins = Math.max(-5_000_000, s.coins);
     // People move in when they are happy and served, and leave when they are not.
@@ -2546,6 +2571,7 @@ function closeYear(s: Sim) {
       s.coins -= pay;
       s.ytd.spend += pay;
     }
+  boardYear(s, s.ytd.income - s.ytd.spend);
   const st = stats(s);
   const year = new Date(EPOCH + Math.floor(s.day) * 86400000).getUTCFullYear() - 1;
   s.years.push({
@@ -2829,6 +2855,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.sites = loadSites(p.sites);
     s.npcs = loadNpcs(p.npcs);
     s.voices = loadVoices(p.voices);
+    s.board = loadBoard(p.board);
     s.voicesSeen = Number.isFinite(Number(p.voicesSeen)) ? Number(p.voicesSeen) : -1;
     s.flags = Array.isArray(p.flags) ? p.flags.filter((x) => typeof x === "string") : [];
     s.achievements = Array.isArray(p.achievements)
@@ -2997,6 +3024,7 @@ export function saveSim(s: Sim) {
     npcs: s.npcs,
     voices: s.voices,
     voicesSeen: s.voicesSeen,
+    board: s.board,
     flags: s.flags,
     achievements: s.achievements,
     collected: s.collected,

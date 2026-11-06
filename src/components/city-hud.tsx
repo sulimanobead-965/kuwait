@@ -108,6 +108,8 @@ import {
 import type { DayMode } from "@/game/three/day-night";
 import { districtById } from "@/game/districts";
 import { obligations, type Obligation } from "@/game/obligations";
+import { Board } from "@/components/hud-board";
+import { boardFee, projectMoney, type BoardState, type DeptId } from "@/game/board";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
 
 export type PayTarget =
@@ -137,7 +139,8 @@ type Panel =
   | "report"
   | "achievements"
   | "people"
-  | "voices";
+  | "voices"
+  | "board";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -361,6 +364,9 @@ export function CityHud({
   zone,
   onZoneApply,
   onVoicesSeen,
+  onBoard,
+  onPower,
+  onApprove,
   onDemolishApply,
   onZoneCancel,
 }: {
@@ -440,6 +446,9 @@ export function CityHud({
   zone: { c0: number; r0: number; c1: number; r1: number } | null;
   onZoneApply: (pick: ZonePick) => void;
   onVoicesSeen: () => void;
+  onBoard: (patch: Partial<BoardState>) => void;
+  onPower: (dept: DeptId, on: boolean) => void;
+  onApprove: (key: string) => void;
   onDemolishApply: () => void;
   onZoneCancel: () => void;
 }) {
@@ -678,6 +687,7 @@ export function CityHud({
                   {panel === "achievements" && t("الحقب والإنجازات")}
                   {panel === "people" && t("اللاعبون والمحادثات")}
                   {panel === "voices" && t("آراء الناس")}
+                  {panel === "board" && t("مجلس الإدارة")}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -731,6 +741,9 @@ export function CityHud({
                 )}
                 {panel === "report" && <YearReport snap={snap} />}
                 {panel === "voices" && <Voices snap={snap} />}
+                {panel === "board" && (
+                  <Board snap={snap} onBoard={onBoard} onPower={onPower} onApprove={onApprove} />
+                )}
                 {panel === "achievements" && <Achievements snap={snap} />}
                 {panel === "people" && (
                   <People
@@ -1282,9 +1295,11 @@ function Budget({
   onPay: (target: PayTarget, amount?: number) => void;
 }) {
   const st = stats(snap);
-  const income = monthlyIncome(snap) + feeRevenue(snap, st);
+  const projects = projectMoney(snap);
+  const income = monthlyIncome(snap) + feeRevenue(snap, st) + projects.income;
   const due = loanInstallment(snap);
-  const cost = monthlyUpkeep(snap) + due + housingAidCost(snap, st);
+  const cost =
+    monthlyUpkeep(snap) + due + housingAidCost(snap, st) + projects.upkeep + boardFee(snap);
   const [loanAmount, setLoanAmount] = useState(10_000);
   const [loanRate, setLoanRate] = useState(12);
   return (

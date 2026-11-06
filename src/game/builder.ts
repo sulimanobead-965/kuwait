@@ -228,6 +228,32 @@ function* plans(s: Sim): Generator<Plan> {
 }
 
 /**
+ * Spend up to `budget` on the work list (services, homes, upgrades). Used by the
+ * construction advisor and by the board's construction director.
+ */
+export function runPlans(s: Sim, budget: number) {
+  let left = budget;
+  let spent = 0;
+  const done = new Map<string, number>();
+  let guard = 0;
+  for (const plan of plans(s)) {
+    if (guard++ >= 2000) break;
+    if (plan.cost > left) continue;
+    if (!plan.run()) continue;
+    left -= plan.cost;
+    spent += plan.cost;
+    done.set(plan.label, (done.get(plan.label) ?? 0) + 1);
+  }
+  const works = [...done.values()].reduce((n, v) => n + v, 0);
+  return { spent, works, list: [...done].map(([label, n]) => msg("{n} {label}", { n, label })) };
+}
+
+/** A free lot beside a road and next to the city, or null. */
+export function freeLot(s: Sim) {
+  return lotFinder(s)();
+}
+
+/**
  * One month of work. Returns a short report (also kept in `s.builder.last`), or null
  * when not hired. The budget is `share٪` of the balance at the start of the month.
  */
