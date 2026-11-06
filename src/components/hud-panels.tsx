@@ -20,6 +20,7 @@ import {
   VolumeX,
   Languages,
   X,
+  ShieldCheck,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
@@ -51,6 +52,9 @@ import {
   isOpen,
   PROJECT_OFFERS,
   pct,
+  INSURER,
+  monthlyPremium,
+  premiumRate,
   type BondOrder,
   type ProjectOrder,
 } from "@/game/finance";
@@ -296,6 +300,7 @@ export function Companies({
   onSukuk,
   onDevelop,
   onPickSite,
+  onInsure,
 }: {
   snap: Sim;
   onDeposit: (amount: number, rate: number) => void;
@@ -308,6 +313,7 @@ export function Companies({
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
   onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
+  onInsure: (on: boolean) => void;
 }) {
   const f = snap.finance;
   const [dev, setDev] = useState<DeveloperId>("marsa");
@@ -348,6 +354,7 @@ export function Companies({
           </span>
         </div>
       </div>
+      <Insurance snap={snap} onInsure={onInsure} />
       {crisisOf(snap) === "economic" && (
         <p className="rounded-md bg-coral px-2 py-1 text-xs font-extrabold text-sc-ink">
           {t("أزمة اقتصادية: خطر إفلاس البنوك والشركات مرتفع جداً الآن.")}
@@ -518,7 +525,7 @@ export function Companies({
         </button>
         <p className="mt-1 text-[11px] leading-relaxed opacity-80">
           {t(
-            "الفائدة حرة. فوق ١٢٪ تقريباً يغامر البنك بأموالك ويزيد خطر إفلاسه، وبنسب خيالية يفلس فوراً.",
+            "الفائدة حرة بلا حد. كلما ارتفعت زاد خطر إفلاس البنك، فأمّن أموالك من «شركة الأمان للتأمين» أعلى اللوحة لتُعوَّض بالكامل.",
           )}
         </p>
         <p className="mt-2 text-xs font-extrabold">{t("سندات")}</p>
@@ -809,6 +816,51 @@ export function Companies({
         </div>
       )}
     </div>
+  );
+}
+
+export function Insurance({ snap, onInsure }: { snap: Sim; onInsure: (on: boolean) => void }) {
+  const f = snap.finance;
+  const premium = monthlyPremium(snap);
+  return (
+    <section
+      className={`rounded-md border-2 p-2 ${f.insured ? "border-sc-leaf bg-sc-lime/30" : "border-sc-ink/30 bg-sc-mint"} text-sc-ink`}
+      data-testid="insurance"
+    >
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <ShieldCheck size={16} /> {t(INSURER)}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed">
+        {t(
+          "تأمين شامل: إذا أفلس بنك أو مصرف أو مطور، أو عجز مقترض عن السداد، أو خسرت وديعة مضاربة، تعوّضك الشركة بالكامل، وتدفع عنك أي قسط لا يكفيه رصيدك. القسط الشهري نسبة من كل مبلغ مؤمَّن، ويزيد مع الفائدة:",
+        )}
+      </p>
+      <div className="mt-1 grid grid-cols-4 gap-1 text-center text-[11px] font-extrabold" dir="ltr">
+        {[0, 0.1, 0.7, 5].map((r) => (
+          <span key={r} className="rounded bg-white/70 px-1 py-0.5">
+            {Math.round(r * 100)}
+            {percentSign()} → {(Math.round(premiumRate(r) * 1000) / 10).toLocaleString("en-US")}
+            {percentSign()}
+          </span>
+        ))}
+      </div>
+      <p className="mt-1 text-xs font-extrabold">
+        {t("القسط هذا الشهر: {amount} د.ك · دفعت {paid} · عُوّضت {claims}", {
+          amount: fmt(premium),
+          paid: money(f.premiums),
+          claims: money(f.claims),
+        })}
+      </p>
+      <button
+        type="button"
+        data-testid="insurance-toggle"
+        aria-pressed={f.insured}
+        onClick={() => onInsure(!f.insured)}
+        className={`sc-menu mt-1 w-full text-xs ${f.insured ? "" : "sc-on"}`}
+      >
+        {f.insured ? t("التأمين مفعّل · إلغاء") : t("أمّن كل أموالي وقروضي")}
+      </button>
+    </section>
   );
 }
 

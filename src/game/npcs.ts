@@ -448,6 +448,11 @@ export function npcMonth(s: Sim, random = Math.random) {
         say(n, "them", t("سامحني يا محافظ، خسرت كل شي وما أقدر أسدد"));
         n.owesMe = n.owesMe.filter((l) => l.id !== loan.id);
         n.trust = Math.max(0, n.trust - 5);
+        if (s.finance.insured) {
+          s.coins += loan.left;
+          s.finance.claims += loan.left;
+          news.push(msg("شركة الأمان للتأمين عوّضتك {amount} د.ك", { amount: Math.round(loan.left) }));
+        }
         continue;
       }
       const pay = Math.min(loan.installment, loan.left);
@@ -463,6 +468,11 @@ export function npcMonth(s: Sim, random = Math.random) {
     // You pay them.
     for (const loan of [...n.iOwe]) {
       const pay = Math.min(loan.installment, loan.left);
+      if (s.coins < pay && s.finance.insured) {
+        // The insurer covers your installment so you never miss one.
+        s.coins += pay;
+        s.finance.claims += pay;
+      }
       if (s.coins >= pay) {
         s.coins -= pay;
         n.cash += pay;

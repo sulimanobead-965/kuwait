@@ -9,6 +9,7 @@ import { FallbackCityWorld } from "@/game/three/fallback";
 import { createAudio } from "@/game/audio";
 import { bootLang, dirOf, msg, t, useLang } from "@/i18n";
 import {
+  setInsurance,
   buySukuk,
   depositMudaraba,
   takeMurabaha,
@@ -907,6 +908,7 @@ export function CityGame() {
           sync();
         }}
         onGiveAid={(amount) => finance(giveAid(simRef.current, amount))}
+        onInsure={(on) => finance(setInsurance(simRef.current, on))}
         onDevelop={(kind, dev) => {
           const act = startDevelopment(simRef.current, kind, undefined, dev);
           if (!act.ok) pushToast(act.msg);

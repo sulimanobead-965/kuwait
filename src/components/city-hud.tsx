@@ -71,8 +71,6 @@ import {
   EVENTS,
   feeRevenue,
   loanInstallment,
-  loanLimit,
-  minLoanRate,
   MODEL_AREAS,
   RANKS,
   rankOf,
@@ -181,6 +179,7 @@ export function CityHud({
   onMurabaha,
   onHousingAid,
   onGiveAid,
+  onInsure,
   onDevelop,
   onPickSite,
   onCrisis,
@@ -263,6 +262,7 @@ export function CityHud({
   onMurabaha: (amount: number, profit: number, months: number) => void;
   onHousingAid: (pct: number) => void;
   onGiveAid: (amount: number) => void;
+  onInsure: (on: boolean) => void;
   onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onCrisis: (kind: CrisisKind) => void;
@@ -535,6 +535,7 @@ export function CityHud({
                       onDevelop(kind, dev);
                       setPanel(null);
                     }}
+                    onInsure={onInsure}
                     onPickSite={(kind, dev) => {
                       onPickSite(kind, dev);
                       setPanel(null);
@@ -1109,10 +1110,8 @@ function Budget({
   const income = monthlyIncome(snap) + feeRevenue(snap, st);
   const due = loanInstallment(snap);
   const cost = monthlyUpkeep(snap) + due + housingAidCost(snap, st);
-  const limit = loanLimit(snap, st);
-  const floor = minLoanRate(snap, st);
   const [loanAmount, setLoanAmount] = useState(10_000);
-  const [loanRate, setLoanRate] = useState(Math.ceil(floor * 1000) / 10);
+  const [loanRate, setLoanRate] = useState(12);
   return (
     <div className="space-y-3" dir={dirOf()}>
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
@@ -1156,11 +1155,10 @@ function Budget({
         </p>
         <p className="mt-1 text-xs leading-relaxed">
           {t(
-            "اختر المبلغ والفائدة بنفسك. أقل فائدة يقبلها البنك الآن {rate}٪، وأي نسبة أعلى مقبولة. القسط ينخصم كل شهر تلقائياً.",
-            { rate: Math.ceil(floor * 1000) / 10 },
+            "اختر أي مبلغ وأي فائدة، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.",
           )}{" "}
           {snap.loan > 0 ? t("القسط الحالي {amount} د.ك.", { amount: fmt(due) }) : ""}{" "}
-          {t("الدين الحالي {debt} د.ك من حد {limit}.", { debt: fmt(snap.loan), limit: fmt(limit) })}
+          {t("الدين الحالي {debt} د.ك.", { debt: fmt(snap.loan) })}
         </p>
         {snap.coins < 0 && (
           <p className="mt-1 text-xs font-extrabold text-coral">

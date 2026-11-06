@@ -1,5 +1,12 @@
 import { CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
-import { consulting, emptyFinance, financeMonth, loadFinance, type FinanceState } from "./finance";
+import {
+  claim,
+  consulting,
+  emptyFinance,
+  financeMonth,
+  loadFinance,
+  type FinanceState,
+} from "./finance";
 import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import {
@@ -75,6 +82,8 @@ export type Sim = {
   occupancy: number;
   /** Outstanding loan, interest included. Repaid monthly. */
   loan: number;
+  /** Money-weighted yearly rate of the outstanding bank loan (for insurance). */
+  loanRate: number;
   /** A running city event (tournament, festival…) and its end day. */
   event: CityEvent | null;
   /** Lasting reputation from past events (0–12), a small permanent satisfaction bonus. */
@@ -359,17 +368,11 @@ export function minLoanRate(s: Sim, st = stats(s)) {
 }
 
 export function takeLoan(s: Sim, amount: number, rate = LOAN_RATE): Act {
-  if (!(amount > 0)) return { ok: false, msg: t("مبلغ غير صحيح") };
+  if (!(amount > 0) || !(rate >= 0)) return { ok: false, msg: t("مبلغ غير صحيح") };
   if (!s.finance || s.finance.down.bank > s.day) return { ok: false, msg: t("البنك مغلق بعد إفلاسه") };
-  const st = stats(s);
-  const floor = minLoanRate(s, st);
-  if (rate < floor)
-    return {
-      ok: false,
-      msg: t("البنك يرفض: أقل فائدة يقبلها الآن {rate}٪", { rate: Math.ceil(floor * 1000) / 10 }),
-    };
+  // No ceiling and no minimum rate: the bank lends whatever the governor asks for.
   const debt = Math.round(amount * (1 + rate));
-  if (s.loan + debt > loanLimit(s, st)) return { ok: false, msg: t("البنك رفض: الديون وصلت الحد") };
+  s.loanRate = s.loan + debt > 0 ? (s.loan * (s.loanRate ?? LOAN_RATE) + debt * rate) / (s.loan + debt) : rate;
   s.coins += amount;
   s.loan += debt;
   pushLog(s, msg("قرض {amount} د.ك من البنك", { amount }));
@@ -824,6 +827,7 @@ export function createInitial(): Sim {
     ytd: { income: 0, spend: 0, residents0: 0 },
     occupancy: 0.85,
     loan: 0,
+    loanRate: LOAN_RATE,
     event: null,
     fame: 0,
     rank: 0,
@@ -1760,6 +1764,7 @@ export function developmentMonth(s: Sim, random = Math.random) {
       const back = site.amount * 0.2;
       s.coins += back;
       s.finance.lost += site.amount - back;
+      claim(s, site.amount - back);
       pushLog(
         s,
         msg("توقف بناء {name} بعد إفلاس {company}. استرجعت {amount} د.ك فقط", {
@@ -2016,6 +2021,11 @@ export function advanceDays(s: Sim, days: number) {
     s.ytd.spend += upkeep;
     const due = loanInstallment(s);
     if (due > 0) {
+      // When the treasury can't cover it, an insured city's installment is paid by the insurer.
+      if (s.finance.insured && s.coins < due) {
+        s.finance.claims += due;
+        s.coins += due;
+      }
       s.coins -= due;
       s.ytd.spend += due;
       s.loan = Math.max(0, s.loan - due);
@@ -2341,6 +2351,7 @@ export function loadSim(district?: DistrictId | null): Sim {
         .map((f) => ({ kind: f.kind, c: Number(f.c) || 0, r: Number(f.r) || 0, until: Number(f.until) || 0 }));
     s.occupancy = clamp(Number(p.occupancy ?? 0.85), OCCUPANCY_MIN, 1);
     s.loan = Math.max(0, Number(p.loan) || 0);
+    s.loanRate = Math.max(0, Number(p.loanRate ?? LOAN_RATE) || 0);
     s.fame = clamp(Number(p.fame) || 0, 0, 12);
     s.rank = clamp(Number(p.rank) || 0, 0, RANKS.length - 1);
     const e = p.event;
@@ -2484,6 +2495,7 @@ export function saveSim(s: Sim) {
     fx: s.fx,
     occupancy: s.occupancy,
     loan: s.loan,
+    loanRate: s.loanRate,
     event: s.event,
     fame: s.fame,
     rank: s.rank,

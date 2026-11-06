@@ -27,6 +27,9 @@ import {
 import { builderMonth, hireBuilder } from "./builder.ts";
 import { borrowFrom, chat, greet, lendTo, npcMonth } from "./npcs.ts";
 import {
+  monthlyPremium,
+  premiumRate,
+  setInsurance,
   buyBond,
   buySukuk,
   deposit,
@@ -80,11 +83,12 @@ test("living costs accept any percentage, but extreme prices stop paying", () =>
   assert.ok(s.occupancy < occ, "people leave");
 });
 
-test("custom rates: loans need the bank's minimum, high promises break companies", () => {
+test("custom rates: banks accept any loan and rate; very high promises still break companies", () => {
   const s = town();
   s.coins = 5_000_000;
-  assert.equal(takeLoan(s, 5000, 0.01).ok, false);
-  assert.equal(takeLoan(s, 5000, minLoanRate(s) + 0.01).ok, true);
+  assert.equal(takeLoan(s, 5000, 0).ok, true, "0٪ is accepted");
+  assert.equal(takeLoan(s, 600_000_000, 5).ok, true, "600 million at 500٪ is accepted");
+  assert.equal(takeMurabaha(s, 50_000_000, 0, 24).ok, true, "any financing, any markup");
   assert.equal(deposit(s, 100_000, 100).ok, true); // 10,000٪
   assert.equal(buyBond(s, { issuer: "bank", amount: 1_000_000, rate: 0.5, years: 2 }).ok, true);
   assert.equal(
@@ -96,7 +100,7 @@ test("custom rates: loans need the bank's minimum, high promises break companies
     handover: () => 0,
     economicCrisis: false,
     war: false,
-    random: () => 0.5,
+    random: () => 0.1,
   });
   assert.equal(s.finance.deposit, 0, "the bank failed before paying 10,000٪");
   assert.ok(s.finance.lost > 0);
@@ -131,7 +135,7 @@ test("Islamic finance sits beside conventional finance and all can be held toget
   // Conventional loan and murabaha financing at the same time.
   assert.equal(takeLoan(s, 10_000, minLoanRate(s) + 0.02).ok, true);
   assert.equal(takeMurabaha(s, 50_000, 0.1, 12).ok, true);
-  assert.equal(takeMurabaha(s, 50_000, 0.001, 24).ok, false, "a token markup is refused");
+  assert.equal(takeMurabaha(s, 50_000, 0.001, 24).ok, true, "any markup is accepted");
   const m = s.finance.murabaha[0]!;
   assert.ok(Math.abs(m.left - 55_000) < 1, "fixed markup, agreed upfront");
   // Interest deposit, mudaraba deposit, bonds and sukuk together.
@@ -291,4 +295,38 @@ test("housing support: the city pays part of the rent, people are happier and st
   assert.equal(c.coins, 50_000);
   assert.ok(stats(c).happy > before);
   assert.equal(giveAid(c, 1e9).ok, false);
+});
+
+test("insurance: premiums rise with the rate and every loss is repaid in full", () => {
+  assert.ok(Math.abs(premiumRate(0.1) - 0.002) < 1e-9, "0.2٪ at normal rates");
+  assert.ok(Math.abs(premiumRate(0.7) - 0.03) < 0.001, "about 3٪ at 70٪");
+  assert.ok(premiumRate(5) > premiumRate(0.7));
+  const s = town();
+  s.coins = 5_000_000;
+  deposit(s, 1_000_000, 0.7);
+  buySukuk(s, "islamic", 1_000_000, 0.07, 3);
+  assert.equal(setInsurance(s, true).ok, true);
+  const premium = monthlyPremium(s);
+  assert.ok(premium > 0);
+  const before = s.coins;
+  // Every company fails this month.
+  financeMonth(s, {
+    log: () => {},
+    handover: () => 0,
+    economicCrisis: true,
+    war: false,
+    random: () => 0,
+  });
+  assert.equal(s.finance.deposit, 0);
+  assert.ok(s.finance.claims > 0, "the insurer paid what the failed companies couldn't");
+  assert.ok(s.coins >= before - premium + 2_000_000 - 1);
+  // Missed installments are paid by the insurer.
+  const l = town();
+  takeLoan(l, 1_000_000, 0.2);
+  setInsurance(l, true);
+  l.coins = 0;
+  const debt = l.loan;
+  advanceDays(l, 31);
+  assert.ok(l.loan < debt, "the installment was paid");
+  assert.ok(l.finance.claims > 0);
 });

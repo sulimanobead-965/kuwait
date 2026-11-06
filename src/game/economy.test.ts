@@ -112,8 +112,8 @@ test("disasters cost money and loans cover a negative balance", () => {
   const due = loanInstallment(s);
   advanceDays(s, 31);
   assert.ok(s.loan <= debt - due + 1);
-  assert.equal(takeLoan(s, LOAN_LIMIT).ok, false, "the bank has a limit");
-  s.coins = 1e6;
+  assert.equal(takeLoan(s, LOAN_LIMIT * 10_000).ok, true, "the bank has no ceiling");
+  s.coins = 1e12;
   assert.equal(repayLoan(s, s.loan).ok, true);
   assert.equal(s.loan, 0);
   assert.equal(createInitial().randomDisasters, true, "disasters are on by default");

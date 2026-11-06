@@ -55,6 +55,10 @@ export type FinanceState = {
   /** Per-developer: the 1٪ fees earned, and bankruptcy closure day (Al Marsa uses `down`). */
   devFees: Partial<Record<string, number>>;
   devDown: Partial<Record<string, number>>;
+  /** Insurance against bankruptcies, defaults and missed installments. */
+  insured: boolean;
+  premiums: number;
+  claims: number;
   /** Lifetime numbers for the report and achievements. */
   earned: number;
   lost: number;
@@ -139,6 +143,9 @@ export function emptyFinance(): FinanceState {
     developerFees: 0,
     devFees: {},
     devDown: {},
+    insured: false,
+    premiums: 0,
+    claims: 0,
     mudaraba: 0,
     mudarabaRate: 0.08,
     earned: 0,
@@ -162,6 +169,9 @@ export function loadFinance(raw: unknown): FinanceState {
   f.mudaraba = Math.max(0, n(p.mudaraba));
   f.upgradeIncome = Math.max(0, n(p.upgradeIncome));
   f.developerFees = Math.max(0, n(p.developerFees));
+  f.insured = Boolean(p.insured);
+  f.premiums = Math.max(0, n(p.premiums));
+  f.claims = Math.max(0, n(p.claims));
   for (const key of ["devFees", "devDown"] as const) {
     const raw = p[key];
     if (raw && typeof raw === "object")
@@ -223,7 +233,7 @@ export const pct = (rate: number) =>
  * bank for 10٪ is safe; 50٪ makes it gamble with your money; 10,000٪ breaks it at once.
  */
 export function promiseRisk(rate: number, healthy: number) {
-  return Math.min(0.97, Math.max(0, rate - healthy) * 0.6);
+  return Math.min(0.5, Math.max(0, rate - healthy) * 0.1);
 }
 
 export function deposit(s: Sim, amount: number, rate = DEPOSIT_RATE): Act {
@@ -328,13 +338,7 @@ export function takeMurabaha(s: Sim, amount: number, profit: number, months: num
   if (!isOpen(s, "islamic")) return { ok: false, msg: t("المصرف الإسلامي مغلق") };
   if (!(amount > 0) || !(profit >= 0) || !(months >= 1))
     return { ok: false, msg: t("أرقام التمويل غير صحيحة") };
-  const owed = s.finance.murabaha.reduce((t, m) => t + m.left, 0);
-  const limit = Math.max(40_000, Math.max(0, s.coins) * 0.5 + 200_000);
-  if (owed + amount * (1 + profit) > limit)
-    return { ok: false, msg: t("المصرف رفض: تجاوزت حد التمويل") };
-  const floor = 0.04 * (months / 12);
-  if (profit < floor)
-    return { ok: false, msg: t("أقل ربح يقبله المصرف لهذه المدة {rate}", { rate: pct(floor) }) };
+  // No ceiling and no minimum markup: the city may finance any project it believes in.
   const total = amount * (1 + profit);
   s.finance.murabaha.push({
     id: uid(s),
@@ -449,6 +453,64 @@ export function financeIncome(s: Sim) {
   );
 }
 
+// ------------------------------------------------------------- insurance
+
+export const INSURER = "شركة الأمان للتأمين";
+
+/**
+ * Yearly premium rate for an amount promised at `rate`: 0.2٪ at normal rates,
+ * rising ~0.47 points per 10 points of interest above 10٪ (3٪ at 70٪, ~23٪ at 500٪).
+ */
+export function premiumRate(rate: number) {
+  return 0.002 + Math.max(0, rate - 0.1) * 0.0467;
+}
+
+/** Every insured amount with the rate it carries. */
+export function insuredItems(s: Sim) {
+  const f = s.finance;
+  const items: { amount: number; rate: number }[] = [];
+  if (f.deposit > 0) items.push({ amount: f.deposit, rate: f.depositRate });
+  if (f.mudaraba > 0) items.push({ amount: f.mudaraba, rate: f.mudarabaRate });
+  for (const b of f.bonds) items.push({ amount: b.amount, rate: b.rate });
+  for (const p of f.projects) {
+    const years = Math.max(0.5, (p.completes - s.day) / 360);
+    items.push({ amount: p.amount, rate: (p.payback - 1) / years });
+  }
+  for (const site of s.sites ?? []) items.push({ amount: site.amount, rate: 0.1 });
+  if (s.loan > 0) items.push({ amount: s.loan, rate: s.loanRate ?? 0.12 });
+  for (const m of f.murabaha)
+    items.push({ amount: m.left, rate: m.profit / Math.max(1 / 12, m.months / 12) });
+  for (const n of s.npcs ?? [])
+    for (const l of [...n.owesMe, ...n.iOwe]) items.push({ amount: l.left, rate: l.rate });
+  return items;
+}
+
+/** This month's premium for everything insured. */
+export function monthlyPremium(s: Sim) {
+  return Math.round(
+    insuredItems(s).reduce((t, i) => t + (i.amount * premiumRate(i.rate)) / 12, 0),
+  );
+}
+
+export function setInsurance(s: Sim, on: boolean): Act {
+  s.finance.insured = on;
+  return {
+    ok: true,
+    msg: on
+      ? t("أمّنت أموالك لدى {company}: أي إفلاس أو عجز يُعوَّض بالكامل", { company: INSURER })
+      : t("ألغيت التأمين"),
+  };
+}
+
+/** The insurer pays a loss in full; returns what it paid. */
+export function claim(s: Sim, loss: number) {
+  if (!s.finance.insured || loss <= 0) return 0;
+  s.coins += loss;
+  s.finance.claims += loss;
+  s.finance.lost = Math.max(0, s.finance.lost - loss);
+  return loss;
+}
+
 export type FinanceContext = {
   /** Receives encoded messages (see `msg` in i18n) for the city log. */
   log: (entry: string) => void;
@@ -465,6 +527,11 @@ export type FinanceContext = {
  */
 export function financeMonth(s: Sim, ctx: FinanceContext) {
   const f = s.finance;
+  if (f.insured) {
+    const premium = monthlyPremium(s);
+    s.coins -= premium;
+    f.premiums += premium;
+  }
   // Bankruptcy risk. A consultancy contract warns early, so half the money is saved.
   const shield = consulting(s) ? 0.5 : 0;
   // Promising more than a healthy return makes a company gamble with the money.
@@ -497,6 +564,13 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       sukuk.reduce((n, b) => n + b.amount * (0.7 + 0.3 * shield), 0);
     s.coins += recovered;
     f.lost += exposed - recovered;
+    if (claim(s, exposed - recovered) > 0)
+      ctx.log(
+        msg("{company} عوّضك عن الخسارة بالكامل: {amount} د.ك", {
+          company: INSURER,
+          amount: Math.round(exposed - recovered),
+        }),
+      );
     f.mudaraba = 0;
     f.bonds = f.bonds.filter((b) => b.issuer !== "islamic");
     f.down.islamic = s.day + 24 * 30;
@@ -516,6 +590,13 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       bonds.reduce((n, b) => n + b.amount * (0.4 + 0.6 * shield), 0);
     s.coins += recovered;
     f.lost += exposed - recovered;
+    if (claim(s, exposed - recovered) > 0)
+      ctx.log(
+        msg("{company} عوّضك عن الخسارة بالكامل: {amount} د.ك", {
+          company: INSURER,
+          amount: Math.round(exposed - recovered),
+        }),
+      );
     f.deposit = 0;
     f.bonds = f.bonds.filter((b) => b.issuer !== "bank");
     f.down.bank = s.day + 24 * 30;
@@ -534,6 +615,13 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     const recovered = exposed * (0.2 + 0.8 * shield);
     s.coins += recovered;
     f.lost += exposed - recovered;
+    if (claim(s, exposed - recovered) > 0)
+      ctx.log(
+        msg("{company} عوّضك عن الخسارة بالكامل: {amount} د.ك", {
+          company: INSURER,
+          amount: Math.round(exposed - recovered),
+        }),
+      );
     f.projects = [];
     f.bonds = f.bonds.filter((b) => b.issuer !== "developer");
     f.down.developer = s.day + 18 * 30;
@@ -557,9 +645,15 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
         ? 0.2 + ctx.random() * 0.8
         : 0.6 + ctx.random() * 0.8;
     const result = ((f.mudaraba * f.mudarabaRate) / 12) * performance;
-    f.mudaraba = Math.max(0, f.mudaraba + result);
+    // An insured mudaraba never loses principal: the insurer covers a losing month.
+    const covered = result < 0 && f.insured ? -result : 0;
+    if (covered) {
+      f.claims += covered;
+      s.coins += 0;
+    }
+    f.mudaraba = Math.max(0, f.mudaraba + result + covered);
     if (result >= 0) f.earned += result;
-    else f.lost -= result;
+    else if (!covered) f.lost -= result;
   }
   // Murabaha installments: a fixed amount; missing one costs a small charity fee only.
   for (const m of [...f.murabaha]) {
@@ -571,6 +665,11 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
         f.murabaha = f.murabaha.filter((x) => x.id !== m.id);
         ctx.log(msg("سدّدت تمويل المرابحة كاملاً"));
       }
+    } else if (f.insured) {
+      // The insurer pays a missed installment for you.
+      f.claims += due;
+      m.left -= due;
+      if (m.left <= 0.5) f.murabaha = f.murabaha.filter((x) => x.id !== m.id);
     } else {
       const charity = Math.min(500, due * 0.01);
       s.coins -= charity;

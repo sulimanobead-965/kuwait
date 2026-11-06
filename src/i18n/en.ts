@@ -758,8 +758,8 @@ export const EN: Record<string, string> = {
   "مبلغ الإيداع": "Deposit amount",
   "الفائدة التي تطلبها": "Rate you ask for",
   "أودع {amount} بفائدة {rate}٪": "Deposit {amount} at {rate}%",
-  "الفائدة حرة. فوق ١٢٪ تقريباً يغامر البنك بأموالك ويزيد خطر إفلاسه، وبنسب خيالية يفلس فوراً.":
-    "Any rate goes. Above about 12% the bank gambles with your money and its bankruptcy risk rises; at fantasy rates it fails at once.",
+  "الفائدة حرة بلا حد. كلما ارتفعت زاد خطر إفلاس البنك، فأمّن أموالك من «شركة الأمان للتأمين» أعلى اللوحة لتُعوَّض بالكامل.":
+    "Any rate, no limit. The higher it is, the likelier the bank fails, so insure your money with Al Aman Insurance at the top of this panel to be repaid in full.",
   سندات: "Bonds",
   "سند {amount} · فائدة {rate}٪ · {years} سنوات": "{amount} bond · {rate}% · {years} years",
   "سند بشروطك": "Bond on your terms",
@@ -892,4 +892,19 @@ export const EN: Record<string, string> = {
   "اصرف المساعدة": "Give aid",
   "صرفت مساعدة للسكان بقيمة {amount} د.ك": "You gave residents {amount} KD in aid",
   "وصلت المساعدة للسكان: الرضا +{n} لستة أشهر": "Aid delivered: approval +{n} for six months",
+  "شركة الأمان للتأمين": "Al Aman Insurance",
+  "تأمين شامل: إذا أفلس بنك أو مصرف أو مطور، أو عجز مقترض عن السداد، أو خسرت وديعة مضاربة، تعوّضك الشركة بالكامل، وتدفع عنك أي قسط لا يكفيه رصيدك. القسط الشهري نسبة من كل مبلغ مؤمَّن، ويزيد مع الفائدة:":
+    "Full cover: if a bank, Islamic bank or developer goes bankrupt, a borrower defaults, or a mudaraba deposit loses money, the insurer repays you in full, and it pays any installment your balance can't cover. The monthly premium is a share of every insured amount and rises with the interest rate:",
+  "القسط هذا الشهر: {amount} د.ك · دفعت {paid} · عُوّضت {claims}":
+    "Premium this month: {amount} KD · paid {paid} · claims received {claims}",
+  "التأمين مفعّل · إلغاء": "Insurance on · cancel",
+  "أمّن كل أموالي وقروضي": "Insure all my money and loans",
+  "أمّنت أموالك لدى {company}: أي إفلاس أو عجز يُعوَّض بالكامل":
+    "Insured with {company}: any bankruptcy or default is repaid in full",
+  "ألغيت التأمين": "Insurance cancelled",
+  "{company} عوّضك عن الخسارة بالكامل: {amount} د.ك": "{company} repaid your loss in full: {amount} KD",
+  "شركة الأمان للتأمين عوّضتك {amount} د.ك": "Al Aman Insurance repaid you {amount} KD",
+  "اختر أي مبلغ وأي فائدة، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.":
+    "Choose any amount and any rate, from 0% upward; the bank always agrees, with no ceiling. Installments are taken monthly.",
+  "الدين الحالي {debt} د.ك.": "Current debt: {debt} KD.",
 };
