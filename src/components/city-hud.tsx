@@ -26,6 +26,9 @@ import {
   Home,
   Eraser,
   Factory,
+  RotateCcw,
+  RotateCw,
+  Navigation2,
 } from "lucide-react";
 import { CATALOG, kindsIn, maxLevelOf, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
@@ -351,6 +354,8 @@ export function CityHud({
   onReset,
   onCancelReset,
   onZoom,
+  onRotate,
+  heading,
   onDayMode,
   dayMode,
   zone,
@@ -428,6 +433,8 @@ export function CityHud({
   onReset: () => void;
   onCancelReset: () => void;
   onZoom: (factor: number) => void;
+  onRotate: (by: number | "north") => void;
+  heading: number;
   onDayMode: (mode: DayMode) => void;
   dayMode: DayMode;
   zone: { c0: number; r0: number; c1: number; r1: number } | null;
@@ -575,6 +582,22 @@ export function CityHud({
             </Round>
             <Round label={t("تبعيد")} onClick={() => onZoom(1 / 1.28)}>
               <Minus size={18} />
+            </Round>
+            <Round label={t("لف الخريطة يساراً")} onClick={() => onRotate(-45)}>
+              <RotateCcw size={18} />
+            </Round>
+            <Round label={t("لف الخريطة يميناً")} onClick={() => onRotate(45)}>
+              <RotateCw size={18} />
+            </Round>
+            <Round
+              label={t("البوصلة: اضغط ليصير الشمال للأعلى")}
+              testid="compass"
+              on={heading === 0}
+              onClick={() => onRotate("north")}
+            >
+              <span className="relative block h-[18px] w-[18px]" style={{ transform: `rotate(${heading}deg)` }}>
+                <Navigation2 size={18} className="absolute inset-0" fill="currentColor" />
+              </span>
             </Round>
             <Round
               label={t("الإضاءة: {mode}", {

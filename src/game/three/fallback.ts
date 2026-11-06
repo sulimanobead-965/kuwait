@@ -106,6 +106,12 @@ export class FallbackCityWorld {
   setZone(box: typeof this.zoneBox) {
     this.zoneBox = box;
   }
+  /** The 2D compatibility view keeps a fixed heading. */
+  rotate(_degrees: number) {}
+  northUp() {}
+  heading() {
+    return 45;
+  }
   zoom(factor: number) {
     this.viewHeightGoal = Math.max(15, Math.min(150, this.viewHeightGoal / factor));
   }

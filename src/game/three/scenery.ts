@@ -582,7 +582,7 @@ export function createPlaceLabels() {
   return group;
 }
 
-export function updatePlaceLabels(group: THREE.Group, viewHeight: number) {
+export function updatePlaceLabels(group: THREE.Group, viewHeight: number, yawDegrees = 45) {
   const t = THREE.MathUtils.smoothstep(viewHeight, PLACE_FADE_START, PLACE_FADE_END);
   group.visible = t > 0.01;
   if (!group.visible) return;
@@ -591,18 +591,21 @@ export function updatePlaceLabels(group: THREE.Group, viewHeight: number) {
     material: THREE.SpriteMaterial;
     size: number;
   }[];
-  // Declutter in screen space (the camera's yaw and pitch never change): labels are
+  // Declutter in screen space for the current heading: labels are
   // listed by priority, and one that would overlap an earlier shown label is hidden
   // until the player zooms in far enough for both to fit.
   const sinPitch = Math.sin(THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES));
+  const yaw = THREE.MathUtils.degToRad(yawDegrees);
+  const cosYaw = Math.cos(yaw),
+    sinYaw = Math.sin(yaw);
   const shown: { x: number; y: number; w: number; h: number }[] = [];
   for (const { sprite, material, size } of items) {
     material.opacity = t;
     const h = viewHeight * size;
     const w = h * (sprite.userData.aspect as number);
     sprite.scale.set(w, h, 1);
-    const x = (sprite.position.x - sprite.position.z) * Math.SQRT1_2;
-    const y = (sprite.position.x + sprite.position.z) * Math.SQRT1_2 * sinPitch;
+    const x = sprite.position.x * cosYaw - sprite.position.z * sinYaw;
+    const y = (sprite.position.x * sinYaw + sprite.position.z * cosYaw) * sinPitch;
     sprite.visible = !shown.some(
       (o) => Math.abs(o.x - x) < (o.w + w) * 0.5 && Math.abs(o.y - y) < (o.h + h) * 0.45,
     );

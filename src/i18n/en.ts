@@ -1129,4 +1129,7 @@ export const EN: Record<string, string> = {
   "برج المكاتب الأزرق الملتوي في قلب العاصمة": "The twisting blue office tower in the heart of the capital",
   "حديقة الشهيد": "Al Shaheed Park",
   "أكبر حديقة في العاصمة: بحيرة ومتحفان وحدائق ملونة وممشى": "The capital's biggest park: a lake, two museums, colourful gardens and a walkway",
+  "لف الخريطة يساراً": "Rotate map left",
+  "لف الخريطة يميناً": "Rotate map right",
+  "البوصلة: اضغط ليصير الشمال للأعلى": "Compass: tap to put north at the top",
 };

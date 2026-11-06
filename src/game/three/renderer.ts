@@ -200,7 +200,9 @@ export class CityWorld {
   private rising = new Set<BuildingRecord>();
   private lodCounts: Record<string, number> = {};
   /** The view buildings were last bucketed for (LOD and on-screen culling). */
+  private labelsYaw = NaN;
   private lodView = {
+    yaw: 0,
     matrix: new THREE.Matrix4(),
     pad: { x: 0, y: 0 },
     x: 0,
@@ -240,7 +242,13 @@ export class CityWorld {
     place: Cell | null;
     id: number;
   } | null = null;
-  private pinch: { dist: number; zoom: number; mx: number; my: number } | null = null;
+  private pinch: { dist: number; zoom: number; mx: number; my: number; angle: number } | null = null;
+  /**
+   * Camera heading in degrees around the vertical axis (0 = north at the top of the
+   * screen, 45 = the classic isometric view). The player can turn it freely.
+   */
+  private yaw = CAMERA_YAW_DEGREES;
+  private yawGoal = CAMERA_YAW_DEGREES;
   /** Last pointer position while dragging out a zone/demolish box (for edge scrolling). */
   private edgePointer: { x: number; y: number } | null = null;
   private hover: Cell | null = null;
@@ -267,7 +275,7 @@ export class CityWorld {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES);
-    const yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
+    const yaw = THREE.MathUtils.degToRad(this.yaw);
     this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, CAMERA_DISTANCE + 1600);
     this.camera.position
       .copy(this.target)
@@ -525,6 +533,7 @@ export class CityWorld {
         zoom: this.viewHeightGoal,
         mx: (a!.x + b!.x) / 2 - rect.left,
         my: (a!.y + b!.y) / 2 - rect.top,
+        angle: Math.atan2(b!.y - a!.y, b!.x - a!.x),
       };
       // A second finger turns a half-drawn selection box into a map move; any box
       // already chosen stays on the map.
@@ -582,6 +591,22 @@ export class CityWorld {
       const rect = this.canvas.getBoundingClientRect();
       const mx = (a!.x + b!.x) / 2 - rect.left;
       const my = (a!.y + b!.y) / 2 - rect.top;
+      // Twisting two fingers turns the map with them, around the point between them.
+      const angle = Math.atan2(b!.y - a!.y, b!.x - a!.x);
+      let turn = angle - this.pinch.angle;
+      if (turn > Math.PI) turn -= Math.PI * 2;
+      if (turn < -Math.PI) turn += Math.PI * 2;
+      this.pinch.angle = angle;
+      if (Math.abs(turn) > 0.0005) {
+        const pivot = this.groundAt(this.pinch.mx, this.pinch.my);
+        this.yaw = this.yawGoal = this.yaw + THREE.MathUtils.radToDeg(turn);
+        this.poseCamera();
+        const moved = this.groundAt(this.pinch.mx, this.pinch.my);
+        if (pivot && moved) this.target.add(pivot.sub(moved));
+        this.targetGoal.copy(this.target);
+        this.poseCamera();
+        this.labelsYaw = NaN;
+      }
       const before = this.groundAt(this.pinch.mx, this.pinch.my);
       const after = this.groundAt(mx, my);
       this.pinch.mx = mx;
@@ -634,7 +659,7 @@ export class CityWorld {
 
   private poseCamera() {
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES),
-      yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
+      yaw = THREE.MathUtils.degToRad(this.yaw);
     this.camera.position
       .copy(this.target)
       .add(
@@ -729,6 +754,11 @@ export class CityWorld {
   private onWheel = (e: WheelEvent) => {
     if (this.disabled) return;
     e.preventDefault();
+    // Shift + wheel turns the map; the plain wheel zooms.
+    if (e.shiftKey) {
+      this.rotate((e.deltaY || e.deltaX) > 0 ? 15 : -15);
+      return;
+    }
     this.callbacks.zoom(e.deltaY > 0 ? 1.13 : 0.86);
   };
 
@@ -825,6 +855,26 @@ export class CityWorld {
     this.viewHeightGoal = THREE.MathUtils.clamp(this.viewHeightGoal / factor, 10, MAX_VIEW);
   }
 
+  /** Turn the map by some degrees (positive = clockwise on screen). */
+  rotate(degrees: number) {
+    this.yawGoal += degrees;
+  }
+
+  /** Put north at the top of the screen, or back to the isometric view if it already is. */
+  northUp() {
+    const norm = ((this.yawGoal % 360) + 360) % 360;
+    const target = Math.abs(norm) < 1 || Math.abs(norm - 360) < 1 ? CAMERA_YAW_DEGREES : 0;
+    let delta = target - norm;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    this.yawGoal += delta;
+  }
+
+  /** Current heading, 0–360 (0 = north up). */
+  heading() {
+    return ((this.yaw % 360) + 360) % 360;
+  }
+
   focus(cell: Cell, viewHeight = 32) {
     const at = cellWorld(cell.c, cell.r);
     this.targetGoal.set(at.x, LAND_HEIGHT, at.z);
@@ -833,7 +883,7 @@ export class CityWorld {
     this.viewHeight = viewHeight;
     this.updateProjection();
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES),
-      yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
+      yaw = THREE.MathUtils.degToRad(this.yaw);
     this.camera.position
       .copy(this.target)
       .add(
@@ -860,8 +910,9 @@ export class CityWorld {
     }
     const framed = framedView(box.cols, box.rows, this.width, this.height, occluded);
     const at = cellWorld(box.c, box.r);
+    const toward = THREE.MathUtils.degToRad(this.yaw);
     this.targetGoal.set(at.x, LAND_HEIGHT, at.z).addScaledVector(
-      new THREE.Vector3(Math.SQRT1_2, 0, Math.SQRT1_2),
+      new THREE.Vector3(Math.sin(toward), 0, Math.cos(toward)),
       framed.shift,
     );
     clampCameraTarget(this.targetGoal, framed.viewHeight);
@@ -870,7 +921,7 @@ export class CityWorld {
     this.viewHeight = framed.viewHeight;
     this.updateProjection();
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES),
-      yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
+      yaw = THREE.MathUtils.degToRad(this.yaw);
     this.camera.position.copy(this.target).add(
       new THREE.Vector3(
         Math.sin(yaw) * Math.cos(pitch) * CAMERA_DISTANCE,
@@ -1376,7 +1427,9 @@ export class CityWorld {
       const ny = e[1]! * this.target.x + e[5]! * this.target.y + e[9]! * this.target.z + e[13]!;
       const off = Math.max(Math.abs(nx), Math.abs(ny));
       const hard =
-        off > VIEW_MARGIN * 0.6 || this.viewHeight > view.height * (1 + VIEW_MARGIN * 0.5);
+        off > VIEW_MARGIN * 0.6 ||
+        this.viewHeight > view.height * (1 + VIEW_MARGIN * 0.5) ||
+        Math.abs(this.yaw - view.yaw) > 4;
       const soft = hard || zoom > 0.08 || moved > 6 || aspect !== view.aspect;
       if (!soft) return;
       if (!hard && clock - view.at < 140) return;
@@ -1385,6 +1438,7 @@ export class CityWorld {
     view.matrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     view.x = this.target.x;
     view.z = this.target.z;
+    view.yaw = this.yaw;
     view.height = this.viewHeight;
     view.aspect = this.width / this.height;
     view.at = clock;
@@ -1602,6 +1656,13 @@ export class CityWorld {
     const dt = Math.min(this.timer.getDelta(), 0.08);
     this.elapsed += dt;
     const smoothing = 1 - Math.exp(-dt * 9);
+    if (Math.abs(this.yaw - this.yawGoal) > 0.02) {
+      this.yaw += (this.yawGoal - this.yaw) * (1 - Math.exp(-dt * 10));
+      this.poseCamera();
+    } else if (this.yaw !== this.yawGoal) {
+      this.yaw = this.yawGoal;
+      this.poseCamera();
+    }
     const viewChanged =
       Math.abs(this.viewHeight - this.viewHeightGoal) > 0.015 ||
       this.target.distanceToSquared(this.targetGoal) > 0.00001;
@@ -1611,9 +1672,10 @@ export class CityWorld {
       this.updateProjection();
       this.poseCamera();
     }
-    if (this.viewHeight !== this.labelsHeight) {
+    if (this.viewHeight !== this.labelsHeight || Math.abs(this.yaw - this.labelsYaw) > 0.5 || Number.isNaN(this.labelsYaw)) {
       this.labelsHeight = this.viewHeight;
-      updatePlaceLabels(this.placeLabels, this.viewHeight);
+      this.labelsYaw = this.yaw;
+      updatePlaceLabels(this.placeLabels, this.viewHeight, this.yaw);
     }
     this.edgeScroll(dt);
     if (this.sim) this.updateCars();

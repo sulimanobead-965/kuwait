@@ -138,6 +138,27 @@ export function CityGame() {
 
   const [snap, setSnap] = useState<Sim>(createInitial());
   const [tool, setTool] = useState<Tool>(null);
+  // The map's heading, mirrored for the compass (0 = north up).
+  const [heading, setHeading] = useState(45);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const h = Math.round(worldRef.current?.heading() ?? 45);
+      setHeading((old) => (old === h ? old : h));
+    }, 150);
+    // Q / E turn the map on a keyboard (not while typing).
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "q" || e.key === "Q") worldRef.current?.rotate(-45);
+      else if (e.key === "e" || e.key === "E") worldRef.current?.rotate(45);
+      else if (e.key === "n" || e.key === "N") worldRef.current?.northUp();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
   const [zone, setZone] = useState<{ c0: number; r0: number; c1: number; r1: number } | null>(null);
   const [cat, setCat] = useState<Category>("housing");
   const [selected, setSelected] = useState<string | null>(null);
@@ -917,6 +938,11 @@ export function CityGame() {
     sync();
   }
 
+  function onRotate(by: number | "north") {
+    if (by === "north") worldRef.current?.northUp();
+    else worldRef.current?.rotate(by);
+  }
+
   function onZoom(factor: number) {
     worldRef.current?.zoom(factor);
   }
@@ -1059,6 +1085,8 @@ export function CityGame() {
         onReset={reset}
         onCancelReset={() => setConfirmReset(false)}
         onZoom={onZoom}
+        onRotate={onRotate}
+        heading={heading}
         zone={zone}
         onZoneApply={onZoneApply}
         onVoicesSeen={() => {
