@@ -25,6 +25,8 @@ import {
   planZone,
   saveSim,
   type Sim,
+  unpackRoads,
+  unpackBuildings,
 } from "./sim.ts";
 
 /** Real prices apply; these layout checks are about geometry, not budgets. */
@@ -318,6 +320,11 @@ test("a city saved before the map grew north is moved onto the same streets", ()
     // Rewrite the save as the old grid would have stored it.
     const payload = JSON.parse(store.get("omdat-kuwait-v1")!);
     payload.grid = 6;
+    // Old grids were saved in the long form.
+    payload.roads = unpackRoads(payload.roadsZ);
+    payload.buildings = unpackBuildings(payload.buildingsZ);
+    delete payload.roadsZ;
+    delete payload.buildingsZ;
     payload.roads = payload.roads.map((k: string) => {
       const [c, r] = k.split(",").map(Number);
       return `${c! - OLD_COL0},${r! - FINE_ROW0}`;

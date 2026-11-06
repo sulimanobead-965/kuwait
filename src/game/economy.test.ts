@@ -233,3 +233,22 @@ test("achievements, daily streaks and offline earnings", () => {
   const next = welcomeBack(s, day + 86_400_000);
   assert.equal(next.streak, 2);
 });
+
+test("big cities save compactly and reload the same roads and buildings", async () => {
+  const { packRoads, unpackRoads, packBuildings, unpackBuildings, collectAll } = await import("./sim.ts");
+  const roads = ["5,3", "6,3", "7,3", "9,3", "2,10"];
+  assert.deepEqual(new Set(unpackRoads(packRoads(roads))), new Set(roads));
+  const s = createInitial();
+  s.started = true;
+  for (const b of s.buildings) b.stored = 10.7;
+  const back = unpackBuildings(JSON.parse(JSON.stringify(packBuildings(s.buildings))));
+  assert.equal(back.length, s.buildings.length);
+  assert.deepEqual(
+    back.map((b) => `${b.kind}@${b.c},${b.r}:${b.level}`).sort(),
+    s.buildings.map((b) => `${b.kind}@${b.c},${b.r}:${b.level}`).sort(),
+  );
+  const before = s.coins;
+  const n = collectAll(s);
+  assert.equal(n, 10 * s.buildings.length);
+  assert.equal(s.coins, before + n);
+});

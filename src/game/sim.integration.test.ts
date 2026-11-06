@@ -122,7 +122,8 @@ test("v2 save serializes all playable fields without mutating during clones", ()
     const saved = JSON.parse(store.get("omdat-kuwait-v1") ?? "{}");
     assert.equal(saved.v, 2);
     assert.equal(saved.grid, GRID_GEN);
-    assert.equal(saved.buildings[0].kind, "villa");
+    assert.ok(saved.buildingsZ.villa.length >= 4);
+    assert.equal(typeof saved.roadsZ, "string");
     const loaded = loadSim();
     assert.equal(loaded.buildings.length, s.buildings.length);
     assert.equal(loaded.roads.length, s.roads.length);

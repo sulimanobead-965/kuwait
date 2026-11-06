@@ -55,6 +55,7 @@ import {
   cloneSim,
   coastal,
   collectAll,
+  saveFailed,
   collectOne,
   createInitial,
   createInitialDistrict,
@@ -236,8 +237,13 @@ export function CityGame() {
     if (now - lastSave.current > 3000) {
       lastSave.current = now;
       saveSim(simRef.current);
+      if (saveFailed() && !saveWarned.current) {
+        saveWarned.current = true;
+        toastRef.current(msg("ذاكرة المتصفح ممتلئة: ما قدرت أحفظ المدينة"));
+      }
     }
   }
+  const saveWarned = useRef(false);
   function flushSave() {
     lastSave.current = Date.now();
     if (simRef.current.started) saveSim(simRef.current);
@@ -433,6 +439,21 @@ export function CityGame() {
       elapsed += dt;
       timeRef.current = elapsed;
       const sim = simRef.current;
+      // Whatever goes wrong in one step, the next frame must still be scheduled,
+      // or the calendar and the map freeze for good.
+      raf = requestAnimationFrame(frame);
+      try {
+        step(sim, dt);
+      } catch (error) {
+        console.error(error);
+      }
+      try {
+        world?.sync(sim, elapsed);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    function step(sim: Sim, dt: number) {
       if (sim.started && sim.speed > 0) {
         const scale = sim.speed === 1 ? 1 : sim.speed === 2 ? 4 : 12;
         const daysPerSec = sim.speed === 1 ? 6 : sim.speed === 2 ? 24 : 72;
@@ -459,8 +480,6 @@ export function CityGame() {
           syncRef.current();
         }
       }
-      world?.sync(sim, elapsed);
-      raf = requestAnimationFrame(frame);
     }
     function onVisibility() {
       if (document.hidden) {

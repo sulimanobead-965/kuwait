@@ -1453,15 +1453,44 @@ export function blockReason(b: Building, s: Sim, st = stats(s)) {
   return null;
 }
 
+// Each building's income rate, refreshed a slice at a time: recomputing every rate
+// on every step took over 100 ms for cities with tens of thousands of buildings.
+const rateCache = new WeakMap<Building, number>();
+let rateCursor = 0;
+const RATE_BUDGET_MS = 4;
+
 export function tick(s: Sim, dt: number) {
   if (!s.started || dt <= 0) return;
-  const st = stats(s);
-  for (const b of s.buildings) {
-    const rate = incomePerSec(b, s, st);
-    if (rate <= 0) continue;
-    const cap = rate * 48;
-    b.stored = Math.min(cap, b.stored + rate * dt);
+  const list = s.buildings;
+  if (list.length <= 1500) {
+    const st = stats(s);
+    for (const b of list) accrue(b, incomePerSec(b, s, st), dt);
+    return;
   }
+  const st = stats(s);
+  const clock = typeof performance === "undefined" ? Date : performance;
+  const until = clock.now() + RATE_BUDGET_MS;
+  // New buildings first, then the oldest refreshes, within a small time budget.
+  for (const b of list) {
+    if (rateCache.has(b)) continue;
+    rateCache.set(b, incomePerSec(b, s, st));
+    if (clock.now() > until) break;
+  }
+  if (rateCursor >= list.length) rateCursor = 0;
+  let done = 0;
+  while (done < list.length && clock.now() <= until) {
+    for (let i = 0; i < 64 && done < list.length; i += 1, done += 1) {
+      const b = list[rateCursor]!;
+      rateCache.set(b, incomePerSec(b, s, st));
+      rateCursor = rateCursor + 1 >= list.length ? 0 : rateCursor + 1;
+    }
+  }
+  for (const b of list) accrue(b, rateCache.get(b) ?? 0, dt);
+}
+
+function accrue(b: Building, rate: number, dt: number) {
+  if (rate <= 0) return;
+  b.stored = Math.min(rate * 48, b.stored + rate * dt);
 }
 
 export function totalStored(s: Sim) {
@@ -1482,7 +1511,15 @@ export function collectOne(s: Sim, id: string) {
 
 export function collectAll(s: Sim) {
   let n = 0;
-  for (const b of s.buildings) n += collectOne(s, b.id);
+  for (const b of s.buildings) {
+    const got = Math.floor(b.stored);
+    if (got <= 0) continue;
+    b.stored -= got;
+    n += got;
+  }
+  s.coins += n;
+  s.collected = (s.collected ?? 0) + n;
+  s.ytd.income += n;
   return n;
 }
 
@@ -2943,7 +2980,9 @@ export function loadSim(district?: DistrictId | null): Sim {
     if (Array.isArray(p.log)) {
       s.log = p.log.filter((x) => typeof x === "string").slice(0, 8);
     }
-    const roads = Array.isArray(p.roads) ? [...p.roads] : [];
+    const pz = p as { roadsZ?: unknown; buildingsZ?: unknown };
+    const roads =
+      typeof pz.roadsZ === "string" ? unpackRoads(pz.roadsZ) : Array.isArray(p.roads) ? [...p.roads] : [];
 
     const roadCells: string[] = [];
     for (const k of roads) {
@@ -2957,7 +2996,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     if (s.district) roadCells.push(...districtRoads(districtById(s.district)!));
     s.roads = [...new Set(roadCells)];
     const taken = new Set(s.roads);
-    const buildings = Array.isArray(p.buildings) ? p.buildings : [];
+    const buildings = pz.buildingsZ ? unpackBuildings(pz.buildingsZ) : Array.isArray(p.buildings) ? p.buildings : [];
     for (const rawB of buildings) {
       if (!rawB || typeof rawB !== "object") continue;
       const b = rawB as Partial<Building>;
@@ -2969,7 +3008,7 @@ export function loadSim(district?: DistrictId | null): Sim {
       if (!isLand(c, r) || taken.has(cellKey(c, r))) continue;
       taken.add(cellKey(c, r));
       s.buildings.push({
-        id: String(b.id ?? cellKey(c, r)),
+        id: String(b.id ?? `b${cellKey(c, r)}`),
         kind: b.kind as Kind,
         c,
         r,
@@ -3019,8 +3058,10 @@ export function saveSim(s: Sim) {
   const data = {
     v: 2,
     coins: s.coins,
-    roads: s.roads,
-    buildings: s.buildings.map(({ born: _born, ...b }) => b),
+    // Compact layout: big cities have tens of thousands of cells, and the phone's
+    // browser storage is only a few MB.
+    roadsZ: packRoads(s.roads),
+    buildingsZ: packBuildings(s.buildings),
     quest: s.quest,
     mute: s.mute,
     started: s.started,
@@ -3067,5 +3108,84 @@ export function saveSim(s: Sim) {
     grid: GRID_GEN,
     ...(s.district ? { district: s.district } : {}),
   };
-  localStorage.setItem(s.district ? districtSaveKey(s.district) : SAVE_KEY, JSON.stringify(data));
+  const key = s.district ? districtSaveKey(s.district) : SAVE_KEY;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+    saveFull = false;
+  } catch {
+    // Storage full: drop the long history and try once more; never break the game loop.
+    try {
+      localStorage.setItem(key, JSON.stringify({ ...data, history: s.history.slice(-120), log: [] }));
+      saveFull = false;
+    } catch {
+      saveFull = true;
+    }
+  }
+}
+
+let saveFull = false;
+/** True when the last save did not fit in the browser's storage. */
+export function saveFailed() {
+  return saveFull;
+}
+
+/** Roads as row runs: "r:c0-c1,c2;r2:...". */
+export function packRoads(roads: string[]) {
+  const rows = new Map<number, number[]>();
+  for (const k of roads) {
+    const i = k.indexOf(",");
+    const c = Number(k.slice(0, i));
+    const r = Number(k.slice(i + 1));
+    if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+    let list = rows.get(r);
+    if (!list) rows.set(r, (list = []));
+    list.push(c);
+  }
+  const out: string[] = [];
+  for (const [r, cs] of rows) {
+    cs.sort((a, b) => a - b);
+    const runs: string[] = [];
+    for (let i = 0; i < cs.length; ) {
+      let j = i;
+      while (j + 1 < cs.length && cs[j + 1]! <= cs[j]! + 1) j += 1;
+      runs.push(cs[j] === cs[i] ? `${cs[i]}` : `${cs[i]}-${cs[j]}`);
+      i = j + 1;
+    }
+    out.push(`${r}:${runs.join(",")}`);
+  }
+  return out.join(";");
+}
+
+export function unpackRoads(z: string) {
+  const out: string[] = [];
+  for (const row of z.split(";")) {
+    const [rs, runs] = row.split(":");
+    const r = Number(rs);
+    if (!runs || !Number.isFinite(r)) continue;
+    for (const run of runs.split(",")) {
+      const [a, b] = run.split("-").map(Number);
+      if (!Number.isFinite(a)) continue;
+      const end = Number.isFinite(b) ? Math.min(b!, a! + 2000) : a!;
+      for (let c = a!; c <= end; c += 1) out.push(`${c},${r}`);
+    }
+  }
+  return out;
+}
+
+/** Buildings as "kind" → flat [c, r, level, stored, ...]. Ids are not kept. */
+export function packBuildings(list: Building[]) {
+  const out: Record<string, number[]> = {};
+  for (const b of list) (out[b.kind] ??= []).push(b.c, b.r, b.level, Math.floor(b.stored));
+  return out;
+}
+
+export function unpackBuildings(z: unknown) {
+  const out: Partial<Building>[] = [];
+  if (!z || typeof z !== "object") return out;
+  for (const [kind, flat] of Object.entries(z as Record<string, unknown>)) {
+    if (!Array.isArray(flat)) continue;
+    for (let i = 0; i + 3 < flat.length; i += 4)
+      out.push({ kind: kind as Kind, c: flat[i], r: flat[i + 1], level: flat[i + 2], stored: flat[i + 3] });
+  }
+  return out;
 }

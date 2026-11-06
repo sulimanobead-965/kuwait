@@ -1350,4 +1350,5 @@ export const EN: Record<string, string> = {
   "الرسوم تلقائية: تخف وحدها إذا الجهاز بطيء": "Auto graphics: lighter on their own when the device is slow",
   "الرسوم خفيفة: أسرع وأخف على الجهاز": "Light graphics: faster and easier on the device",
   "الرسوم عالية: أجمل شكل، وقد تكون أبطأ": "High graphics: best looks, may be slower",
+  "ذاكرة المتصفح ممتلئة: ما قدرت أحفظ المدينة": "Browser storage is full: the city could not be saved",
 };
