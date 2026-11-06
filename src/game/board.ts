@@ -136,6 +136,8 @@ export type DeptProject = {
   effects?: ProjectEffects;
   /** Buildings placed in the city when it is finished. */
   build?: { kind: Kind; count: number };
+  /** National-scale project (big cost, big return). */
+  mega?: boolean;
 };
 
 /** Department projects. Money scales with the city's size (see `projectScale`). */
@@ -365,7 +367,174 @@ export const PROJECTS: Record<string, DeptProject> = {
   },
 };
 
+/**
+ * Mega projects: national-scale works with a large cost, years of building and a
+ * large return. Shown in the Projects panel and under their departments.
+ */
+const MEGA: Record<string, DeptProject> = {
+  airport: {
+    dept: "works",
+    name: "مطار الكويت الدولي الجديد",
+    blurb: "مبنى ركاب ضخم ومدرجات جديدة: رحلات وسياحة ووظائف.",
+    cost: 400_000,
+    upkeep: 2_500,
+    income: 14_000,
+    months: 36,
+    effects: { happy: 4, unemployment: -8 },
+    mega: true,
+  },
+  railway: {
+    dept: "works",
+    name: "سكة حديد الخليج",
+    blurb: "قطار سريع يربط المدن ويخفف الطرق.",
+    cost: 500_000,
+    upkeep: 3_000,
+    income: 15_000,
+    months: 40,
+    effects: { traffic: -25, happy: 3 },
+    mega: true,
+  },
+  intlPower: {
+    dept: "energy",
+    name: "محطة الطاقة الدولية",
+    blurb: "محطة عملاقة تصدّر الكهرباء لدول الخليج.",
+    cost: 300_000,
+    upkeep: 2_000,
+    income: 11_000,
+    months: 30,
+    effects: { pollution: -6 },
+    build: { kind: "power", count: 6 },
+    mega: true,
+  },
+  megaPort: {
+    dept: "industry",
+    name: "ميناء مبارك الكبير",
+    blurb: "ميناء حاويات عملاق على طريق الحرير.",
+    cost: 350_000,
+    upkeep: 2_500,
+    income: 13_000,
+    months: 36,
+    effects: { unemployment: -8 },
+    build: { kind: "port", count: 3 },
+    mega: true,
+  },
+  megaRefinery: {
+    dept: "industry",
+    name: "مصفاة الزور العملاقة",
+    blurb: "من أكبر المصافي في العالم: عائد ضخم وتلوث.",
+    cost: 600_000,
+    upkeep: 4_000,
+    income: 24_000,
+    months: 40,
+    effects: { pollution: 10, unemployment: -10 },
+    build: { kind: "refinery", count: 3 },
+    mega: true,
+  },
+  silkCity: {
+    dept: "construction",
+    name: "مدينة الحرير",
+    blurb: "مدينة أعمال وأبراج شاهقة شمال الجون.",
+    cost: 800_000,
+    upkeep: 4_000,
+    income: 26_000,
+    months: 48,
+    effects: { happy: 3, unemployment: -10 },
+    build: { kind: "tower", count: 12 },
+    mega: true,
+  },
+  techCity: {
+    dept: "investment",
+    name: "مدينة التقنية والذكاء الاصطناعي",
+    blurb: "شركات تقنية عالمية ومراكز بيانات.",
+    cost: 450_000,
+    upkeep: 2_500,
+    income: 16_000,
+    months: 36,
+    effects: { unemployment: -12, education: 10 },
+    mega: true,
+  },
+  medicalCity: {
+    dept: "health",
+    name: "مدينة طبية متكاملة",
+    blurb: "مستشفيات تخصصية تجذب المرضى من المنطقة.",
+    cost: 250_000,
+    upkeep: 2_500,
+    income: 6_000,
+    months: 30,
+    effects: { health: 25, happy: 2 },
+    build: { kind: "clinic", count: 6 },
+    mega: true,
+  },
+  resort: {
+    dept: "tourism",
+    name: "منتجع سياحي عالمي",
+    blurb: "فنادق وشاليهات ومرسى يخوت على البحر.",
+    cost: 300_000,
+    upkeep: 1_500,
+    income: 10_000,
+    months: 30,
+    effects: { happy: 5 },
+    build: { kind: "chalet", count: 6 },
+    mega: true,
+  },
+};
+Object.assign(PROJECTS, MEGA);
+
 export const PROJECT_KEYS = Object.keys(PROJECTS);
+export const MEGA_KEYS = Object.keys(MEGA);
+
+/** A setting the governor can change for a director (thresholds, shares, rates). */
+export type DeptParam = { key: string; label: string; unit: "%" | "n" | "x"; def: number; max?: number };
+
+export const DEPT_PARAMS: Record<DeptId, DeptParam[]> = {
+  tax: [
+    { key: "min", label: "أدنى ضريبة", unit: "%", def: 3 },
+    { key: "max", label: "أعلى ضريبة", unit: "%", def: 20 },
+    { key: "raise", label: "يرفعها إذا الرضا فوق", unit: "%", def: 68, max: 100 },
+    { key: "cut", label: "يخفضها إذا الرضا تحت", unit: "%", def: 50, max: 100 },
+  ],
+  finance: [
+    { key: "reserve", label: "الاحتياطي بالأشهر", unit: "n", def: 3 },
+    { key: "rate", label: "فائدة التمويل", unit: "%", def: 6 },
+    { key: "repay", label: "يسدد إذا الرصيد أكثر من الاحتياطي بـ", unit: "x", def: 3 },
+  ],
+  construction: [
+    { key: "share", label: "ميزانية البناء من الرصيد", unit: "%", def: 25, max: 100 },
+    { key: "complex", label: "يطلق مجمعاً إذا السكان فوق", unit: "n", def: 30_000 },
+  ],
+  investment: [
+    { key: "deposit", label: "نسبة الفائض المودعة", unit: "%", def: 30, max: 100 },
+    { key: "keep", label: "يودع فوق الاحتياطي بـ", unit: "x", def: 4 },
+  ],
+  works: [{ key: "traffic", label: "يوسّع الطرق إذا الزحمة فوق", unit: "%", def: 50, max: 100 }],
+  energy: [{ key: "margin", label: "فائض الكهرباء والماء المطلوب", unit: "%", def: 5 }],
+  centralBank: [{ key: "rate", label: "أعلى فائدة مقبولة على الديون", unit: "%", def: 6 }],
+  industry: [
+    { key: "jobs", label: "يبني مصانع إذا البطالة فوق", unit: "%", def: 25, max: 100 },
+    { key: "refinery", label: "مصفاة لكل عدد سكان", unit: "n", def: 60_000 },
+  ],
+  health: [{ key: "health", label: "يتدخل إذا الصحة تحت", unit: "%", def: 60, max: 100 }],
+  education: [{ key: "education", label: "يتدخل إذا التعليم تحت", unit: "%", def: 50, max: 100 }],
+  tourism: [{ key: "approval", label: "يطلق فعاليات إذا الرضا تحت", unit: "%", def: 60, max: 100 }],
+};
+
+/** Buildings each director can be ordered to build. */
+export const ORDER_KINDS: Record<DeptId, Kind[]> = {
+  tax: [],
+  finance: [],
+  construction: ["apartments", "villa", "modern", "shop", "tower", "park", "school", "clinic", "police", "fire"],
+  investment: ["tower", "shop"],
+  works: ["park", "police", "fire"],
+  energy: ["power", "water"],
+  centralBank: [],
+  industry: ["factory", "refinery", "port"],
+  health: ["clinic"],
+  education: ["school"],
+  tourism: ["chalet", "park", "avenues", "opera", "stadium"],
+};
+
+/** A direct order: "build N of this". Carried out month by month as money allows. */
+export type BoardOrder = { id: string; dept: DeptId; kind: Kind; count: number; built: number };
 
 /** One approved project: under way until `completes`, then running. */
 export type BoardProject = {
@@ -394,6 +563,10 @@ export type BoardState = {
   paidYear: number;
   /** Recent decisions, newest first (encoded messages). */
   log: string[];
+  /** The governor's settings for each director, by "dept.key". */
+  params: Record<string, number>;
+  /** Direct building orders. */
+  orders: BoardOrder[];
 };
 
 export function emptyBoard(): BoardState {
@@ -407,6 +580,8 @@ export function emptyBoard(): BoardState {
     paid: 0,
     paidYear: 0,
     log: [],
+    params: {},
+    orders: [],
   };
 }
 
@@ -435,7 +610,89 @@ export function loadBoard(raw: unknown): BoardState {
         open: Boolean(x.open),
       }));
   if (Array.isArray(p.log)) b.log = p.log.filter((x) => typeof x === "string").slice(0, 40);
+  if (p.params && typeof p.params === "object")
+    for (const [k, v] of Object.entries(p.params)) if (Number.isFinite(Number(v))) b.params[k] = Math.max(0, Number(v));
+  if (p.buildShare !== undefined && b.params["construction.share"] === undefined)
+    b.params["construction.share"] = b.buildShare;
+  if (Array.isArray(p.orders))
+    b.orders = p.orders
+      .filter((o) => o && typeof o === "object" && o.dept in DEPARTMENTS && o.kind in CATALOG)
+      .map((o) => ({
+        id: String(o.id),
+        dept: o.dept,
+        kind: o.kind,
+        count: Math.max(1, Math.round(n(o.count, 1))),
+        built: Math.max(0, Math.round(n(o.built, 0))),
+      }));
   return b;
+}
+
+/** A director's setting, or its default. */
+export function deptParam(s: Sim, dept: DeptId, key: string) {
+  const v = s.board?.params?.[`${dept}.${key}`];
+  if (v !== undefined) return v;
+  return DEPT_PARAMS[dept].find((p) => p.key === key)?.def ?? 0;
+}
+
+export function setDeptParam(s: Sim, dept: DeptId, key: string, value: number) {
+  const def = DEPT_PARAMS[dept].find((p) => p.key === key);
+  if (!def || !Number.isFinite(value)) return;
+  s.board.params = { ...s.board.params, [`${dept}.${key}`]: Math.max(0, def.max ? Math.min(def.max, value) : value) };
+}
+
+/** Give a director a building order. */
+export function addOrder(s: Sim, dept: DeptId, kind: Kind, count: number) {
+  if (!ORDER_KINDS[dept].includes(kind) || !(count >= 1))
+    return { ok: false, msg: t("أمر غير صحيح") };
+  s.board.orders.push({
+    id: `${s.day.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    dept,
+    kind,
+    count: Math.round(count),
+    built: 0,
+  });
+  note(
+    s,
+    msg("أمر للمدير {director}: بناء {n} × {kind}", {
+      director: DEPARTMENTS[dept].director,
+      n: Math.round(count),
+      kind: CATALOG[kind].name,
+    }),
+  );
+  return { ok: true, msg: t("وصل الأمر للمدير، وينفّذه كل شهر حسب الميزانية") };
+}
+
+export function cancelOrder(s: Sim, id: string) {
+  s.board.orders = s.board.orders.filter((o) => o.id !== id);
+}
+
+/**
+ * Orders are carried out every month by authorized directors, whether or not the
+ * board runs the city, as far as the money above the reserve allows.
+ */
+function carryOutOrders(s: Sim) {
+  for (const o of s.board.orders) {
+    if (o.built >= o.count || !s.board.powers[o.dept]) continue;
+    let built = 0;
+    while (o.built < o.count) {
+      if (s.coins - CATALOG[o.kind].cost < reserve(s)) break;
+      if (!placeNear(s, o.kind)) break;
+      o.built += 1;
+      built += 1;
+    }
+    if (built)
+      note(
+        s,
+        msg("{director}: بنى {n} × {kind} ({done} من {count})", {
+          director: DEPARTMENTS[o.dept].director,
+          n: built,
+          kind: CATALOG[o.kind].name,
+          done: o.built,
+          count: o.count,
+        }),
+      );
+  }
+  s.board.orders = s.board.orders.filter((o) => o.built < o.count);
 }
 
 /** Projects are priced for a city of 10,000 residents and grow with the city. */
@@ -567,9 +824,9 @@ function finishProjects(s: Sim) {
   }
 }
 
-/** Keep about three months of running costs in hand. */
+/** Keep some months of running costs in hand (the finance director's setting). */
 function reserve(s: Sim) {
-  return Math.max(2000, monthlyUpkeep(s) * 3);
+  return Math.max(2000, monthlyUpkeep(s) * deptParam(s, "finance", "reserve"));
 }
 
 /** The board's decisions for one month, director by director. */
@@ -595,9 +852,10 @@ function decide(s: Sim) {
       const take = Math.min(s.finance.deposit, reserve(s) - s.coins);
       if (withdraw(s, take).ok) say("centralBank", "سحب {amount} د.ك من الودائع للاحتياطي", { amount: fmt(take) });
     }
-    if (s.loan > 0 && (s.loanRate ?? 0) > 0.06) {
-      s.loanRate = 0.06;
-      say("centralBank", "أعاد جدولة القرض بفائدة ٦٪", {});
+    const cap = deptParam(s, "centralBank", "rate") / 100;
+    if (s.loan > 0 && (s.loanRate ?? 0) > cap) {
+      s.loanRate = cap;
+      say("centralBank", "أعاد جدولة القرض بفائدة {rate}٪", { rate: Math.round(cap * 1000) / 10 });
     }
     tryProject("reserve", s.coins > reserve(s) * 8);
     tryProject("digitalPay", st.residents > 20_000);
@@ -606,19 +864,27 @@ function decide(s: Sim) {
   if (can("finance")) {
     if (s.coins < 0) {
       const need = Math.round(-s.coins + reserve(s));
-      if (takeLoan(s, need, 0.06).ok) say("finance", "غطّت العجز بتمويل {amount} د.ك", { amount: fmt(need) });
-    } else if (s.loan > 0 && s.coins > reserve(s) * 3) {
-      const pay = Math.min(s.loan, s.coins - reserve(s) * 2);
+      if (takeLoan(s, need, deptParam(s, "finance", "rate") / 100).ok) say("finance", "غطّت العجز بتمويل {amount} د.ك", { amount: fmt(need) });
+    } else if (s.loan > 0 && s.coins > reserve(s) * deptParam(s, "finance", "repay")) {
+      const pay = Math.min(s.loan, s.coins - reserve(s) * Math.max(1, deptParam(s, "finance", "repay") - 1));
       if (repayLoan(s, pay).ok) say("finance", "سدّدت {amount} د.ك من القرض", { amount: fmt(pay) });
     }
     tryProject("audit", monthlyUpkeep(s) > 500);
   }
   // Taxes: aim for a city that stays content.
   if (can("tax")) {
-    if (st.happy >= 68 && s.tax < 20) {
+    const lo = deptParam(s, "tax", "min"),
+      hi = deptParam(s, "tax", "max");
+    if (s.tax < lo) {
+      s.tax = lo;
+      say("tax", "رفع الضريبة إلى {n}٪ والرضا مرتفع", { n: s.tax });
+    } else if (s.tax > hi) {
+      s.tax = hi;
+      say("tax", "خفّض الضريبة إلى {n}٪ لرفع الرضا", { n: s.tax });
+    } else if (st.happy >= deptParam(s, "tax", "raise") && s.tax < hi) {
       s.tax += 1;
       say("tax", "رفع الضريبة إلى {n}٪ والرضا مرتفع", { n: s.tax });
-    } else if (st.happy < 50 && s.tax > 3) {
+    } else if (st.happy < deptParam(s, "tax", "cut") && s.tax > lo) {
       s.tax -= 1;
       say("tax", "خفّض الضريبة إلى {n}٪ لرفع الرضا", { n: s.tax });
     }
@@ -627,20 +893,21 @@ function decide(s: Sim) {
   }
   // Energy: never let the lights or the taps go out.
   if (can("energy")) {
-    if (st.powerGive < st.powerUse * 1.05 && s.coins > CATALOG.power.cost * 2 && placeNear(s, "power"))
+    const margin = 1 + deptParam(s, "energy", "margin") / 100;
+    if (st.powerGive < st.powerUse * margin && s.coins > CATALOG.power.cost * 2 && placeNear(s, "power"))
       say("energy", "بنت محطة كهرباء", {});
-    if (st.waterGive < st.waterUse * 1.05 && s.coins > CATALOG.water.cost * 2 && placeNear(s, "water"))
+    if (st.waterGive < st.waterUse * margin && s.coins > CATALOG.water.cost * 2 && placeNear(s, "water"))
       say("energy", "بنت محطة تحلية", {});
     tryProject("solarFarm", m.pollution > 35);
   }
   // Construction: homes, services and upgrades with a share of the balance.
   if (can("construction")) {
-    const budget = Math.floor(Math.max(0, s.coins - reserve(s)) * (b.buildShare / 100));
+    const budget = Math.floor(Math.max(0, s.coins - reserve(s)) * (deptParam(s, "construction", "share") / 100));
     if (budget > 0) {
       const done = runPlans(s, budget);
       if (done.works) say("construction", "نفّذ {works} بتكلفة {amount} د.ك", { works: done.list, amount: fmt(done.spent) });
     }
-    if (st.residents > 30_000 && s.sites.length === 0 && s.coins > 2_400_000) {
+    if (st.residents > deptParam(s, "construction", "complex") && s.sites.length === 0 && s.coins > 2_400_000) {
       const act = startDevelopment(s, "compound", undefined, "national");
       if (act.ok) say("construction", "أطلق مجمعاً سكنياً متكاملاً", {});
     }
@@ -650,34 +917,45 @@ function decide(s: Sim) {
   // Industry: refineries and factories when the treasury can carry them.
   if (can("industry")) {
     const refineries = countOf(s, "refinery");
-    if (s.coins > CATALOG.refinery.cost * 4 && refineries < 1 + Math.floor(st.residents / 60_000) && placeNear(s, "refinery"))
+    const every = Math.max(1, deptParam(s, "industry", "refinery"));
+    const jobs = deptParam(s, "industry", "jobs");
+    if (s.coins > CATALOG.refinery.cost * 4 && refineries < 1 + Math.floor(st.residents / every) && placeNear(s, "refinery"))
       say("industry", "بنى مصفاة نفط", {});
-    else if (m.unemployment > 25 && s.coins > CATALOG.factory.cost * 4 && placeNear(s, "factory"))
+    else if (m.unemployment > jobs && s.coins > CATALOG.factory.cost * 4 && placeNear(s, "factory"))
       say("industry", "بنى مصنعاً لتوفير وظائف", {});
-    tryProject("factories", m.unemployment > 30, 2);
+    tryProject("factories", m.unemployment > jobs + 5, 2);
   }
   // Works: roads and drainage.
   if (can("works")) {
-    tryProject("ringRoad", m.traffic > 50, 3);
+    tryProject("ringRoad", m.traffic > deptParam(s, "works", "traffic"), 3);
     tryProject("drainage", st.residents > 15_000);
   }
   if (can("health")) {
-    tryProject("vaccines", m.health < 60);
-    tryProject("hospital", m.health < 50, 3);
+    const h = deptParam(s, "health", "health");
+    tryProject("vaccines", m.health < h);
+    tryProject("hospital", m.health < h - 10, 3);
   }
   if (can("education")) {
-    tryProject("schools", m.education < 50, 3);
-    tryProject("university", m.education < 40 && st.residents > 20_000);
+    const e = deptParam(s, "education", "education");
+    tryProject("schools", m.education < e, 3);
+    tryProject("university", m.education < e - 10 && st.residents > 20_000);
   }
   if (can("tourism")) {
-    tryProject("festival", st.happy < 60, 4);
+    tryProject("festival", st.happy < deptParam(s, "tourism", "approval"), 4);
     tryProject("waterfront", st.residents > 10_000, 2);
+  }
+  // Mega projects only when the treasury can carry them twice over.
+  for (const key of MEGA_KEYS) {
+    const def = PROJECTS[key]!;
+    if (!can(def.dept)) continue;
+    const cost = projectCost(s, key);
+    tryProject(key, s.coins > cost * 2 && s.coins - cost > reserve(s) * 10);
   }
   // Investment last: put the true surplus to work.
   if (can("investment")) {
-    const surplus = s.coins - reserve(s) * 4;
+    const surplus = s.coins - reserve(s) * deptParam(s, "investment", "keep");
     if (surplus > 5_000) {
-      const put = Math.round(surplus * 0.3);
+      const put = Math.round(surplus * (deptParam(s, "investment", "deposit") / 100));
       if (deposit(s, put).ok) say("investment", "أودعت {amount} د.ك في البنك", { amount: fmt(put) });
     }
     tryProject("fund", s.coins > reserve(s) * 10, 3);
@@ -692,6 +970,7 @@ function decide(s: Sim) {
 export function boardMonth(s: Sim) {
   const b = s.board;
   finishProjects(s);
+  carryOutOrders(s);
   const money = projectMoney(s);
   s.coins += money.income - money.upkeep;
   s.ytd.income += money.income;

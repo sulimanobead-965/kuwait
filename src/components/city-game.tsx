@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
-import { approveProject } from "@/game/board";
+import { addOrder, approveProject, cancelOrder, setDeptParam } from "@/game/board";
+import { buyStock, sellStock } from "@/game/stocks";
 import { DistrictSelector } from "@/components/district-selector";
 import { districtById, isDistrictId, type DistrictId } from "@/game/districts";
 import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
@@ -1105,6 +1106,17 @@ export function CityGame() {
           sync();
         }}
         onApprove={(key) => finance(approveProject(simRef.current, key))}
+        onParam={(dept, key, value) => {
+          setDeptParam(simRef.current, dept, key, value);
+          sync();
+        }}
+        onOrder={(dept, kind, count) => finance(addOrder(simRef.current, dept, kind, count))}
+        onBuyStock={(id, pct) => finance(buyStock(simRef.current, id, pct))}
+        onSellStock={(id, pct) => finance(sellStock(simRef.current, id, pct))}
+        onCancelOrder={(id) => {
+          cancelOrder(simRef.current, id);
+          sync();
+        }}
         onVoicesSeen={() => {
           simRef.current.voicesSeen = simRef.current.day;
           sync();

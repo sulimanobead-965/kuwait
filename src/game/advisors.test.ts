@@ -544,3 +544,65 @@ test("the board of directors runs projects, and in automatic play runs the city 
   sim.advanceDays(s, 62);
   assert.equal(s.board.paid, paid);
 });
+
+test("directors follow the governor's settings and building orders", async () => {
+  const sim = await import("./sim.ts");
+  const board = await import("./board.ts");
+  const s = town();
+  s.coins = 5_000_000;
+  // An order: build 3 factories. Carried out even without automatic play.
+  const factories = sim.countOf(s, "factory");
+  assert.equal(board.addOrder(s, "industry", "factory", 3).ok, true);
+  sim.advanceDays(s, 31);
+  assert.equal(sim.countOf(s, "factory"), factories + 3);
+  assert.equal(s.board.orders.length, 0, "a finished order is cleared");
+  assert.equal(board.addOrder(s, "industry", "villa", 2).ok, false, "only the director's own items");
+  // Settings: cap the tax the tax director may set.
+  board.setDeptParam(s, "tax", "max", 9);
+  s.tax = 15;
+  s.board.auto = true;
+  sim.advanceDays(s, 31);
+  assert.ok(s.tax <= 9);
+  assert.equal(board.deptParam(s, "tax", "max"), 9);
+});
+
+test("mega projects cost a lot, take years and return a lot", async () => {
+  const sim = await import("./sim.ts");
+  const board = await import("./board.ts");
+  const s = town();
+  s.coins = 5_000_000;
+  assert.ok(board.MEGA_KEYS.includes("airport"));
+  const cost = board.projectCost(s, "airport");
+  assert.ok(cost >= 400_000);
+  assert.equal(board.approveProject(s, "airport").ok, true);
+  sim.advanceDays(s, board.PROJECTS.airport!.months * 30 + 31);
+  const money = board.projectMoney(s);
+  assert.ok(money.income * 12 > cost * 0.3, "pays back within a few years");
+});
+
+test("the stock market: buy a stake by percent, prices move, dividends, crashes", async () => {
+  const sim = await import("./sim.ts");
+  const stocks = await import("./stocks.ts");
+  const s = town();
+  s.coins = 50_000_000;
+  const before = s.coins;
+  const act = stocks.buyStock(s, "insurer", 5);
+  assert.equal(act.ok, true);
+  assert.equal(s.stocks.own.insurer, 0.05);
+  assert.ok(Math.abs(before - s.coins - 25_000_000 * 0.05) < 1);
+  assert.equal(stocks.buyStock(s, "insurer", 99).ok, false, "never more than 100%");
+  // A year of trading pays a dividend.
+  sim.advanceDays(s, 365);
+  assert.ok(s.stocks.dividends > 0);
+  assert.ok(s.stocks.history.insurer.length > 6);
+  // Selling part of the stake.
+  assert.equal(stocks.sellStock(s, "insurer", 2).ok, true);
+  assert.ok(Math.abs(s.stocks.own.insurer - 0.03) < 1e-9);
+  // A bankruptcy crashes the share and stops trading.
+  assert.equal(stocks.buyStock(s, "bank", 1).ok, true);
+  const price = s.stocks.price.bank;
+  s.finance.down.bank = s.day + 400;
+  stocks.stockMonth(s, { economic: false, war: false, pandemic: false }, () => 0.5);
+  assert.ok(s.stocks.price.bank < price * 0.3);
+  assert.equal(stocks.sellStock(s, "bank", 1).ok, false);
+});

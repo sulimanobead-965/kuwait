@@ -108,7 +108,9 @@ import {
 import type { DayMode } from "@/game/three/day-night";
 import { districtById } from "@/game/districts";
 import { obligations, type Obligation } from "@/game/obligations";
-import { Board } from "@/components/hud-board";
+import { Board, MegaProjects } from "@/components/hud-board";
+import { StockMarket } from "@/components/hud-stocks";
+import type { StockId } from "@/game/stocks";
 import { boardFee, projectMoney, type BoardState, type DeptId } from "@/game/board";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang } from "@/i18n";
 
@@ -140,7 +142,8 @@ type Panel =
   | "achievements"
   | "people"
   | "voices"
-  | "board";
+  | "board"
+  | "stocks";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -367,6 +370,11 @@ export function CityHud({
   onBoard,
   onPower,
   onApprove,
+  onParam,
+  onOrder,
+  onCancelOrder,
+  onBuyStock,
+  onSellStock,
   onDemolishApply,
   onZoneCancel,
 }: {
@@ -449,6 +457,11 @@ export function CityHud({
   onBoard: (patch: Partial<BoardState>) => void;
   onPower: (dept: DeptId, on: boolean) => void;
   onApprove: (key: string) => void;
+  onParam: (dept: DeptId, key: string, value: number) => void;
+  onOrder: (dept: DeptId, kind: Kind, count: number) => void;
+  onCancelOrder: (id: string) => void;
+  onBuyStock: (id: StockId, pct: number) => void;
+  onSellStock: (id: StockId, pct: number) => void;
   onDemolishApply: () => void;
   onZoneCancel: () => void;
 }) {
@@ -688,6 +701,7 @@ export function CityHud({
                   {panel === "people" && t("اللاعبون والمحادثات")}
                   {panel === "voices" && t("آراء الناس")}
                   {panel === "board" && t("مجلس الإدارة")}
+                  {panel === "stocks" && t("سوق الأسهم")}
                 </h2>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -741,8 +755,17 @@ export function CityHud({
                 )}
                 {panel === "report" && <YearReport snap={snap} />}
                 {panel === "voices" && <Voices snap={snap} />}
+                {panel === "stocks" && <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} />}
                 {panel === "board" && (
-                  <Board snap={snap} onBoard={onBoard} onPower={onPower} onApprove={onApprove} />
+                  <Board
+                    snap={snap}
+                    onBoard={onBoard}
+                    onPower={onPower}
+                    onApprove={onApprove}
+                    onParam={onParam}
+                    onOrder={onOrder}
+                    onCancelOrder={onCancelOrder}
+                  />
                 )}
                 {panel === "achievements" && <Achievements snap={snap} />}
                 {panel === "people" && (
@@ -778,6 +801,9 @@ export function CityHud({
                       setPanel(null);
                     }}
                   />
+                )}
+                {panel === "projects" && (
+                  <MegaProjects snap={snap} onApprove={onApprove} />
                 )}
                 {panel === "laws" && (
                   <Laws snap={snap} onOrdinance={onOrdinance} onLawBudget={onLawBudget} />

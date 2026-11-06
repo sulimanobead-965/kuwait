@@ -11,6 +11,7 @@ import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./bu
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import { loadVoices, voicesMonth, type Voice } from "./voices";
+import { emptyStocks, loadStocks, stockMonth, stockYear, type StockState } from "./stocks";
 import { boardEffect, boardMonth, boardYear, emptyBoard, loadBoard, type BoardState, type ProjectEffects } from "./board";
 
 const BOARD_EFFECT_KEYS = {
@@ -115,6 +116,8 @@ export type Sim = {
   builder: BuilderState;
   /** Virtual players: chats and loans in both directions. */
   npcs: NpcState[];
+  /** Shares in the game's companies, prices and dividends. */
+  stocks: StockState;
   /** The board of directors: departments, their projects, and automatic play. */
   board: BoardState;
   /** What residents say: complaints, thanks and ideas, newest first. */
@@ -942,6 +945,7 @@ export function createInitial(): Sim {
     voices: [],
     voicesSeen: -1,
     board: emptyBoard(),
+    stocks: emptyStocks(),
     flags: [],
     achievements: [],
     collected: 0,
@@ -973,10 +977,20 @@ export function cloneSim(s: Sim): Sim {
     builder: { ...s.builder },
     sites: s.sites.map((x) => ({ ...x })),
     voices: [...(s.voices ?? [])],
+    stocks: {
+      ...s.stocks,
+      price: { ...s.stocks.price },
+      own: { ...s.stocks.own },
+      paid: { ...s.stocks.paid },
+      history: { ...s.stocks.history },
+      wasDown: { ...s.stocks.wasDown },
+    },
     board: {
       ...s.board,
       powers: { ...s.board.powers },
       projects: s.board.projects.map((p) => ({ ...p })),
+      orders: s.board.orders.map((o) => ({ ...o })),
+      params: { ...s.board.params },
       log: [...s.board.log],
     },
     npcs: s.npcs.map((n) => ({
@@ -2515,6 +2529,7 @@ export function advanceDays(s: Sim, days: number) {
       war: crisis === "war",
       random: Math.random,
     });
+    stockMonth(s, { economic: crisis === "economic", war: crisis === "war", pandemic: crisis === "pandemic" });
     developmentMonth(s);
     const works = builderMonth(s);
     if (works) pushLog(s, msg("مستشار البناء: {works}", { works }));
@@ -2574,6 +2589,8 @@ function closeYear(s: Sim) {
       s.coins -= pay;
       s.ytd.spend += pay;
     }
+  const dividends = stockYear(s);
+  if (dividends) pushLog(s, dividends);
   boardYear(s, s.ytd.income - s.ytd.spend);
   const st = stats(s);
   const year = new Date(EPOCH + Math.floor(s.day) * 86400000).getUTCFullYear() - 1;
@@ -2859,6 +2876,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.npcs = loadNpcs(p.npcs);
     s.voices = loadVoices(p.voices);
     s.board = loadBoard(p.board);
+    s.stocks = loadStocks(p.stocks);
     s.voicesSeen = Number.isFinite(Number(p.voicesSeen)) ? Number(p.voicesSeen) : -1;
     s.flags = Array.isArray(p.flags) ? p.flags.filter((x) => typeof x === "string") : [];
     s.achievements = Array.isArray(p.achievements)
@@ -3031,6 +3049,7 @@ export function saveSim(s: Sim) {
     voices: s.voices,
     voicesSeen: s.voicesSeen,
     board: s.board,
+    stocks: s.stocks,
     flags: s.flags,
     achievements: s.achievements,
     collected: s.collected,

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   MessageSquare,
   Briefcase,
+  LineChart,
 } from "lucide-react";
 import {
   ACHIEVEMENTS,
@@ -139,6 +140,7 @@ export type MoreAction =
   | "people"
   | "voices"
   | "board"
+  | "stocks"
   | "language";
 
 export function MoreSheet({
@@ -178,6 +180,7 @@ export function MoreSheet({
       label: snap.board?.auto ? t("مجلس الإدارة (آلي)") : t("مجلس الإدارة"),
       icon: <Briefcase size={20} />,
     },
+    { id: "stocks", label: t("سوق الأسهم"), icon: <LineChart size={20} /> },
     {
       id: "voices",
       label:
