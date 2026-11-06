@@ -1,4 +1,4 @@
-import { CATALOG, ROAD_COST, type Kind } from "./catalog";
+import { CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
 import { COLS, GRID_GEN, LAND, ROWS } from "./land";
 export { districtById, isDistrictLand } from "./districts";
 import {
@@ -53,7 +53,15 @@ export type Sim = {
   fame: number;
   /** Highest title reached; used to announce promotions once. */
   rank: number;
+  /** Visual effects pinned to cells (burning buildings, smoke) for the renderer. */
+  fx: CellFx[];
+  /** A running global crisis. */
+  crisis: Crisis | null;
 };
+
+export type CellFx = { kind: "fire" | "smoke"; c: number; r: number; until: number };
+export type CrisisKind = "economic" | "pandemic" | "war";
+export type Crisis = { kind: CrisisKind; until: number };
 
 export type EventKind = "football" | "marathon" | "festival" | "concert";
 export type CityEvent = { kind: EventKind; until: number };
@@ -381,6 +389,8 @@ export function createInitial(): Sim {
     event: null,
     fame: 0,
     rank: 0,
+    fx: [],
+    crisis: null,
   };
   s.history.push(takeSample(s));
   return s;
@@ -394,6 +404,8 @@ export function cloneSim(s: Sim): Sim {
     ordinances: { ...s.ordinances },
     disaster: s.disaster ? { ...s.disaster } : null,
     event: s.event ? { ...s.event } : null,
+    crisis: s.crisis ? { ...s.crisis } : null,
+    fx: s.fx.map((f) => ({ ...f })),
     log: [...s.log],
     history: s.history,
   };
@@ -436,15 +448,11 @@ export const QUESTS: {
     reward: 1200,
     total: 1,
     progress: (s) =>
-      s.buildings.some((b) =>
-        ["kuwait", "mosque", "liberation", "palace", "boubyan"].includes(b.kind),
-      )
+      s.buildings.some((b) => isLandmark(b.kind))
         ? 1
         : 0,
     done: (s) =>
-      s.buildings.some((b) =>
-        ["kuwait", "mosque", "liberation", "palace", "boubyan"].includes(b.kind),
-      ),
+      s.buildings.some((b) => isLandmark(b.kind)),
   },
   {
     text: "أوصل السكان إلى ٢٠٠",
@@ -1056,7 +1064,7 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
 export function upgrade(s: Sim, id: string, now: number): Act {
   const b = s.buildings.find((x) => x.id === id);
   if (!b) return { ok: false, msg: "المبنى مو موجود" };
-  if (b.level >= 3) return { ok: false, msg: "وصل آخر مستوى" };
+  if (b.level >= maxLevelOf(b.kind)) return { ok: false, msg: "وصل آخر مستوى" };
   const cost = priceOf(upgradeCost(b.kind, b.level), s);
   if (cost > 0 && s.coins < cost) return { ok: false, msg: "الرصيد ما يكفي للترقية" };
   s.coins -= cost;
@@ -1254,7 +1262,7 @@ export function triggerDisaster(
   }
   if (kind === "fire") {
     const targets = s.buildings.filter(
-      (b) => !["kuwait", "mosque", "liberation", "palace", "boubyan"].includes(b.kind),
+      (b) => !isLandmark(b.kind),
     );
     if (!targets.length) return { ok: false, msg: "ما في مبنى يطاله الحريق" };
     const b = targets[Math.floor(Math.random() * targets.length)]!;

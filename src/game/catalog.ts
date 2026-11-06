@@ -15,7 +15,13 @@ export type Kind =
   | "mosque"
   | "liberation"
   | "palace"
-  | "boubyan";
+  | "boubyan"
+  | "chalet"
+  | "hamra"
+  | "avenues"
+  | "opera"
+  | "mubarakiya"
+  | "stadium";
 
 export type Category = "housing" | "commerce" | "services" | "landmarks";
 
@@ -36,7 +42,20 @@ export type Def = {
   needsPop: number;
   coastBoost: boolean;
   scale: number;
+  /** Highest upgrade level. Commercial and apartment blocks grow into skyscrapers (4–5). */
+  maxLevel?: number;
+  /** Only buildable on a lot that touches the sea (chalets). */
+  needsCoast?: boolean;
+  /** Story era (0-based) that unlocks it; omitted = available from the start. */
+  era?: number;
+  /** Jobs per level, on top of the shop/tower defaults. */
+  jobs?: number;
 };
+
+/** Default highest level for kinds without `maxLevel`. */
+export const MAX_LEVEL = 3;
+export const maxLevelOf = (kind: Kind) => CATALOG[kind].maxLevel ?? MAX_LEVEL;
+export const isLandmark = (kind: Kind) => CATALOG[kind].cat === "landmarks";
 
 export const ROAD_COST = 40;
 
@@ -79,6 +98,7 @@ export const CATALOG: Record<Kind, Def> = {
   },
   apartments: {
     kind: "apartments",
+    maxLevel: 5,
     name: "عمارة",
     blurb: "سكن أكثف للحي",
     cost: 760,
@@ -97,6 +117,7 @@ export const CATALOG: Record<Kind, Def> = {
   },
   shop: {
     kind: "shop",
+    maxLevel: 5,
     name: "محل السوق",
     blurb: "تجارة، وتبي سكان",
     cost: 460,
@@ -115,6 +136,7 @@ export const CATALOG: Record<Kind, Def> = {
   },
   tower: {
     kind: "tower",
+    maxLevel: 5,
     name: "برج مكاتب",
     blurb: "إيراد عالٍ بعد ما تكبر",
     cost: 1500,
@@ -346,6 +368,123 @@ export const CATALOG: Record<Kind, Def> = {
     needsPop: 0,
     coastBoost: true,
     scale: 0.72,
+  },
+  chalet: {
+    kind: "chalet",
+    name: "شاليه بحري",
+    blurb: "شاليه على البحر بمسبح وجلسة",
+    cost: 950,
+    cat: "housing",
+    pop: 10,
+    income: 4.2,
+    powerUse: 1,
+    powerGive: 0,
+    waterUse: 1,
+    waterGive: 0,
+    happy: 4,
+    needsRoad: false,
+    needsPop: 0,
+    coastBoost: true,
+    needsCoast: true,
+    scale: 1.1,
+  },
+  hamra: {
+    kind: "hamra",
+    name: "برج الحمراء",
+    blurb: "أطول برج في الكويت بواجهته المنحوتة",
+    cost: 9000,
+    cat: "landmarks",
+    pop: 0,
+    income: 14,
+    powerUse: 6,
+    powerGive: 0,
+    waterUse: 2,
+    waterGive: 0,
+    happy: 16,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: true,
+    era: 2,
+    jobs: 60,
+    scale: 0.8,
+  },
+  avenues: {
+    kind: "avenues",
+    name: "مجمع الأفنيوز",
+    blurb: "أكبر مجمع تسوق: دخل ووظائف كثيرة",
+    cost: 11000,
+    cat: "landmarks",
+    pop: 0,
+    income: 18,
+    powerUse: 7,
+    powerGive: 0,
+    waterUse: 3,
+    waterGive: 0,
+    happy: 14,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    era: 2,
+    jobs: 90,
+    scale: 1.3,
+  },
+  opera: {
+    kind: "opera",
+    name: "مركز جابر الثقافي",
+    blurb: "دار الأوبرا والمسارح",
+    cost: 6500,
+    cat: "landmarks",
+    pop: 0,
+    income: 4,
+    powerUse: 3,
+    powerGive: 0,
+    waterUse: 1,
+    waterGive: 0,
+    happy: 22,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: true,
+    era: 2,
+    scale: 1.2,
+  },
+  mubarakiya: {
+    kind: "mubarakiya",
+    name: "سوق المباركية",
+    blurb: "السوق التراثي والمطاعم الشعبية",
+    cost: 3200,
+    cat: "landmarks",
+    pop: 0,
+    income: 7,
+    powerUse: 2,
+    powerGive: 0,
+    waterUse: 1,
+    waterGive: 0,
+    happy: 14,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    era: 1,
+    jobs: 30,
+    scale: 1.2,
+  },
+  stadium: {
+    kind: "stadium",
+    name: "استاد جابر الدولي",
+    blurb: "يضاعف أثر بطولات كرة القدم",
+    cost: 8000,
+    cat: "landmarks",
+    pop: 0,
+    income: 3,
+    powerUse: 5,
+    powerGive: 0,
+    waterUse: 2,
+    waterGive: 0,
+    happy: 12,
+    needsRoad: true,
+    needsPop: 0,
+    coastBoost: false,
+    era: 1,
+    scale: 1.4,
   },
 };
 

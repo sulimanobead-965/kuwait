@@ -3,6 +3,7 @@ import type { HudTool } from "../../components/city-hud.tsx";
 import type { Sim } from "@/game/sim";
 import { cellKey, isLand, nearestOpenLot } from "@/game/sim";
 import { COLS, ROWS } from "@/game/land";
+import { isLandmark } from "@/game/catalog";
 import { districtBounds, districtById, sectorsForZone } from "@/game/districts";
 import {
   CAMERA_PITCH_DEGREES,
@@ -696,7 +697,7 @@ export class CityWorld {
           this.hideCoin(record.object.userData.buildingId as string);
         }
         const detail =
-          lod === 2 && ["kuwait", "mosque", "liberation", "palace", "boubyan"].includes(b.kind)
+          lod === 2 && isLandmark(b.kind)
             ? 1
             : lod;
         const built = createBuildingObject(b.kind, b.level, detail, this.materials);
@@ -1041,6 +1042,8 @@ function createInitialPreview(): Sim {
     event: null,
     fame: 0,
     rank: 0,
+    fx: [],
+    crisis: null,
   };
 }
 
