@@ -16,6 +16,7 @@ import {
   isLand,
   placeBuilding,
   priceOf,
+  settleUpgrade,
   serviceCoverage,
   stats,
   upgradeCost,
@@ -71,8 +72,7 @@ function upgradePlan(s: Sim, b: Building, label: string): Plan | null {
     label,
     cost,
     run: () => {
-      if (s.coins < cost) return false;
-      s.coins -= cost;
+      if (!settleUpgrade(s, cost).ok) return false;
       b.level += 1;
       return true;
     },
@@ -86,8 +86,7 @@ function replacePlan(s: Sim, b: Building): Plan {
     label: "عمارة بدل فيلا",
     cost,
     run: () => {
-      if (s.coins < cost) return false;
-      s.coins -= cost;
+      if (!settleUpgrade(s, cost).ok) return false;
       b.kind = "apartments";
       b.level = 1;
       b.stored = 0;
@@ -192,16 +191,15 @@ export function builderMonth(s: Sim) {
   for (let guard = 0; guard < 400; guard += 1) {
     const plan = nextPlan(s);
     if (!plan || plan.cost > left) break;
-    const coins = s.coins;
     if (!plan.run()) break;
-    const cost = coins - s.coins;
-    left -= cost;
-    spent += cost;
+    // The budget caps the volume of works, whoever ends up paying for them.
+    left -= plan.cost;
+    spent += plan.cost;
     done.set(plan.label, (done.get(plan.label) ?? 0) + 1);
   }
   const fee = builderFee(s, spent);
   s.coins -= fee;
-  s.ytd.spend += spent + fee;
+  s.ytd.spend += fee;
   b.spent += spent;
   const works = [...done.values()].reduce((n, v) => n + v, 0);
   b.works += works;

@@ -75,6 +75,7 @@ import {
   MODEL_AREAS,
   RANKS,
   rankOf,
+  GOVERNOR_UPGRADE_SHARE,
   ERAS,
   isUnlocked,
   neighborEffect,
@@ -686,6 +687,12 @@ export function CityHud({
                       {neighborEffect(snap, selected).notes.join(" · ")}
                     </p>
                   )}
+                  {selected.level < maxLevelOf(selected.kind) &&
+                    snap.finance.down.developer <= snap.day && (
+                      <p className="text-xs">
+                        {t("الترقية على المطور، والسكان يدفعون: ٩٩٪ لك و١٪ للمطور")}
+                      </p>
+                    )}
                   {blockReason(selected, snap) && (
                     <p className="text-xs text-coral">{blockReason(selected, snap)}</p>
                   )}
@@ -700,11 +707,18 @@ export function CityHud({
                 >
                   {selected.level >= maxLevelOf(selected.kind)
                     ? t("مكتمل")
-                    : priceOf(upgradeCost(selected.kind, selected.level), snap) === 0
-                      ? t("ترقّي مجاني")
-                      : t("ترقّي {amount}", {
-                          amount: fmt(priceOf(upgradeCost(selected.kind, selected.level), snap)),
-                        })}
+                    : snap.finance.down.developer <= snap.day
+                      ? t("ترقّي · +{amount} لك", {
+                          amount: fmt(
+                            priceOf(upgradeCost(selected.kind, selected.level), snap) *
+                              GOVERNOR_UPGRADE_SHARE,
+                          ),
+                        })
+                      : priceOf(upgradeCost(selected.kind, selected.level), snap) === 0
+                        ? t("ترقّي مجاني")
+                        : t("ترقّي {amount}", {
+                            amount: fmt(priceOf(upgradeCost(selected.kind, selected.level), snap)),
+                          })}
                 </button>
               </div>
             )}

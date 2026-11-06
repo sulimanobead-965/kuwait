@@ -49,6 +49,9 @@ export type FinanceState = {
   /** Mudaraba (profit-sharing) investment deposit and its expected yearly profit. */
   mudaraba: number;
   mudarabaRate: number;
+  /** What residents paid the treasury for developer-run upgrades, and the developer's 1٪. */
+  upgradeIncome: number;
+  developerFees: number;
   /** Lifetime numbers for the report and achievements. */
   earned: number;
   lost: number;
@@ -129,6 +132,8 @@ export function emptyFinance(): FinanceState {
     consultUntil: 0,
     down: { bank: 0, islamic: 0, developer: 0, consultant: 0 },
     murabaha: [],
+    upgradeIncome: 0,
+    developerFees: 0,
     mudaraba: 0,
     mudarabaRate: 0.08,
     earned: 0,
@@ -150,6 +155,8 @@ export function loadFinance(raw: unknown): FinanceState {
     for (const id of ["bank", "islamic", "developer", "consultant"] as const)
       f.down[id] = n(p.down[id]);
   f.mudaraba = Math.max(0, n(p.mudaraba));
+  f.upgradeIncome = Math.max(0, n(p.upgradeIncome));
+  f.developerFees = Math.max(0, n(p.developerFees));
   f.mudarabaRate = p.mudarabaRate === undefined ? 0.08 : Math.max(0, n(p.mudarabaRate));
   if (Array.isArray(p.murabaha))
     f.murabaha = p.murabaha

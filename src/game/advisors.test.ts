@@ -5,6 +5,8 @@ import { CATALOG, maxLevelOf } from "./catalog.ts";
 import { LAND } from "./land.ts";
 import {
   developmentMonth,
+  upgrade,
+  upgradeCost,
   homesPerLevel,
   RESIDENTS_PER_UNIT,
   findModelSite,
@@ -211,4 +213,29 @@ test("the map can hold more than 50 million residents", () => {
   const capacity = land * 0.6 * perTower;
   assert.ok(perTower >= 10_000, String(perTower));
   assert.ok(capacity > 50_000_000, `capacity ${Math.round(capacity).toLocaleString()}`);
+});
+
+test("upgrades are run by the developer and paid by residents: 99% to the governor, 1% to the developer", () => {
+  const s = town();
+  s.coins = 1000;
+  const b = s.buildings.find((x) => x.kind === "villa")!;
+  const price = upgradeCost(b.kind, b.level);
+  assert.equal(upgrade(s, b.id, 0).ok, true);
+  assert.equal(b.level, 2);
+  assert.ok(Math.abs(s.coins - (1000 + price * 0.99)) < 1e-6, "the governor earns 99%");
+  assert.ok(Math.abs(s.finance.developerFees - price * 0.01) < 1e-6, "the developer keeps 1%");
+  // With the developer bankrupt, the city pays the full price again.
+  s.finance.down.developer = s.day + 999;
+  const coins = s.coins;
+  const next = upgradeCost(b.kind, b.level);
+  assert.equal(upgrade(s, b.id, 0).ok, true);
+  assert.ok(Math.abs(s.coins - (coins - next)) < 1e-6);
+  // The construction advisor's upgrades also bring money in.
+  const a = town();
+  a.coins = 100_000;
+  hireBuilder(a);
+  a.builder.share = 50;
+  const income = a.finance.upgradeIncome;
+  builderMonth(a);
+  assert.ok(a.finance.upgradeIncome > income);
 });

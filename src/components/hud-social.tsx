@@ -158,7 +158,7 @@ export function BuilderCard({
       </p>
       <p className="mt-1 text-xs leading-relaxed">
         {t(
-          "يبني ويرقّي كل شهر على حسابك: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. تدفع له التكاليف كاملة وأتعاباً شهرية (حوالي {fee} د.ك + ٥٪ من الأعمال).",
+          "يبني ويرقّي كل شهر: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. الترقيات ينفذها المطور العقاري ويدفعها السكان: ٩٩٪ لصندوقك و١٪ للمطور. أنت تدفع المباني الجديدة وأتعابه الشهرية (حوالي {fee} د.ك + ٥٪ من الأعمال).",
           { fee: fmt(builderFee(snap)) },
         )}
       </p>
@@ -198,6 +198,12 @@ export function BuilderCard({
               {t("آخر شهر: {report}", { report: b.last })}
             </p>
           )}
+          <p className="mt-1 text-xs font-extrabold">
+            {t("ترقيات يدفعها السكان: {amount} لك · {fee} للمطور", {
+              amount: fmt(snap.finance.upgradeIncome),
+              fee: fmt(snap.finance.developerFees),
+            })}
+          </p>
           <p className="mt-1 text-xs">
             {t("المجموع: {works} عمل بقيمة {amount} د.ك", {
               works: fmt(b.works),

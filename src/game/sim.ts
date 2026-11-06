@@ -1754,13 +1754,40 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
   return { ok: false, msg: t("ما في شيء تهدّه هنا") };
 }
 
+/** Share of an upgrade's price that residents pay to the governor; the rest is the developer's fee. */
+export const GOVERNOR_UPGRADE_SHARE = 0.99;
+
+/**
+ * Upgrades are carried out by the real-estate developer and paid for by the
+ * residents who get the better homes and shops: 99٪ of the price goes to the city
+ * treasury and 1٪ to the developer. If the developer is bankrupt, the city pays
+ * the full price itself as before.
+ */
+export function settleUpgrade(
+  s: Sim,
+  cost: number,
+): { ok: true; byResidents: boolean; gain: number } | { ok: false; msg: string } {
+  if (s.finance.down.developer <= s.day) {
+    const gain = cost * GOVERNOR_UPGRADE_SHARE;
+    s.coins += gain;
+    s.ytd.income += gain;
+    s.finance.upgradeIncome += gain;
+    s.finance.developerFees += cost - gain;
+    return { ok: true, byResidents: true, gain };
+  }
+  if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي للترقية") };
+  s.coins -= cost;
+  s.ytd.spend += cost;
+  return { ok: true, byResidents: false, gain: -cost };
+}
+
 export function upgrade(s: Sim, id: string, now: number): Act {
   const b = s.buildings.find((x) => x.id === id);
   if (!b) return { ok: false, msg: t("المبنى مو موجود") };
   if (b.level >= maxLevelOf(b.kind)) return { ok: false, msg: t("وصل آخر مستوى") };
   const cost = priceOf(upgradeCost(b.kind, b.level), s);
-  if (cost > 0 && s.coins < cost) return { ok: false, msg: t("الرصيد ما يكفي للترقية") };
-  s.coins -= cost;
+  const paid = settleUpgrade(s, cost);
+  if (!paid.ok) return paid;
   b.level += 1;
   b.born = now;
   return { ok: true };

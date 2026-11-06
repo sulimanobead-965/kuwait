@@ -812,8 +812,8 @@ export const EN: Record<string, string> = {
   "مثلاً: سليمان": "e.g. Sulaiman",
   صورتك: "Your avatar",
   "احفظ وابدأ": "Save and start",
-  "يبني ويرقّي كل شهر على حسابك: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. تدفع له التكاليف كاملة وأتعاباً شهرية (حوالي {fee} د.ك + ٥٪ من الأعمال).":
-    "Builds and upgrades every month on your budget: adds missing services, replaces villas with apartment blocks and raises them into skyscrapers, plants parks, and upgrades shops and towers. You pay the full costs plus a monthly fee (about {fee} KD + 5% of the works).",
+  "يبني ويرقّي كل شهر: يوفّر الخدمات الناقصة، ويبدّل الفلل بعمارات ويرفعها حتى ناطحات سحاب، ويزرع الحدائق، ويرقّي المحلات والأبراج. الترقيات ينفذها المطور العقاري ويدفعها السكان: ٩٩٪ لصندوقك و١٪ للمطور. أنت تدفع المباني الجديدة وأتعابه الشهرية (حوالي {fee} د.ك + ٥٪ من الأعمال).":
+    "Builds and upgrades every month: adds missing services, replaces villas with apartment blocks and raises them into skyscrapers, plants parks, and upgrades shops and towers. Upgrades are carried out by the developer and paid by residents: 99% to your treasury, 1% to the developer. You pay for new buildings and his monthly fee (about {fee} KD + 5% of the works).",
   "نسبة الميزانية الشهرية له: {share}٪ (≈ {amount} د.ك هذا الشهر)":
     "His share of the monthly budget: {share}% (≈ {amount} KD this month)",
   "آخر شهر: {report}": "Last month: {report}",
@@ -856,4 +856,9 @@ export const EN: Record<string, string> = {
   "استثمار مالي فقط": "Financial investment only",
   "تم تسوير الموقع وبدأ البناء": "Site fenced off; construction has started",
   "اضغط على الخريطة في مكان المشروع": "Tap the map where the project should go",
+  "ترقّي · +{amount} لك": "Upgrade · +{amount} to you",
+  "الترقية على المطور، والسكان يدفعون: ٩٩٪ لك و١٪ للمطور":
+    "The developer upgrades; residents pay: 99% to you, 1% to the developer",
+  "ترقيات يدفعها السكان: {amount} لك · {fee} للمطور":
+    "Resident-paid upgrades: {amount} to you · {fee} to the developer",
 };
