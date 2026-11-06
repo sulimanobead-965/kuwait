@@ -1,23 +1,80 @@
-# Kuwait City — real isometric web and Unity URP source
+# المحافظ — لعبة بناء مدينة الكويت
 
-## Browser
+لعبة بناء مدن عربية بعرض Isometric ثلاثي الأبعاد على خريطة مدينة الكويت الحقيقية. تبدأ **مساعداً للمختار** في حي من أحياء الكويت، وتكبر منطقتك بإرضاء الناس حتى تصير **مختار المنطقة** ثم **المحافظ**.
+
+## طريقة اللعب
+
+1. اضغط **«اختر الحي وابدأ»** واختر حياً: اليرموك أو العديلية أو السرة، أو المنطقة الحرة لكل المدينة.
+2. ابنِ البيوت والمحلات من الأزرار يمين الشاشة، وارصف الطرق، ووفّر الكهرباء والماء.
+3. اضغط على المبنى لتجمع دخله، أو اضغط زر **«اجمع»** في الأسفل.
+4. حافظ على رضا الناس لتزيد السكان وتترقّى.
+
+### الألقاب
+
+| اللقب | عدد السكان |
+| --- | --- |
+| مساعد المختار | من البداية |
+| مختار المنطقة | ٨٠٠ ساكن |
+| المحافظ | ٤٠٠٠ ساكن |
+
+كل ترقية تعطي مكافأة مالية مرة واحدة. اللقب ونسبة الرضا يظهران أعلى يسار الشاشة.
+
+### الرضا والسكان والدخل
+
+- **الخدمات:** كلما كبرت المنطقة احتاجت مدارس ومستوصفات وشرطة وإطفاء وحدائق تكفي سكانها. النقص يُنزل الرضا، ويمكن متابعة نسبة التغطية في لوحة **المستشارون**.
+- **الأسعار:** في لوحة **الميزانية** شريطان: الضريبة، وأسعار الخدمات (رسوم الكهرباء والماء والمعاملات). رفعهما يزيد الدخل لكنه يُغضب الناس.
+- **النتيجة:** الرضا المنخفض يقلّل دخل المباني، والسكان يغادرون المنطقة تدريجياً. والرضا العالي يجذب سكاناً جدداً.
+- لكل مبنى سعر ومصروف شهري. الشوارع الرئيسية في الأحياء المخططة على البلدية.
+
+### الكوارث والقروض
+
+- الكوارث تحدث تلقائياً: حريق، أو عاصفة رملية، أو انقطاع كهرباء، أو أمطار وسيول. كل كارثة تخصم مبلغاً من الرصيد. يمكن إيقافها من لوحة **الكوارث**.
+- إذا صار الرصيد بالسالب، خذ **قرضاً من البنك** في لوحة الميزانية (٢٠٠٠ أو ٥٠٠٠ أو ١٠٠٠٠ د.ك). الفائدة ١٢٪، والقسط يُخصم كل شهر تلقائياً، ويمكن السداد في أي وقت.
+
+### المشاريع والفعاليات
+
+من زر **المشاريع**:
+
+- **مناطق نموذجية جاهزة:** ضاحية سكنية، أو مجمع تجاري، أو مركز خدمات. تُبنى كاملة بشوارعها في أقرب أرض فاضية.
+- **فعاليات ورياضة:** بطولة كرة قدم، وماراثون الكورنيش، ومهرجان هلا فبراير، وحفلة وطنية. ترفع الدخل والرضا وتجذب السكان طوال مدتها، وتترك سمعة دائمة للمنطقة.
+
+### التحكم
+
+- **السحب بإصبع واحد:** يحرّك الخريطة، والأرض تبقى تحت الإصبع تماماً.
+- **إصبعان (قرص):** تكبير وتصغير، أو استخدم أزرار + و − يسار الشاشة.
+- **عند اختيار أداة بناء:** الضغطة القصيرة تبني، والسحب يحرّك الخريطة.
+
+## الخريطة
+
+الأرض مرسومة من ساحل مدينة الكويت الحقيقي (Natural Earth بدقة 1:10m، ملكية عامة) ضمن المربع 47.90°–48.10° شرقاً و29.285°–29.405° شمالاً: جون الكويت شمالاً، ثم الشرق ورأس عجوزة، وساحل السالمية شرقاً. اليرموك والعديلية والسرة في مواقعها الحقيقية تقريباً. دقة الساحل في حدود كيلومتر تقريباً، والخريطة لا تتضمن الطرق الدائرية ولا الشوارع الحقيقية. مخططات القطع داخل الأحياء تفسيرات قابلة للعب، وليست مخططات مساحية.
+
+## التشغيل والتطوير
 
 ```sh
 npm install
-npm run dev
+npm run dev        # http://localhost:8080
 npm run typecheck
 npm run test:game
 npm run build
 ```
 
-`src/game/three/` replaces the original world's building sprites with original volumetric meshes. The Arabic HUD and original `sim.ts` / `catalog.ts` economy, roads, upgrades, ordinances, disasters, missions and v2 saves remain. The group adds an orthographic 32.5° / 45° camera, scene pan/zoom and touch pinch, 17 building models with three LOD tiers, landmarks, instanced traffic/palms, soft shadows and warm day/night emissive windows.
+| المسار | المحتوى |
+| --- | --- |
+| `src/game/sim.ts` | منطق اللعبة: الاقتصاد، الرضا، السكان، الألقاب، الكوارث، القروض، الفعاليات، المناطق النموذجية، الحفظ |
+| `src/game/land.ts` | قناع اليابسة والماء من الساحل الحقيقي |
+| `src/game/districts.ts` | مخططات الأحياء ومواقعها على الخريطة |
+| `src/game/catalog.ts` | المباني وأسعارها وخصائصها |
+| `src/game/three/` | العرض ثلاثي الأبعاد (Three.js): الكاميرا، السحب واللمس، المجسمات، النهار والليل |
+| `src/components/` | الواجهة العربية (لوحات الميزانية والمشاريع والكوارث والمستشارين) |
 
-The starting showcase is separate from the user save. Restored cities are focused by the camera. WebGL failure shows an explicitly labelled interactive 2D compatibility view, not a hidden sprite replacement. HUD building thumbnails and floating income symbols are not used to impersonate 3D buildings.
+يستخدم العرض كاميرا Orthographic بزاويتي 32.5° و45°، و17 مجسماً للمباني بثلاث درجات LOD، ومعالم كويتية، وحركة مرور وأشجار نخيل، وظلالاً ناعمة، ونوافذ تضيء ليلاً. إذا تعذّر WebGL تظهر نسخة ثنائية الأبعاد متوافقة ومُعلَّمة بوضوح.
 
-Software-WebGL Chromium testing only, not physical mobile GPU profiling or an FPS claim. `npm test` has the same pending OG/PWA failures in the unmodified baseline.
+الحفظ محلي في المتصفح، ولكل حي حفظ مستقل. تغيّرت الخريطة في هذه النسخة، فالمدن المحفوظة سابقاً تبدأ بأرض جديدة، ويبقى الرصيد والإعدادات.
 
-## Unity / mobile
+تم الاختبار في Chromium مع WebGL برمجي فقط، وليس على معالج رسوميات جوال حقيقي، ولا يوجد قياس FPS. الأمر `npm test` فيه إخفاقات قديمة في اختبارات OG/PWA موجودة في الأصل.
 
-See [unity/README.md](unity/README.md). The project supplies original procedural volumetric models, URP/Cinemachine camera, touch, core companion economy and local saves, plus EditMode tests. **No Unity editor, Unity license, Android SDK or Xcode/iOS signing was available here**: the Unity scene generator, Arabic layout, native compilation, device performance and tests have not been verified in Unity. It is not a prebuilt Android/iPhone app, baked lightmap scene or full mission/disaster counterpart.
+## Unity / الجوال
 
-Neither version buys assets or publishes the live game. Landmarks are stylized procedural interpretations, not photorealistic assets or architectural scans.
+راجع [unity/README.md](unity/README.md). المشروع يحتوي مجسمات procedural أصلية، وكاميرا URP/Cinemachine، ولمس، واقتصاداً مصاحباً مبسطاً، وحفظاً محلياً، واختبارات EditMode. **لم يتوفر هنا Unity Editor ولا ترخيص Unity ولا Android SDK ولا Xcode/توقيع iOS**، فلم يُتحقق من مولّد المشهد ولا التخطيط العربي ولا البناء الأصلي ولا أداء الأجهزة ولا الاختبارات داخل Unity. ليس تطبيقاً جاهزاً لأندرويد أو آيفون، ولا يتضمن الاقتصاد الجديد (الألقاب، القروض، الفعاليات) الموجود في نسخة الويب.
+
+لا أصول مدفوعة في أي من النسختين، ولا نشر للعبة الحية. المعالم تفسيرات procedural مبسطة، وليست نماذج واقعية أو مسوحات معمارية.
