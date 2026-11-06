@@ -1,6 +1,6 @@
 import type { Cell } from "./camera";
 import { cellWorld, framedView, worldCell } from "./camera";
-import { COLS, LAND, ROWS } from "@/game/land";
+import { COLS, FINE_ROW0, LAND, ROWS } from "@/game/land";
 import { districtBounds, districtById, isDistrictLand } from "@/game/districts";
 import type { Sim } from "@/game/sim";
 import type { HudTool } from "@/components/city-hud";
@@ -262,7 +262,7 @@ export class FallbackCityWorld {
     if (sim.district !== this.district) {
       this.district = sim.district;
       if (sim.district) this.frameDistrict();
-      else this.focus({ c: 140, r: 49 }, 65); // Sharq, south of Kuwait Towers
+      else this.focus({ c: 140, r: 49 + FINE_ROW0 }, 65); // Sharq, south of Kuwait Towers
     }
     this.viewHeight += (this.viewHeightGoal - this.viewHeight) * 0.16;
     const ctx = this.ctx;

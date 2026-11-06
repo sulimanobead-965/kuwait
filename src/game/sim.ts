@@ -21,7 +21,7 @@ import {
   type DevelopmentKind,
   type Site,
 } from "./developments";
-import { COLS, GRID_GEN, ISLAND, ISLAND_CELLS, isIsland, LAND, ROWS } from "./land";
+import { COLS, FINE_ROW0, GRID_GEN, islandAt, ISLANDS, isIsland, LAND, ROWS } from "./land";
 import { msg, t, tx } from "../i18n/index.ts";
 export { districtById, isDistrictLand } from "./districts";
 import {
@@ -1266,7 +1266,7 @@ export function cellTaken(s: Sim, c: number, r: number) {
   const ix = cityIndex(s);
   const k = cellKey(c, r);
   // The island is off-limits until a bridge links it to the mainland.
-  return ix.roads.has(k) || ix.lots.has(k) || (isIsland(c, r) && !islandLinked(s));
+  return ix.roads.has(k) || ix.lots.has(k) || !islandOpen(s, c, r);
 }
 
 /** A road cell laid over the sea: a bridge. */
@@ -1275,52 +1275,74 @@ export function isBridge(key: string) {
   return !isLand(+key.slice(0, comma), +key.slice(comma + 1));
 }
 
-const linkCache = new WeakMap<Sim, { n: number; last: string; linked: boolean }>();
+const linkCache = new WeakMap<Sim, { n: number; last: string; linked: ReadonlySet<number> }>();
 
 /**
- * Is the island linked to the mainland? True once a chain of roads and bridges runs
- * from a mainland road to a bridge cell touching the island.
+ * Islands linked to the mainland: a chain of bridge cells runs from the mainland
+ * shore (or from an island already linked) to the island's shore.
  */
-export function islandLinked(s: Sim) {
+export function linkedIslands(s: Sim): ReadonlySet<number> {
   const last = s.roads[s.roads.length - 1] ?? "";
   const hit = linkCache.get(s);
   if (hit && hit.n === s.roads.length && hit.last === last) return hit.linked;
-  const roads = new Set(s.roads);
-  const queue: string[] = [];
+  const bridges = new Set(s.roads.filter((k) => isBridge(k)));
+  const linked = new Set<number>();
   const seen = new Set<string>();
-  for (const k of roads) {
-    const [c, r] = k.split(",").map(Number) as [number, number];
-    // Start from bridge cells that touch the mainland shore.
-    if (isLand(c, r)) continue;
-    if (DIRS.some(([dc, dr]) => isLand(c + dc, r + dr) && !isIsland(c + dc, r + dr))) {
-      queue.push(k);
-      seen.add(k);
-    }
-  }
-  let linked = false;
-  while (queue.length && !linked) {
-    const k = queue.pop()!;
-    const [c, r] = k.split(",").map(Number) as [number, number];
-    for (const [dc, dr] of DIRS) {
-      const nc = c + dc,
-        nr = r + dr;
-      if (!isLand(c, r) && isIsland(nc, nr)) {
-        linked = true;
-        break;
+  // Land a bridge cell touches: -1 = mainland, otherwise an island id.
+  const shores = (c: number, r: number) => {
+    const out: number[] = [];
+    for (const [dc, dr] of DIRS) if (isLand(c + dc, r + dr)) out.push(islandAt(c + dc, r + dr));
+    return out;
+  };
+  let grew = true;
+  while (grew) {
+    grew = false;
+    const queue: string[] = [];
+    for (const k of bridges) {
+      if (seen.has(k)) continue;
+      const [c, r] = k.split(",").map(Number) as [number, number];
+      if (shores(c, r).some((id) => id === -1 || linked.has(id))) {
+        seen.add(k);
+        queue.push(k);
       }
-      const nk = cellKey(nc, nr);
-      if (seen.has(nk) || !roads.has(nk) || isLand(nc, nr)) continue;
-      seen.add(nk);
-      queue.push(nk);
+    }
+    while (queue.length) {
+      const k = queue.pop()!;
+      const [c, r] = k.split(",").map(Number) as [number, number];
+      for (const id of shores(c, r))
+        if (id >= 0 && !linked.has(id)) {
+          linked.add(id);
+          grew = true;
+        }
+      for (const [dc, dr] of DIRS) {
+        const nk = cellKey(c + dc, r + dr);
+        if (bridges.has(nk) && !seen.has(nk)) {
+          seen.add(nk);
+          queue.push(nk);
+        }
+      }
     }
   }
   linkCache.set(s, { n: s.roads.length, last, linked });
   return linked;
 }
 
-/** Cells of the island, for the renderer and the HUD. */
-export const islandCells = ISLAND_CELLS;
-export const ISLAND_NAME = ISLAND.name;
+/** Is this cell open for building: the mainland, or an island with a bridge? */
+export function islandOpen(s: Sim, c: number, r: number) {
+  const id = islandAt(c, r);
+  return id < 0 || linkedIslands(s).has(id);
+}
+
+/** Kept for older callers: is any island linked? */
+export function islandLinked(s: Sim) {
+  return linkedIslands(s).size > 0;
+}
+
+export const islands = ISLANDS;
+
+function islandLocked(c: number, r: number) {
+  return t("ابنِ جسراً يربط {name} باليابسة أولاً", { name: t(ISLANDS[islandAt(c, r)]!.name) });
+}
 
 export function buildingAt(s: Sim, c: number, r: number) {
   return cityIndex(s).lots.get(cellKey(c, r)) ?? null;
@@ -1439,8 +1461,7 @@ export type Act = { ok: true; fresh?: boolean } | { ok: false; msg: string };
 
 export function placeRoad(s: Sim, c: number, r: number): Act {
   if (!isLand(c, r)) return placeBridge(s, c, r);
-  if (isIsland(c, r) && !islandLinked(s))
-    return { ok: false, msg: t("ابنِ جسراً يربط الجزيرة باليابسة أولاً") };
+  if (!islandOpen(s, c, r)) return { ok: false, msg: islandLocked(c, r) };
   const fence = fenced(s, c, r);
   if (fence) return { ok: false, msg: fence };
   if (
@@ -1479,14 +1500,15 @@ export function placeBridge(s: Sim, c: number, r: number): Act {
   const cost = priceOf(BRIDGE_COST, s);
   if (cost > 0 && s.coins < cost)
     return { ok: false, msg: t("الجسر يكلف {amount} د.ك للخلية", { amount: cost }) };
-  const linked = islandLinked(s);
+  const before = new Set(linkedIslands(s));
   s.coins -= cost;
   s.roads.push(k);
   indexRoadAdded(s, k);
-  if (!linked && islandLinked(s)) {
-    pushLog(s, msg("اكتمل الجسر! {name} صارت متصلة وجاهزة للبناء", { name: ISLAND_NAME }));
-    if (!s.flags.includes("bridge")) s.flags.push("bridge");
-  }
+  for (const id of linkedIslands(s))
+    if (!before.has(id)) {
+      pushLog(s, msg("اكتمل الجسر! {name} صارت متصلة وجاهزة للبناء", { name: ISLANDS[id]!.name }));
+      if (!s.flags.includes("bridge")) s.flags.push("bridge");
+    }
   return { ok: true, fresh: true };
 }
 
@@ -1494,8 +1516,7 @@ export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: num
   const fence = fenced(s, c, r);
   if (fence) return { ok: false, msg: fence };
   if (!isLand(c, r)) return { ok: false, msg: t("ما ينفع البناء في البحر") };
-  if (isIsland(c, r) && !islandLinked(s))
-    return { ok: false, msg: t("ابنِ جسراً يربط الجزيرة باليابسة أولاً") };
+  if (!islandOpen(s, c, r)) return { ok: false, msg: islandLocked(c, r) };
   if (cellTaken(s, c, r)) {
     return { ok: false, msg: t("الأرض مشغولة") };
   }
@@ -1864,7 +1885,7 @@ function areaTables(s: Sim, blockParcels: boolean, blockSchematic: boolean) {
   const blocked = new Int32Array(W * (ROWS + 1));
   const shore = new Int32Array(W * (ROWS + 1));
   const ix = cityIndex(s);
-  const linked = islandLinked(s);
+  const linked = linkedIslands(s);
   for (let r = 0; r < ROWS; r += 1) {
     let rowB = 0;
     let rowS = 0;
@@ -1872,7 +1893,7 @@ function areaTables(s: Sim, blockParcels: boolean, blockSchematic: boolean) {
       const k = cellKey(c, r);
       const bad =
         !isLand(c, r) ||
-        (!linked && isIsland(c, r)) ||
+        (isIsland(c, r) && !linked.has(islandAt(c, r))) ||
         ix.roads.has(k) ||
         ix.lots.has(k) ||
         (s.sites.length > 0 && siteAt(s.sites, c, r) !== null) ||
@@ -2834,9 +2855,15 @@ export function loadSim(district?: DistrictId | null): Sim {
     // The independently owned key, not arbitrary save content, decides layout identity.
     const requestedDistrict = district ?? null;
     s.district = districtById(requestedDistrict)?.id ?? null;
-    if (p.grid !== GRID_GEN) {
+    // Grid 6 is the same map before it grew north: shift its rows into place.
+    const shift = p.grid === 6 ? FINE_ROW0 : 0;
+    if (p.grid !== GRID_GEN && p.grid !== 6) {
       if (!s.history.length) s.history.push(takeSample(s));
       return s;
+    }
+    if (shift) {
+      s.sites = s.sites.map((x) => ({ ...x, r: x.r + shift }));
+      s.fx = s.fx.map((f) => ({ ...f, r: f.r + shift }));
     }
     const o = p.ordinances;
     if (o && typeof o === "object") {
@@ -2869,9 +2896,10 @@ export function loadSim(district?: DistrictId | null): Sim {
     const roadCells: string[] = [];
     for (const k of roads) {
       if (typeof k !== "string") continue;
-      const [c, r] = k.split(",").map(Number);
+      const [c, r0] = k.split(",").map(Number);
+      const r = r0! + shift;
       // Roads on land, and bridges over the sea.
-      if (c! >= 0 && r! >= 0 && c! < COLS && r! < ROWS) roadCells.push(cellKey(c!, r!));
+      if (c! >= 0 && r >= 0 && c! < COLS && r < ROWS) roadCells.push(cellKey(c!, r));
     }
     if (s.district) roadCells.push(...districtRoads(districtById(s.district)!));
     s.roads = [...new Set(roadCells)];
@@ -2882,7 +2910,7 @@ export function loadSim(district?: DistrictId | null): Sim {
       const b = rawB as Partial<Building>;
       if (typeof b.kind !== "string" || !(b.kind in CATALOG)) continue;
       const c0 = Number(b.c);
-      const r0 = Number(b.r);
+      const r0 = Number(b.r) + shift;
       const c = c0;
       const r = r0;
       if (!isLand(c, r) || taken.has(cellKey(c, r))) continue;

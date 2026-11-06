@@ -11,7 +11,7 @@ import {
   sectorsForZone,
   type DistrictId,
 } from "./districts.ts";
-import { cellsFromSource, LAND, sourceCell, SOURCE_LAND } from "./land.ts";
+import { cellsFromSource, FINE_ROW0, LAND, sourceCell, SOURCE_LAND } from "./land.ts";
 import {
   bulldoze,
   cellKey,
@@ -52,10 +52,12 @@ function yarmoukCells(c: number, r: number) {
   return cellsFromSource(c + dc, r + dr);
 }
 
-test("the playable land is five times the source mask", () => {
+test("inside the original box, the playable land is five times the source mask", () => {
   const count = (rows: readonly (readonly number[])[]) =>
     rows.reduce((sum, row) => sum + row.reduce((n, bit) => n + bit, 0), 0);
-  const ratio = count(LAND) / count(SOURCE_LAND);
+  // The map grew north and east; the source mask still covers only the original box.
+  const box = LAND.slice(FINE_ROW0).map((row) => row.slice(0, 210));
+  const ratio = count(box) / count(SOURCE_LAND);
   assert.ok(ratio > 4.6 && ratio < 5.4, String(ratio));
 });
 
@@ -292,5 +294,40 @@ test("preview is read-only; separate v2 saves resume and preserve the legacy cit
   } finally {
     if (oldStorage === undefined) Reflect.deleteProperty(globalThis, "localStorage");
     else globalThis.localStorage = oldStorage;
+  }
+});
+
+test("a city saved before the map grew north is moved onto the same streets", () => {
+  const oldStorage = globalThis.localStorage;
+  const store = new Map<string, string>();
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+    clear: () => store.clear(),
+    key: () => null,
+    length: 0,
+  };
+  try {
+    const city = rich(createInitial());
+    const road = cellsFromSource(54, 30)[0]!;
+    const home = cellsFromSource(55, 30)[0]!;
+    placeRoad(city, road.c, road.r);
+    placeBuilding(city, "villa", home.c, home.r, 0);
+    saveSim(city);
+    // Rewrite the save as the old grid would have stored it.
+    const payload = JSON.parse(store.get("omdat-kuwait-v1")!);
+    payload.grid = 6;
+    payload.roads = payload.roads.map((k: string) => {
+      const [c, r] = k.split(",").map(Number);
+      return `${c},${r! - FINE_ROW0}`;
+    });
+    payload.buildings = payload.buildings.map((b: { r: number }) => ({ ...b, r: b.r - FINE_ROW0 }));
+    store.set("omdat-kuwait-v1", JSON.stringify(payload));
+    const back = loadSim();
+    assert.ok(back.roads.includes(`${road.c},${road.r}`));
+    assert.ok(back.buildings.some((b) => b.kind === "villa" && b.c === home.c && b.r === home.r));
+  } finally {
+    globalThis.localStorage = oldStorage;
   }
 });

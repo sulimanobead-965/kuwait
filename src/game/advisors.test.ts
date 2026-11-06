@@ -428,27 +428,37 @@ test("a selected area is demolished in one go, protected cells stay", async () =
   assert.equal(bulldozeArea(s, 0, 0, 999, 999).ok, false, "nothing left to demolish");
 });
 
-test("the island is locked until a bridge links it, then it can be built on", async () => {
+test("islands are locked until a bridge links them, then they can be built on", async () => {
   const sim = await import("./sim.ts");
-  const { ISLAND, isIsland } = await import("./land.ts");
+  const { ISLANDS, islandAt } = await import("./land.ts");
   const s = town();
   s.coins = 10_000_000;
-  // Find the island's southern tip and the mainland shore straight below it.
-  const c = ISLAND.c;
-  let top = ISLAND.r;
-  while (isIsland(c, top + 1)) top += 1;
-  let shore = top + 1;
-  while (!sim.isLand(c, shore)) shore += 1;
-  assert.equal(sim.islandLinked(s), false);
-  assert.equal(sim.placeBuilding(s, "villa", c, top, 0).ok, false, "locked before the bridge");
-  // Lay the bridge from the shore up to the island.
-  for (let r = shore - 1; r > top; r -= 1) assert.equal(sim.placeRoad(s, c, r).ok, true);
-  assert.equal(sim.islandLinked(s), true);
+  const names = ISLANDS.map((i) => i.name);
+  assert.ok(names.includes("جزيرة بوبيان") && names.includes("جزيرة فيلكا"));
+  const bubiyan = ISLANDS.find((i) => i.name === "جزيرة بوبيان")!.id;
+  // The shortest straight crossing west from Bubiyan's shore to the mainland.
+  let best: { r: number; from: number; to: number } | null = null;
+  for (let r = 0; r < 388; r += 1)
+    for (let c = 1; c < 290; c += 1) {
+      if (islandAt(c, r) !== bubiyan || sim.isLand(c - 1, r)) continue;
+      let x = c - 1;
+      while (x >= 0 && !sim.isLand(x, r)) x -= 1;
+      if (x >= 0 && islandAt(x, r) === -1 && (!best || c - x < best.from - best.to))
+        best = { r, from: c, to: x };
+    }
+  assert.ok(best, "Bubiyan has a crossing to the mainland");
+  const { r, from, to } = best!;
+  assert.equal(sim.islandOpen(s, from, r), false);
+  assert.equal(sim.placeBuilding(s, "villa", from, r, 0).ok, false, "locked before the bridge");
+  for (let c = to + 1; c < from; c += 1) assert.equal(sim.placeRoad(s, c, r).ok, true, `bridge ${c}`);
+  assert.ok(sim.linkedIslands(s).has(bubiyan));
   assert.ok(s.roads.some((k) => sim.isBridge(k)));
-  assert.equal(sim.placeRoad(s, c, top).ok, true, "island roads open");
-  assert.equal(sim.placeBuilding(s, "villa", c + 1, top, 0).ok, true, "island lots open");
-  // A bridge cannot start in open sea.
-  assert.equal(sim.placeRoad(s, 205, 5).ok, false);
+  assert.equal(sim.placeRoad(s, from, r).ok, true, "island roads open");
+  assert.equal(sim.islandOpen(s, from + 1, r), true, "island lots open");
+  // Failaka is still cut off, and a bridge cannot start in open sea.
+  const failaka = ISLANDS.find((i) => i.name === "جزيرة فيلكا")!;
+  assert.equal(sim.islandOpen(s, Math.round(failaka.c), Math.round(failaka.r)), false);
+  assert.equal(sim.placeRoad(s, 280, 300).ok, false);
 });
 
 test("port, refinery and factories earn money for the treasury", async () => {

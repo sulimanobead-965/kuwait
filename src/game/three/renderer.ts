@@ -3,7 +3,7 @@ import type { HudTool } from "../../components/city-hud.tsx";
 import type { Sim } from "@/game/sim";
 import { cellKey, createInitial, isCelebrating, isLand, nearestOpenLot } from "@/game/sim";
 import type { CrisisKind, DisasterKind } from "@/game/sim";
-import { COLS, ROWS } from "@/game/land";
+import { COLS, FINE_ROW0, ROWS } from "@/game/land";
 import { isLandmark } from "@/game/catalog";
 import { districtBounds, districtById, sectorsForZone } from "@/game/districts";
 import {
@@ -107,10 +107,10 @@ type CarSlot = { i: number; x: number; z: number; horizontal: boolean };
 
 /** Finger travel (px) before a build tap turns into a map drag. */
 const PLACE_SLOP = 14;
-/** Farthest zoom-out: a desktop sees the whole 210×203 map, a phone its full height. */
-const MAX_VIEW = 410;
+/** Farthest zoom-out: a desktop sees most of the 290×388 map. */
+const MAX_VIEW = 560;
 /** Start-screen showcase sits on the real Sharq waterfront just south of Kuwait Towers (see land.ts). */
-const PREVIEW_SHIFT = { c: 114, r: 25 } as const;
+const PREVIEW_SHIFT = { c: 114, r: 25 + FINE_ROW0 } as const;
 export const PREVIEW_FOCUS = { c: 26 + PREVIEW_SHIFT.c, r: 24 + PREVIEW_SHIFT.r } as const;
 
 export class CityWorld {
@@ -268,7 +268,7 @@ export class CityWorld {
     this.renderer.shadowMap.autoUpdate = false;
     const pitch = THREE.MathUtils.degToRad(CAMERA_PITCH_DEGREES);
     const yaw = THREE.MathUtils.degToRad(CAMERA_YAW_DEGREES);
-    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, CAMERA_DISTANCE + 800);
+    this.camera = new THREE.OrthographicCamera(-30, 30, 20, -20, 0.1, CAMERA_DISTANCE + 1600);
     this.camera.position
       .copy(this.target)
       .add(
