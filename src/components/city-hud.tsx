@@ -139,7 +139,6 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
     tabs: [
       { id: "budget", label: "الميزانية" },
       { id: "laws", label: "القوانين" },
-      { id: "graphs", label: "الرسوم" },
       { id: "projects", label: "المشاريع" },
     ],
   },
@@ -154,6 +153,7 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
     title: "التقارير والإنجازات",
     tabs: [
       { id: "report", label: "التقرير السنوي" },
+      { id: "graphs", label: "الرسوم" },
       { id: "achievements", label: "الإنجازات" },
     ],
   },

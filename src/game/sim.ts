@@ -249,7 +249,40 @@ export function emptyOrdinances(): Ordinances {
 }
 
 /** Sum of one effect over all active laws, each weighted by its funding strength. */
+/**
+ * Asked for every building's income in every step, and each answer walked all laws
+ * and every board project. Kept per game week; changing a law or its budget makes new
+ * objects (see the game's handlers), which starts afresh.
+ */
+const effectMemo = new WeakMap<
+  Sim,
+  { key: string; ord: unknown; lb: unknown; values: Map<string, number> }
+>();
+
 export function lawEffect(s: Sim, effect: keyof LawEffects) {
+  if (measuringLawBase) return computeLawEffect(s, effect);
+  // Which laws are on and how they are funded, as two numbers (cheap to compare).
+  let on = 0;
+  let funds = 0;
+  for (let i = 0; i < LAW_KEYS.length; i += 1) {
+    const k = LAW_KEYS[i]!;
+    if (s.ordinances[k]) {
+      on += 2 ** i;
+      funds += s.lawBudget[k].value * (i + 1);
+    }
+  }
+  const key = `${Math.floor(s.day / 30)}|${s.board?.projects.length ?? 0}|${on}|${funds}`;
+  let m = effectMemo.get(s);
+  if (!m || m.key !== key || m.ord !== s.ordinances || m.lb !== s.lawBudget) {
+    m = { key, ord: s.ordinances, lb: s.lawBudget, values: new Map() };
+    effectMemo.set(s, m);
+  }
+  let v = m.values.get(effect);
+  if (v === undefined) m.values.set(effect, (v = computeLawEffect(s, effect)));
+  return v;
+}
+
+function computeLawEffect(s: Sim, effect: keyof LawEffects) {
   // Running board projects add to the same city indices as laws.
   let total = effect in BOARD_EFFECT_KEYS ? boardEffect(s, effect as keyof ProjectEffects) : 0;
   for (const key of LAW_KEYS) {
@@ -1209,7 +1242,7 @@ function memo(s: Sim, key: string, fn: () => number) {
   if (!snapshots.has(s)) {
     // The live city: reuse within the same game day and layout (big cities only).
     if (s.buildings.length < 1500) return fn();
-    const sig = `${Math.floor(s.day)}:${s.buildings.length}:${s.roads.length}`;
+    const sig = `${Math.floor(s.day / 7)}:${s.buildings.length}:${s.roads.length}`;
     let lm = liveMemo.get(s);
     if (!lm) liveMemo.set(s, (lm = new Map()));
     const hit = lm.get(key);
@@ -1232,7 +1265,8 @@ export function stats(s: Sim): CityStats {
     // Big live cities: once per game day and layout (the month's accounting asked
     // for a full pass over every building dozens of times).
     if (s.buildings.length < 1500) return computeStats(s);
-    const sig = `${Math.floor(s.day)}|${s.buildings.length}|${s.roads.length}|${s.tax}|${s.occupancy}|${s.coins < 0}`;
+    // A game week: at top speed a day passes every frame, so per-day meant every frame.
+    const sig = `${Math.floor(s.day / 7)}|${s.buildings.length}|${s.roads.length}|${s.tax}|${s.occupancy}|${s.coins < 0}`;
     const hit = liveStats.get(s);
     if (hit && hit.sig === sig) return hit.st;
     const st = computeStats(s);
@@ -1529,11 +1563,12 @@ export function incomePerSec(b: Building, s: Sim, st = stats(s)) {
     v *= 1.1;
   if (d.needsPop > 0 && st.pop < d.needsPop) v *= 0.35;
   if (d.pop > 0) v *= 2 * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1);
+  const fx = stepFx ?? { commerce: lawEffect(s, "commerce"), landmarks: lawEffect(s, "landmarks"), coast: lawEffect(s, "coast"), all: lawEffect(s, "all") };
   if (b.kind === "shop" || b.kind === "tower" || b.kind === "avenues" || b.kind === "mubarakiya")
-    v *= Math.max(0.5, 1 + lawEffect(s, "commerce"));
-  if (CATALOG[b.kind].cat === "landmarks") v *= 1 + lawEffect(s, "landmarks");
-  if (d.coastBoost && coastal(b.c, b.r)) v *= 1 + lawEffect(s, "coast");
-  v *= 1 + lawEffect(s, "all");
+    v *= Math.max(0.5, 1 + fx.commerce);
+  if (CATALOG[b.kind].cat === "landmarks") v *= 1 + fx.landmarks;
+  if (d.coastBoost && coastal(b.c, b.r)) v *= 1 + fx.coast;
+  v *= 1 + fx.all;
   // Oil and shipping follow the world economy.
   if (d.cat === "industry" && crisisOf(s) === "economic") v *= b.kind === "refinery" ? 0.55 : 0.75;
   const tax = 0.55 + (Math.max(0, s.tax) / 100) * 1.2;
@@ -1553,10 +1588,22 @@ export function blockReason(b: Building, s: Sim, st = stats(s)) {
 // on every step took over 100 ms for cities with tens of thousands of buildings.
 const rateCache = new WeakMap<Building, number>();
 let rateCursor = 0;
-const RATE_BUDGET_MS = 4;
+const RATE_BUDGET_MS = 1.5;
+
+/** Law effects on income, looked up once per income step (not once per building). */
+let stepFx: { commerce: number; landmarks: number; coast: number; all: number } | null = null;
 
 export function tick(s: Sim, dt: number) {
   if (!s.started || dt <= 0) return;
+  stepFx = { commerce: lawEffect(s, "commerce"), landmarks: lawEffect(s, "landmarks"), coast: lawEffect(s, "coast"), all: lawEffect(s, "all") };
+  try {
+    tickInner(s, dt);
+  } finally {
+    stepFx = null;
+  }
+}
+
+function tickInner(s: Sim, dt: number) {
   const list = s.buildings;
   if (list.length <= 1500) {
     const st = stats(s);
@@ -2649,7 +2696,7 @@ export function lawStrength(s: Sim, key: keyof Ordinances) {
   // of income measures the whole city's income each time. Keep it for the game day
   // (and the law's budget and city size) instead.
   const b = s.lawBudget[key];
-  const sig = `${Math.floor(s.day)}|${s.buildings.length}|${b.mode}|${b.value}|${b.period}|${s.occupancy}`;
+  const sig = `${Math.floor(s.day / 30)}|${b.mode}|${b.value}|${b.period}`;
   let m = strengthMemo.get(s);
   if (!m) strengthMemo.set(s, (m = new Map()));
   const hit = m.get(key);
