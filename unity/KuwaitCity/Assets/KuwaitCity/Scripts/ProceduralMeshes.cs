@@ -1,0 +1,160 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace KuwaitCity
+{
+    /** Real solid geometry with flat face normals, never a sprite plane. */
+
+    /** Flat, fully batched lane paint. No tile-outline or perimeter-curb geometry. */
+    public enum RoadPaintKind { Dash, Stop }
+    public readonly struct RoadPaint
+    {
+        public readonly RoadPaintKind Kind;public readonly int C,R,DC,DR;
+        public RoadPaint(RoadPaintKind kind,int c,int r,int dc=0,int dr=0){Kind=kind;C=c;R=r;DC=dc;DR=dr;}
+    }
+    public static class RoadPaintLayout
+    {
+        private static readonly int[] D={1,0,0,1,-1,0,0,-1};
+        private static bool HasCell(IReadOnlyCollection<string> roads,int c,int r)=>CityLand.IsLand(c,r)&&roads.Contains(CityLand.Key(c,r));
+        public static List<RoadPaint> At(IReadOnlyCollection<string> roads,int c,int r)
+        {
+            var paint=new List<RoadPaint>();if(!HasCell(roads,c,r))return paint;
+            bool left=HasCell(roads,c-1,r),right=HasCell(roads,c+1,r),up=HasCell(roads,c,r-1),down=HasCell(roads,c,r+1);
+            int neighbors=(left?1:0)+(right?1:0)+(up?1:0)+(down?1:0);if(neighbors>=3)return paint;
+            if((left&&right)!=(up&&down)&&(c+r)%2==0)paint.Add(new RoadPaint(RoadPaintKind.Dash,c,r));
+            for(int i=0;i<D.Length;i+=2)
+            {
+                int dc=D[i],dr=D[i+1];if(!HasCell(roads,c+dc,r+dr))continue;
+                int nextDegree=(HasCell(roads,c+dc-1,r+dr)?1:0)+(HasCell(roads,c+dc+1,r+dr)?1:0)+(HasCell(roads,c+dc,r+dr-1)?1:0)+(HasCell(roads,c+dc,r+dr+1)?1:0);
+                if(nextDegree>=3)paint.Add(new RoadPaint(RoadPaintKind.Stop,c,r,dc,dr));
+            }
+            return paint;
+        }
+    }
+
+    public static class Primitive
+    {
+        private static readonly Vector3[][] CubeFaces = {
+            new[]{new Vector3(-.5f,-.5f,-.5f),new Vector3(-.5f,.5f,-.5f),new Vector3(.5f,.5f,-.5f),new Vector3(.5f,-.5f,-.5f)},
+            new[]{new Vector3(.5f,-.5f,.5f),new Vector3(.5f,.5f,.5f),new Vector3(-.5f,.5f,.5f),new Vector3(-.5f,-.5f,.5f)},
+            new[]{new Vector3(-.5f,-.5f,.5f),new Vector3(-.5f,.5f,.5f),new Vector3(-.5f,.5f,-.5f),new Vector3(-.5f,-.5f,-.5f)},
+            new[]{new Vector3(.5f,-.5f,-.5f),new Vector3(.5f,.5f,-.5f),new Vector3(.5f,.5f,.5f),new Vector3(.5f,-.5f,.5f)},
+            new[]{new Vector3(-.5f,.5f,.5f),new Vector3(.5f,.5f,.5f),new Vector3(.5f,.5f,-.5f),new Vector3(-.5f,.5f,-.5f)},
+            new[]{new Vector3(-.5f,-.5f,-.5f),new Vector3(.5f,-.5f,-.5f),new Vector3(.5f,-.5f,.5f),new Vector3(-.5f,-.5f,.5f)}
+        };
+        public static Mesh Cube()
+        {
+            var vertices=new List<Vector3>();var triangles=new List<int>();
+            foreach(var face in CubeFaces)AddFace(vertices,triangles,face[0],face[1],face[2],face[3]);
+            return Finish("Flat cube",vertices,triangles);
+        }
+        public static void AddFace(List<Vector3> vertices,List<int> triangles,Vector3 a,Vector3 b,Vector3 c,Vector3 d)
+        {
+            int index=vertices.Count;vertices.Add(a);vertices.Add(b);vertices.Add(c);vertices.Add(d);
+            triangles.AddRange(new[]{index,index+1,index+2,index,index+2,index+3});
+        }
+        /** Closed, sloping ellipse used for the Boubyan profile; indexed and volumetric. */
+        public static Mesh BoubyanTower(float height,int sides,int floorCount,out Vector3 baseCenter,out Vector3 crownCenter)
+        {
+            var vertices=new List<Vector3>();var triangles=new List<int>();baseCenter=new Vector3(-.04f,.54f,0);crownCenter=(Point(1,0)+Point(1,Mathf.PI))*.5f;
+            Vector3 Point(float t,float angle)
+            {
+                float crown=Mathf.Pow(Mathf.Max(0,(t-.66f)/.34f),1.4f);
+                return new Vector3(Mathf.Cos(angle)*(.63f-.14f*t)-.04f+.18f*t,
+                    .54f+height*t+.52f*crown*(.5f-.5f*Mathf.Cos(angle)),Mathf.Sin(angle)*(.47f-.1f*t));
+            }
+            for(int floor=0;floor<floorCount;floor++)for(int side=0;side<sides;side++)
+            {
+                float a=side*Mathf.PI*2/sides,b=(side+1)*Mathf.PI*2/sides;
+                AddFace(vertices,triangles,Point(floor/(float)floorCount,b),Point(floor/(float)floorCount,a),Point((floor+1)/(float)floorCount,a),Point((floor+1)/(float)floorCount,b));
+                if(floor==0){int n=vertices.Count;vertices.Add(baseCenter);vertices.Add(Point(0,a));vertices.Add(Point(0,b));triangles.AddRange(new[]{n,n+1,n+2});}
+                if(floor==floorCount-1){int n=vertices.Count;vertices.Add(crownCenter);vertices.Add(Point(1,b));vertices.Add(Point(1,a));triangles.AddRange(new[]{n,n+1,n+2});}
+            }
+            return Finish("Boubyan curved glazed shell",vertices,triangles);
+        }
+        public static Vector3 BoubyanPoint(float t,float angle,float height)
+        {
+            float crown=Mathf.Pow(Mathf.Max(0,(t-.66f)/.34f),1.4f);
+            return new Vector3(Mathf.Cos(angle)*(.63f-.14f*t)-.04f+.18f*t,
+                .54f+height*t+.52f*crown*(.5f-.5f*Mathf.Cos(angle)),Mathf.Sin(angle)*(.47f-.1f*t));
+        }
+        public static Mesh Cylinder(float radius,float height,int sides,float topRatio=1f)
+        {
+            var vertices=new List<Vector3>();var triangles=new List<int>();
+            for(int i=0;i<sides;i++)
+            {
+                float a=i*Mathf.PI*2/sides,b=(i+1)*Mathf.PI*2/sides;
+                var bottomA=new Vector3(Mathf.Cos(a)*radius,-height/2,Mathf.Sin(a)*radius);
+                var bottomB=new Vector3(Mathf.Cos(b)*radius,-height/2,Mathf.Sin(b)*radius);
+                var topA=bottomA*topRatio;topA.y=height/2;
+                var topB=bottomB*topRatio;topB.y=height/2;
+                AddFace(vertices,triangles,bottomB,bottomA,topA,topB);
+                int n=vertices.Count;vertices.Add(new Vector3(0,-height/2,0));vertices.Add(bottomA);vertices.Add(bottomB);triangles.AddRange(new[]{n,n+1,n+2});
+                if(topRatio>.02f){n=vertices.Count;vertices.Add(new Vector3(0,height/2,0));vertices.Add(topB);vertices.Add(topA);triangles.AddRange(new[]{n,n+1,n+2});}
+            }
+            return Finish("Cylinder",vertices,triangles);
+        }
+        public static Mesh Sphere(int sides)
+        {
+            int rings=Mathf.Max(3,sides/2);var vertices=new List<Vector3>();var triangles=new List<int>();
+            for(int j=0;j<rings;j++)for(int i=0;i<sides;i++)
+            {
+                Vector3 Point(int ring,int index)
+                {
+                    float u=index*Mathf.PI*2/sides,v=ring*Mathf.PI/rings;
+                    return new Vector3(Mathf.Sin(v)*Mathf.Cos(u),Mathf.Cos(v),Mathf.Sin(v)*Mathf.Sin(u))*.5f;
+                }
+                AddFace(vertices,triangles,Point(j,i),Point(j+1,i),Point(j+1,i+1),Point(j,i+1));
+            }
+            return Finish("Low-poly sphere",vertices,triangles);
+        }
+        private static Mesh Finish(string name,List<Vector3> vertices,List<int> triangles)
+        {
+            var mesh=new Mesh{name=name};mesh.SetVertices(vertices);mesh.SetTriangles(triangles,0);
+            mesh.RecalculateNormals();mesh.RecalculateBounds();return mesh;
+        }
+    }
+
+    public static class MeshCosts
+    {
+        public static int Triangles(Dictionary<Material,Mesh> model)
+        {
+            int count=0;foreach(var pair in model)count+=(int)pair.Value.GetIndexCount(0)/3;return count;
+        }
+        public static void Release(Dictionary<Material,Mesh> model)
+        {
+            if(model==null)return;
+            foreach(var pair in model)if(pair.Value!=null)UnityEngine.Object.Destroy(pair.Value);
+            model.Clear();
+        }
+    }
+
+    /** Mesh ownership stays local to a building; rebuilt views dispose only their own meshes. */
+    public sealed class BuildingView : MonoBehaviour
+    {
+        private readonly List<Mesh> owned=new List<Mesh>();
+        public string BuildingId {get;private set;}
+        public BuildingKind Kind {get;private set;}
+        public int Level {get;private set;}
+        public int Lod {get;private set;}
+        public float Rotation {get;set;}
+        public void Populate(BuildingRecord record,Dictionary<Material,Mesh> geometries,int lod)
+        {
+            Clear();BuildingId=record.Id;Kind=record.Kind;Level=record.Level;Lod=lod;
+            foreach(var pair in geometries)
+            {
+                var node=new GameObject(pair.Key.name);node.transform.SetParent(transform,false);
+                node.AddComponent<MeshFilter>().sharedMesh=pair.Value;
+                var renderer=node.AddComponent<MeshRenderer>();renderer.sharedMaterial=pair.Key;
+                owned.Add(pair.Value);
+            }
+        }
+        public void Clear()
+        {
+            for(int i=transform.childCount-1;i>=0;i--)Destroy(transform.GetChild(i).gameObject);
+            foreach(var mesh in owned)if(mesh!=null)Destroy(mesh);
+            owned.Clear();
+        }
+        private void OnDestroy(){Clear();}
+    }
+}

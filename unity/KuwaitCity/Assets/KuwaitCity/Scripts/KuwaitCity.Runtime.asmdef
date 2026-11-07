@@ -1,0 +1,7 @@
+{
+  "name": "KuwaitCity.Runtime",
+  "references": ["Unity.RenderPipelines.Universal.Runtime", "Unity.Cinemachine", "Unity.InputSystem", "Unity.ugui"],
+  "includePlatforms": [],
+  "allowUnsafeCode": false,
+  "autoReferenced": true
+}

@@ -1,31 +1,83 @@
 import { useEffect, useRef, useState } from "react";
-import { CityHud, type HudTool } from "@/components/city-hud";
+import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
+import { payObligations } from "@/game/obligations";
+import { addOrder, approveProject, cancelOrder, setDeptParam } from "@/game/board";
+import { buyStock, sellStock } from "@/game/stocks";
+import { DistrictSelector } from "@/components/district-selector";
+import { districtById, type DistrictId } from "@/game/districts";
+
+/** The game has one map now: the free zone, the whole city. */
+const FREE_ZONE: DistrictId = "free";
+import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
+import type { Cell } from "@/game/three/camera";
+import type { DayMode } from "@/game/three/day-night";
+import { FallbackCityWorld } from "@/game/three/fallback";
 import { createAudio } from "@/game/audio";
+import { bootLang, dirOf, msg, t, useLang, bigNum, getLang } from "@/i18n";
 import {
-  CATALOG,
-  KINDS,
-  type Category,
-  type Kind,
-} from "@/game/catalog";
-import { CELL, COLS, LAND, ROWS, WORLD_H, WORLD_W } from "@/game/land";
+  setInsurance,
+  buySukuk,
+  depositMudaraba,
+  takeMurabaha,
+  withdrawMudaraba,
+  buyBond,
+  deposit as depositMoney,
+  hireConsultant,
+  startProject,
+  withdraw as withdrawMoney,
+  repayMurabaha,
+} from "@/game/finance";
+import { TUTORIAL, WelcomeBack, type Celebration } from "@/components/hud-panels";
+import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/hud-social";
+import { fireBuilder, hireBuilder } from "@/game/builder";
+import { auditNpc, borrowFrom, chat, greet, holdToAccount, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
+import { CATALOG, type Category, type Kind } from "@/game/catalog";
+import { CloudFail, cloudInfo, loadSession, pushSave, snapshotLocal } from "@/game/cloud";
+import { aboutGame, errorText } from "@/components/hud-cloud";
 import {
   advanceDays,
   advanceQuest,
   bulldoze,
-  cellKey,
+  bulldozeArea,
+  buyModelArea,
+  startDevelopment,
+  giveAid,
+  checkPromotion,
+  checkAchievements,
+  COST_MAX,
+  eraOf,
+  ERAS,
+  RANKS,
+  startCrisis,
+  welcomeBack,
+  type CostKey,
+  type CrisisKind,
+  repayLoan,
+  startEvent,
+  takeLoan,
+  type EventKind,
+  type ModelKind,
   cloneSim,
   coastal,
   collectAll,
+  saveFailed,
+  freezeSaves,
+  LAW_MAX_PCT,
   collectOne,
   createInitial,
-  isLand,
+  createInitialDistrict,
   loadSim,
+  nearestOpenLot,
   placeBuilding,
   placeRoad,
   planZone,
   rollLuck,
   routeOnLand,
+  isLand,
   saveSim,
+  setDisasterInsurance,
+  setAutoCollect,
+  donate,
   stats,
   tick,
   totalStored,
@@ -33,6 +85,7 @@ import {
   upgrade,
   type DisasterKind,
   type Ordinances,
+  type LawBudget,
   type Sim,
   type ZonePick,
 } from "@/game/sim";
@@ -47,34 +100,131 @@ declare global {
       place: (kind: string, c: number, r: number) => string;
       road: (c: number, r: number) => string;
       coins: () => number;
+      grant?: (amount: number, days?: number) => void;
       pop: () => number;
       started: () => void;
+    };
+    __city3d?: {
+      diagnostics: () => WorldDiagnostics;
+      projectCell: (c: number, r: number) => { x: number; y: number };
     };
   }
 }
 
+/** Little dinar coins fly from a building to the treasury counter. */
+function flyCoins(from: { x: number; y: number }) {
+  const layer = document.querySelector(".coin-fly-layer");
+  const target = document.getElementById("hud-coins")?.getBoundingClientRect();
+  if (!layer || !target || from.x < 0) return;
+  const dx = target.left + target.width / 2 - from.x;
+  const dy = target.top + target.height / 2 - from.y;
+  for (let i = 0; i < 6; i += 1) {
+    const coin = document.createElement("i");
+    coin.className = "coin-fly";
+    coin.style.left = `${from.x + (Math.random() - 0.5) * 24}px`;
+    coin.style.top = `${from.y + (Math.random() - 0.5) * 16}px`;
+    coin.style.setProperty("--dx", `${dx}px`);
+    coin.style.setProperty("--dy", `${dy}px`);
+    coin.style.animationDelay = `${i * 45}ms`;
+    layer.appendChild(coin);
+    window.setTimeout(() => coin.remove(), 1100 + i * 45);
+  }
+}
+
 function fmt(n: number) {
-  return Math.floor(n).toLocaleString("en-US");
+  return Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.floor(n).toLocaleString("en-US");
 }
 
 export function CityGame() {
+  const lang = useLang();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<Sim>(createInitial());
   const toolRef = useRef<Tool>(null);
   const syncRef = useRef<() => void>(() => {});
   const toastRef = useRef<(text: string) => void>(() => {});
   const selectRef = useRef<(id: string | null) => void>(() => {});
-  const clockRef = useRef(0);
   const timeRef = useRef(0);
+  const worldRef = useRef<CityWorld | FallbackCityWorld | null>(null);
+  const lastRoadCell = useRef<Cell | null>(null);
+  const [graphicsError, setGraphicsError] = useState(false);
+  const [dayMode, setDayModeState] = useState<DayMode>("auto");
 
   const [snap, setSnap] = useState<Sim>(createInitial());
   const [tool, setTool] = useState<Tool>(null);
+  // The map's heading, mirrored for the compass (0 = north up).
+  const [heading, setHeading] = useState(45);
+  const [graphics, setGraphics] = useState<"auto" | "high" | "low">("auto");
+  useEffect(() => {
+    const id = window.setTimeout(() => setGraphics(worldRef.current?.graphicsMode() ?? "auto"), 500);
+    return () => window.clearTimeout(id);
+  }, []);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const h = Math.round(worldRef.current?.heading() ?? 45);
+      setHeading((old) => (old === h ? old : h));
+    }, 150);
+    // Q / E turn the map on a keyboard (not while typing).
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "q" || e.key === "Q") worldRef.current?.rotate(-45);
+      else if (e.key === "e" || e.key === "E") worldRef.current?.rotate(45);
+      else if (e.key === "n" || e.key === "N") worldRef.current?.northUp();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
   const [zone, setZone] = useState<{ c0: number; r0: number; c1: number; r1: number } | null>(null);
   const [cat, setCat] = useState<Category>("housing");
   const [selected, setSelected] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [districtChooser, setDistrictChooser] = useState(false);
   const toastSeq = useRef(0);
+  const setToolRef = useRef(setTool);
+  setToolRef.current = setTool;
+  const notifyRef = useRef<{ promotion: () => void }>({ promotion: () => {} });
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const celebrateQueue = useRef<Celebration[]>([]);
+  const [welcome, setWelcome] = useState<ReturnType<typeof welcomeBack> | null>(null);
+  const [music, setMusic] = useState(false);
+  const [player, setPlayer] = useState<Player | null>(() =>
+    typeof localStorage === "undefined" ? null : loadPlayer(),
+  );
+  const [editPlayer, setEditPlayer] = useState(false);
+  const audioRef = useRef<ReturnType<typeof createAudio> | null>(null);
+  const [tutorial, setTutorial] = useState<number>(() => {
+    if (typeof localStorage === "undefined") return -1;
+    const raw = localStorage.getItem("omdat-tutorial");
+    return raw === "done" ? -1 : Number(raw ?? 0) || 0;
+  });
+  const tutorialBase = useRef<{
+    roads: number;
+    buildings: number;
+    collected: number;
+    levels: number;
+  } | null>(null);
+
+  function celebrate(item: Celebration) {
+    celebrateQueue.current.push(item);
+    setCelebration((current) => current ?? celebrateQueue.current.shift() ?? null);
+  }
+  const celebrateRef = useRef(celebrate);
+  celebrateRef.current = celebrate;
+
+  function nextCelebration() {
+    setCelebration(celebrateQueue.current.shift() ?? null);
+  }
+
+  function advanceTutorial(step: number) {
+    const next = step + 1 >= TUTORIAL.length ? -1 : step + 1;
+    localStorage.setItem("omdat-tutorial", next < 0 ? "done" : String(next));
+    tutorialBase.current = null;
+    setTutorial(next);
+  }
 
   toolRef.current = tool;
 
@@ -86,11 +236,30 @@ export function CityGame() {
     }, 2400);
   }
 
+  // Saving a big city writes ~0.5 MB to localStorage; do it at most every 3 s while
+  // playing, and right away when the page is hidden or closed.
+  const lastSave = useRef(0);
   function sync() {
+    simRef.current.lastSeen = Date.now();
     const next = cloneSim(simRef.current);
     setSnap(next);
-    saveSim(simRef.current);
+    const now = Date.now();
+    if (now - lastSave.current > 3000) {
+      lastSave.current = now;
+      saveSim(simRef.current);
+      if (saveFailed() && !saveWarned.current) {
+        saveWarned.current = true;
+        toastRef.current(msg("ذاكرة المتصفح ممتلئة: ما قدرت أحفظ المدينة"));
+      }
+    }
   }
+  const saveWarned = useRef(false);
+  function flushSave() {
+    lastSave.current = Date.now();
+    if (simRef.current.started) saveSim(simRef.current);
+  }
+  const flushRef = useRef(flushSave);
+  flushRef.current = flushSave;
 
   syncRef.current = sync;
   toastRef.current = pushToast;
@@ -102,837 +271,331 @@ export function CityGame() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    simRef.current = loadSim();
-    setSnap(cloneSim(simRef.current));
-
+    let world: CityWorld | FallbackCityWorld | null = null;
+    function restoreGraphics() {
+      setGraphicsError(false);
+      if (world instanceof CityWorld) world.renderer.debug.checkShaderErrors = true;
+    }
     const audio = createAudio();
-    const cam = { x: WORLD_W * 0.56, y: WORLD_H * 0.65, z: 0.7 };
-    let cssW = 1;
-    let cssH = 1;
-    let dpr = 1;
-    let t = 0;
-    let vis = 0.5;
+    audioRef.current = audio;
+    let failed = false;
+    try {
+      world = new CityWorld(
+        canvas,
+        {
+          cell: (at) => interact(at),
+          collect: (id) => collect(id),
+          zoom: (factor) => world?.zoom(factor),
+          strokeEnd: () => {
+            lastRoadCell.current = null;
+          },
+          zone: (box) => setZone(box),
+        },
+        () => audio.unlock(),
+      );
+      worldRef.current = world;
+    } catch (error) {
+      console.warn("WebGL unavailable; using the interactive 2D compatibility view.", error);
+      world = new FallbackCityWorld(
+        canvas,
+        {
+          cell: (at) => interact(at),
+          collect: (id) => collect(id),
+          zoom: (factor) => world?.zoom(factor),
+          strokeEnd: () => {
+            lastRoadCell.current = null;
+          },
+          zone: (box) => setZone(box),
+        },
+        () => audio.unlock(),
+      );
+      worldRef.current = world;
+      failed = true;
+    }
+    simRef.current = loadSim(FREE_ZONE);
+    if (simRef.current.district) {
+      simRef.current.started = true;
+      simRef.current.speed = 0;
+    }
+    if (simRef.current.started) {
+      const back = welcomeBack(simRef.current, Date.now());
+      if (back.daily > 0 || back.offline > 0) setWelcome(back);
+      saveSim(simRef.current);
+    }
+    setSnap(cloneSim(simRef.current));
+    world.sync(simRef.current, timeRef.current, true);
+    window.__city3d = {
+      diagnostics: () => world!.diagnostics(),
+      projectCell: (c, r) =>
+        world instanceof CityWorld ? world.projectCell(c, r) : { x: -1, y: -1 },
+    };
+    let raf = 0;
+    let previous = 0;
+    let elapsed = 0;
     let acc = 0;
     let hudAcc = 0;
-    let raf = 0;
-    let running = true;
-    let camReady = false;
-    const sprites = new Map<Kind, HTMLImageElement>();
-    const map = new Image();
-    map.src = "/game/map.jpg";
-    for (const kind of KINDS) {
-      const img = new Image();
-      img.onload = () => sprites.set(kind, img);
-      img.src = `/game/${kind}.png`;
-      if (img.complete && img.naturalWidth) sprites.set(kind, img);
-    }
-
-    const floaters: { x: number; y: number; text: string; life: number }[] = [];
-    const pointers = new Map<number, { x: number; y: number }>();
-    let pinch: { dist: number; z: number; cx: number; cy: number } | null = null;
-    let drag: {
-      x: number;
-      y: number;
-      moved: number;
-      paint: boolean;
-      zone: boolean;
-      fail: string | null;
-    } | null = null;
-    let hover: { c: number; r: number } | null = null;
-    const coinHits: { id: string; x: number; y: number }[] = [];
     let hiddenAt = 0;
-
-    function resize() {
-      const rect = canvas!.getBoundingClientRect();
-      cssW = Math.max(1, rect.width);
-      cssH = Math.max(1, rect.height);
-      dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas!.width = Math.round(cssW * dpr);
-      canvas!.height = Math.round(cssH * dpr);
-      if (!camReady) {
-        const fit = Math.min(cssW / WORLD_W, cssH / WORLD_H) * 0.92;
-        cam.z = Math.min(3.2, Math.max(fit, 34 / CELL));
-        camReady = true;
-      }
-      clampCam();
-    }
-
-    function clampCam() {
-      const minZ = Math.min(cssW / WORLD_W, cssH / WORLD_H) * 0.92;
-      cam.z = Math.max(minZ, Math.min(3.4, cam.z));
-      const halfW = cssW / 2 / cam.z;
-      const halfH = cssH / 2 / cam.z;
-      const margin = CELL * 1.4;
-      cam.x =
-        halfW * 2 >= WORLD_W
-          ? WORLD_W / 2
-          : Math.max(halfW - margin, Math.min(WORLD_W - halfW + margin, cam.x));
-      cam.y =
-        halfH * 2 >= WORLD_H
-          ? WORLD_H / 2
-          : Math.max(halfH - margin, Math.min(WORLD_H - halfH + margin, cam.y));
-    }
-
-    function screenToWorld(sx: number, sy: number) {
-      return {
-        wx: cam.x + (sx - cssW / 2) / cam.z,
-        wy: cam.y + (sy - cssH / 2) / cam.z,
-      };
-    }
-
-    function worldToScreen(wx: number, wy: number) {
-      return {
-        x: cssW / 2 + (wx - cam.x) * cam.z,
-        y: cssH / 2 + (wy - cam.y) * cam.z,
-      };
-    }
-
-    function applyWorld() {
-      ctx!.setTransform(
-        dpr * cam.z,
-        0,
-        0,
-        dpr * cam.z,
-        dpr * (cssW / 2 - cam.x * cam.z),
-        dpr * (cssH / 2 - cam.y * cam.z),
-      );
-    }
-    function local(e: PointerEvent) {
-      const rect = canvas!.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    }
-
-    function cellAt(sx: number, sy: number) {
-      const { wx, wy } = screenToWorld(sx, sy);
-      return { c: Math.floor(wx / CELL), r: Math.floor(wy / CELL) };
-    }
-
-    function burst(c: number, r: number, text: string) {
-      floaters.push({ x: (c + 0.5) * CELL, y: r * CELL, text, life: 0.95 });
-      if (floaters.length > 24) floaters.shift();
-    }
-
     function noteQuests() {
-      const gained = advanceQuest(simRef.current);
-      for (const g of gained) {
+      for (const gained of advanceQuest(simRef.current)) {
         audio.play("quest", simRef.current.mute);
-        toastRef.current(`تمت المهمة +${fmt(g.reward)} د.ك`);
+        toastRef.current(t("تمت المهمة +{amount} د.ك", { amount: fmt(gained.reward) }));
+      }
+      notePromotion();
+    }
+    let eraSeen = eraOf(simRef.current);
+    function notePromotion() {
+      const sim = simRef.current;
+      const up = checkPromotion(sim);
+      if (up) {
+        audio.play("quest", sim.mute);
+        // Stored as keys/encoded messages so the card follows a language switch.
+        celebrateRef.current({
+          kind: "rank",
+          title: up.title,
+          detail:
+            up.title === RANKS[RANKS.length - 1]!.title
+              ? msg("مكافأة {amount} د.ك. صرت المحافظ! الهدف القادم: مليون ساكن.", {
+                  amount: fmt(up.bonus),
+                })
+              : msg("مكافأة {amount} د.ك. الترقية القادمة: {title}", {
+                  amount: fmt(up.bonus),
+                  title: RANKS[RANKS.findIndex((r) => r.title === up.title) + 1]?.title ?? "",
+                }),
+        });
+      }
+      const era = eraOf(sim);
+      if (era > eraSeen) {
+        eraSeen = era;
+        celebrateRef.current({
+          kind: "era",
+          title: ERAS[era]!,
+          detail: msg("انفتحت مبانٍ ومعالم جديدة في قائمة البناء."),
+        });
+      }
+      for (const a of checkAchievements(sim)) {
+        audio.play("collect", sim.mute);
+        toastRef.current(msg("🏆 إنجاز: {name}", { name: a.name }));
       }
     }
-
-    function handleTap(sx: number, sy: number) {
+    notifyRef.current = { promotion: notePromotion };
+    function collect(id: string) {
+      const b = simRef.current.buildings.find((x) => x.id === id);
+      const n = collectOne(simRef.current, id);
+      if (n <= 0) return;
+      if (b && world instanceof CityWorld) flyCoins(world.projectCell(b.c, b.r));
+      audio.play("collect", simRef.current.mute);
+      syncRef.current();
+      toastRef.current(t("+{amount} د.ك", { amount: fmt(n) }));
+    }
+    function interact(at: Cell) {
       const sim = simRef.current;
       if (!sim.started) return;
       const current = toolRef.current;
-      if (!current || current.kind !== "bulldoze") {
-        let best: { id: string; d: number } | null = null;
-        for (const hit of coinHits) {
-          const d = Math.hypot(hit.x - sx, hit.y - sy);
-          if (d < 28 && (!best || d < best.d)) best = { id: hit.id, d };
-        }
-        if (best) {
-          const b = sim.buildings.find((x) => x.id === best!.id);
-          const n = collectOne(sim, best.id);
-          if (n > 0 && b) {
-            audio.play("collect", sim.mute);
-            burst(b.c, b.r, `+${n}`);
-            syncRef.current();
-          }
-          return;
-        }
-      }
-      const { c, r } = cellAt(sx, sy);
       if (current?.kind === "bulldoze") {
-        const act = bulldoze(sim, c, r);
-        if (!act.ok) {
-          audio.play("error", sim.mute);
-          toastRef.current(act.msg);
-        } else {
-          audio.play("place", sim.mute);
-          noteQuests();
-          syncRef.current();
+        const act = bulldoze(sim, at.c, at.r);
+        audio.play(act.ok ? "place" : "error", sim.mute);
+        if (!act.ok) toastRef.current(act.msg);
+        else noteQuests();
+      } else if (current?.kind === "road") {
+        const from = lastRoadCell.current;
+        const path = from
+          ? routeOnLand(from.c, from.r, at.c, at.r)
+          : routeOnLand(at.c, at.r, at.c, at.r);
+        let changed = false;
+        for (const step of path) {
+          const act = placeRoad(sim, step.c, step.r);
+          if (!act.ok) {
+            if (act.msg === t("الرصيد ما يكفي للطريق") || !from || !isLand(step.c, step.r)) {
+              audio.play("error", sim.mute);
+              toastRef.current(act.msg);
+            }
+            continue;
+          }
+          changed ||= Boolean(act.fresh);
         }
-        return;
-      }
-      if (current?.kind === "road") {
-        const act = placeRoad(sim, c, r);
-        if (!act.ok) {
-          audio.play("error", sim.mute);
-          toastRef.current(act.msg);
-        } else if (act.fresh) {
+        if (changed) {
           audio.play("road", sim.mute);
           noteQuests();
-          syncRef.current();
         }
-        return;
-      }
-      if (current?.kind === "build") {
-        const act = placeBuilding(sim, current.building, c, r, t);
-        if (!act.ok) {
-          audio.play("error", sim.mute);
-          toastRef.current(act.msg);
-        } else {
-          audio.play("place", sim.mute);
-          if (coastal(c, r) && CATALOG[current.building].coastBoost) {
-            toastRef.current("على الكورنيش +١٥٪");
-          }
+        lastRoadCell.current = at;
+      } else if (current?.kind === "site") {
+        const act = startDevelopment(sim, current.project, at, current.developer);
+        audio.play(act.ok ? "quest" : "error", sim.mute);
+        if (!act.ok) toastRef.current(act.msg);
+        else {
+          toastRef.current(t("تم تسوير الموقع وبدأ البناء"));
+          setToolRef.current(null);
+        }
+      } else if (current?.kind === "build") {
+        const lot = nearestOpenLot(sim, at.c, at.r, 1) ?? at;
+        const act = placeBuilding(sim, current.building, lot.c, lot.r, timeRef.current);
+        audio.play(act.ok ? "place" : "error", sim.mute);
+        if (!act.ok) toastRef.current(act.msg);
+        else {
+          if (coastal(at.c, at.r) && CATALOG[current.building].coastBoost)
+            toastRef.current(t("على الكورنيش +١٥٪"));
           noteQuests();
-          syncRef.current();
         }
-        return;
+      } else {
+        const found = sim.buildings.find((b) => b.c === at.c && b.r === at.r);
+        selectRef.current(found ? found.id : null);
       }
-      const found = sim.buildings.find((b) => b.c === c && b.r === r);
-      selectRef.current(found ? found.id : null);
+      syncRef.current();
     }
-
-    function onDown(e: PointerEvent) {
-      audio.unlock();
-      canvas!.setPointerCapture(e.pointerId);
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const p = local(e);
-      if (pointers.size >= 2) {
-        const pts = [...pointers.values()];
-        const a = pts[0]!;
-        const b = pts[1]!;
-        pinch = {
-          dist: Math.max(8, Math.hypot(a.x - b.x, a.y - b.y)),
-          z: cam.z,
-          cx: (a.x + b.x) / 2,
-          cy: (a.y + b.y) / 2,
-        };
-        drag = null;
-        return;
-      }
-      const zoning = Boolean(simRef.current.started && toolRef.current?.kind === "zone");
-      const paint = Boolean(simRef.current.started && toolRef.current?.kind === "road");
-      const cell = cellAt(p.x, p.y);
-      drag = { x: p.x, y: p.y, moved: 0, paint: paint && !zoning, zone: zoning, fail: null };
-      if (zoning) {
-        zoneRectRef.current = { c0: cell.c, r0: cell.r, c1: cell.c, r1: cell.r };
-        setZoneRef.current(null);
-      }
-      if (paint && !zoning) paintRoad(p.x, p.y);
-    }
-
-    let lastCell: { c: number; r: number } | null = null;
-
-    function paintRoad(sx: number, sy: number) {
-      if (!drag) return;
-      const here = cellAt(sx, sy);
-      const from = lastCell ?? here;
-      const path = routeOnLand(from.c, from.r, here.c, here.r);
-      let sounded = false;
-      for (const step of path) {
-        const act = placeRoad(simRef.current, step.c, step.r);
-        if (!act.ok) {
-          if (act.msg.includes("رصيد") && !drag.fail?.startsWith("!")) {
-            drag.fail = `!${act.msg}`;
-            audio.play("error", simRef.current.mute);
-            toastRef.current(act.msg);
-          } else if (!act.msg.includes("رصيد")) {
-            drag.fail = act.msg;
-          }
-          continue;
-        }
-        lastCell = step;
-        if (act.fresh && !sounded) {
-          sounded = true;
-          audio.play("road", simRef.current.mute);
-        }
-      }
-    }
-
-    function onMove(e: PointerEvent) {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      const p = local(e);
-      hover = cellAt(p.x, p.y);
-      if (pointers.size >= 2 && pinch) {
-        const pts = [...pointers.values()];
-        const a = pts[0]!;
-        const b = pts[1]!;
-        const dist = Math.max(8, Math.hypot(a.x - b.x, a.y - b.y));
-        const midX = ((a.x + b.x) / 2) - (canvas!.getBoundingClientRect().left);
-        const midY = ((a.y + b.y) / 2) - (canvas!.getBoundingClientRect().top);
-        const w = screenToWorld(midX, midY);
-        cam.z = pinch.z * (dist / pinch.dist);
-        clampCam();
-        const w2 = screenToWorld(midX, midY);
-        cam.x += w.wx - w2.wx;
-        cam.y += w.wy - w2.wy;
-        clampCam();
-        return;
-      }
-      if (!drag) return;
-      const dx = p.x - drag.x;
-      const dy = p.y - drag.y;
-      drag.moved += Math.hypot(dx, dy);
-      drag.x = p.x;
-      drag.y = p.y;
-      if (drag.paint) {
-        paintRoad(p.x, p.y);
-        return;
-      }
-      if (drag.zone && zoneRectRef.current) {
-        const cell = cellAt(p.x, p.y);
-        zoneRectRef.current = { ...zoneRectRef.current, c1: cell.c, r1: cell.r };
-        return;
-      }
-      if (drag.moved > 2) {
-        cam.x -= (dx / cam.z) * 1.25;
-        cam.y -= (dy / cam.z) * 1.25;
-        clampCam();
-      }
-    }
-
-    function onUp(e: PointerEvent) {
-      pointers.delete(e.pointerId);
-      if (pointers.size < 2) pinch = null;
-      if (pointers.size > 0) return;
-      const p = local(e);
-      if (drag?.zone && zoneRectRef.current) {
-        const box = zoneRectRef.current;
-        if (Math.abs(box.c1 - box.c0) < 3 || Math.abs(box.r1 - box.r0) < 3) {
-          zoneRectRef.current = null;
-          toastRef.current("حدّد منطقة أكبر");
-        } else {
-          setZoneRef.current(box);
-        }
-      } else if (drag && drag.moved < 14 && !drag.paint) handleTap(p.x, p.y);
-      if (drag?.paint) {
-        if (drag.moved < 14 && drag.fail && !drag.fail.startsWith("!")) {
-          audio.play("error", simRef.current.mute);
-          toastRef.current(drag.fail);
-        }
-        noteQuests();
-        syncRef.current();
-      }
-      drag = null;
-      lastCell = null;
-    }
-
-    function onWheel(e: WheelEvent) {
-      e.preventDefault();
-      const rect = canvas!.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const w = screenToWorld(sx, sy);
-      cam.z *= e.deltaY > 0 ? 0.84 : 1.2;
-      clampCam();
-      const w2 = screenToWorld(sx, sy);
-      cam.x += w.wx - w2.wx;
-      cam.y += w.wy - w2.wy;
-      clampCam();
-    }
-
-    function nightAmount(_phase: number) {
-      return 0;
-    }
-
-    function streetFace(c: number, r: number, roads: Set<string>) {
-      const sides = [
-        { side: "s" as const, dc: 0, dr: 1 },
-        { side: "n" as const, dc: 0, dr: -1 },
-        { side: "e" as const, dc: 1, dr: 0 },
-        { side: "w" as const, dc: -1, dr: 0 },
-      ];
-      let best: (typeof sides)[number] | null = null;
-      let bestScore = -1;
-      for (const side of sides) {
-        if (!roads.has(cellKey(c + side.dc, r + side.dr))) continue;
-        const ax = side.dc === 0 ? 1 : 0;
-        const ay = side.dr === 0 ? 1 : 0;
-        let score = 4;
-        for (const dir of [-1, 1]) {
-          let k = 1;
-          while (k < 8 && roads.has(cellKey(c + side.dc + ax * dir * k, r + side.dr + ay * dir * k))) {
-            score += 2;
-            k += 1;
-          }
-        }
-        if (side.side === "s") score += 3;
-        if (score > bestScore) {
-          best = side;
-          bestScore = score;
-        }
-      }
-      if (!best) return { axis: "none" as const, side: "s" as const };
-      const axis = best.side === "e" || best.side === "w" ? ("v" as const) : ("h" as const);
-      return { axis, side: best.side };
-    }
-
-    function lotAnchor(c: number, r: number, side: "n" | "s" | "e" | "w") {
-      if (side === "n") return { x: (c + 0.5) * CELL, y: r * CELL, flip: 1, hang: 0 };
-      if (side === "e") return { x: (c + 1) * CELL, y: (r + 1) * CELL, flip: -1, hang: -1 };
-      if (side === "w") return { x: c * CELL, y: (r + 1) * CELL, flip: 1, hang: -1 };
-      return { x: (c + 0.5) * CELL, y: (r + 1) * CELL, flip: 1, hang: -1 };
-    }
-
-    function lotSize(kind: Kind, img: HTMLImageElement | undefined, axis: "h" | "v" | "none") {
-      const aspect = img && img.width ? img.height / img.width : 1.15;
-      const landmark = CATALOG[kind].cat === "landmarks";
-      if (landmark) {
-        const dh = Math.min(CELL * 2.45, CELL * aspect);
-        return { dw: dh / aspect, dh };
-      }
-      if (axis === "v") {
-        const dh = CELL;
-        const dw = Math.min(CELL, dh / aspect);
-        return { dw, dh: dw * aspect > CELL ? CELL : dw * aspect };
-      }
-      return { dw: CELL, dh: Math.min(CELL * 1.34, CELL * aspect) };
-    }
-
-    function drawStreets(roads: Set<string>, night: number) {
-      if (!ctx) return;
-      const cells: { c: number; r: number }[] = [];
-      for (const k of roads) {
-        const [c, r] = k.split(",").map(Number);
-        cells.push({ c: c!, r: r! });
-      }
-      const side = CELL * 0.4;
-      const asphalt = CELL * 0.26;
-      const reach = CELL * 0.5;
-      const arms = (
-        c: number,
-        r: number,
-        width: number,
-        color: string,
-      ) => {
-        const L = {
-          n: roads.has(cellKey(c, r - 1)),
-          e: roads.has(cellKey(c + 1, r)),
-          s: roads.has(cellKey(c, r + 1)),
-          w: roads.has(cellKey(c - 1, r)),
-        };
-        const x = (c + 0.5) * CELL;
-        const y = (r + 0.5) * CELL;
-        ctx.fillStyle = color;
-        ctx.fillRect(x - width, y - width, width * 2, width * 2);
-        if (L.e) ctx.fillRect(x, y - width, reach, width * 2);
-        if (L.w) ctx.fillRect(x - reach, y - width, reach, width * 2);
-        if (L.s) ctx.fillRect(x - width, y, width * 2, reach);
-        if (L.n) ctx.fillRect(x - width, y - reach, width * 2, reach);
-        return L;
-      };
-
-      const walk = night > 0.45 ? "#5c564c" : "#d8c9af";
-      const tar = night > 0.45 ? "#1c222b" : "#3d4552";
-      for (const cell of cells) arms(cell.c, cell.r, side, walk);
-      ctx.lineCap = "round";
-      ctx.lineWidth = side * 1.7;
-      ctx.strokeStyle = walk;
-      ctx.beginPath();
-      for (const cell of cells) {
-        const x = (cell.c + 0.5) * CELL;
-        const y = (cell.r + 0.5) * CELL;
-        for (const [dc, dr] of [
-          [1, 1],
-          [1, -1],
-          [-1, 1],
-          [-1, -1],
-        ] as const) {
-          if (!roads.has(cellKey(cell.c + dc, cell.r + dr))) continue;
-          if (roads.has(cellKey(cell.c + dc, cell.r)) && roads.has(cellKey(cell.c, cell.r + dr))) continue;
-          if (dc < 0) continue;
-          ctx.moveTo(x, y);
-          ctx.lineTo((cell.c + dc + 0.5) * CELL, (cell.r + dr + 0.5) * CELL);
-        }
-      }
-      ctx.stroke();
-      for (const cell of cells) arms(cell.c, cell.r, asphalt, tar);
-      ctx.lineWidth = asphalt * 1.85;
-      ctx.strokeStyle = tar;
-      ctx.beginPath();
-      for (const cell of cells) {
-        const x = (cell.c + 0.5) * CELL;
-        const y = (cell.r + 0.5) * CELL;
-        for (const [dc, dr] of [
-          [1, 1],
-          [1, -1],
-          [-1, 1],
-          [-1, -1],
-        ] as const) {
-          if (!roads.has(cellKey(cell.c + dc, cell.r + dr))) continue;
-          if (roads.has(cellKey(cell.c + dc, cell.r)) && roads.has(cellKey(cell.c, cell.r + dr))) continue;
-          if (dc < 0) continue;
-          ctx.moveTo(x, y);
-          ctx.lineTo((cell.c + dc + 0.5) * CELL, (cell.r + dr + 0.5) * CELL);
-        }
-      }
-      ctx.stroke();
-
-      ctx.lineCap = "butt";
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = Math.max(1, CELL * 0.035);
-      ctx.setLineDash([CELL * 0.14, CELL * 0.12]);
-      ctx.beginPath();
-      for (const cell of cells) {
-        const L = {
-          n: roads.has(cellKey(cell.c, cell.r - 1)),
-          e: roads.has(cellKey(cell.c + 1, cell.r)),
-          s: roads.has(cellKey(cell.c, cell.r + 1)),
-          w: roads.has(cellKey(cell.c - 1, cell.r)),
-        };
-        const cross = (L.n || L.s) && (L.e || L.w);
-        const x = (cell.c + 0.5) * CELL;
-        const y = (cell.r + 0.5) * CELL;
-        if (!cross && (L.e || L.w || !(L.n || L.s))) {
-          ctx.moveTo(cell.c * CELL + (L.w ? 0 : CELL * 0.22), y);
-          ctx.lineTo((cell.c + 1) * CELL - (L.e ? 0 : CELL * 0.22), y);
-        }
-        if (!cross && (L.n || L.s)) {
-          ctx.moveTo(x, cell.r * CELL + (L.n ? 0 : CELL * 0.22));
-          ctx.lineTo(x, (cell.r + 1) * CELL - (L.s ? 0 : CELL * 0.22));
-        }
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.strokeStyle = night > 0.4 ? "rgba(255,244,210,0.75)" : "rgba(255,255,255,0.62)";
-      ctx.lineWidth = Math.max(0.8, CELL * 0.02);
-      ctx.beginPath();
-      const edge = asphalt * 0.78;
-      for (const cell of cells) {
-        const L = {
-          n: roads.has(cellKey(cell.c, cell.r - 1)),
-          e: roads.has(cellKey(cell.c + 1, cell.r)),
-          s: roads.has(cellKey(cell.c, cell.r + 1)),
-          w: roads.has(cellKey(cell.c - 1, cell.r)),
-        };
-        const x = (cell.c + 0.5) * CELL;
-        const y = (cell.r + 0.5) * CELL;
-        const cross = (L.n || L.s) && (L.e || L.w);
-        if (!cross && (L.e || L.w || !(L.n || L.s))) {
-          const x0 = L.w ? cell.c * CELL : x - asphalt;
-          const x1 = L.e ? (cell.c + 1) * CELL : x + asphalt;
-          ctx.moveTo(x0, y - edge);
-          ctx.lineTo(x1, y - edge);
-          ctx.moveTo(x0, y + edge);
-          ctx.lineTo(x1, y + edge);
-        }
-        if (!cross && (L.n || L.s)) {
-          const y0 = L.n ? cell.r * CELL : y - asphalt;
-          const y1 = L.s ? (cell.r + 1) * CELL : y + asphalt;
-          ctx.moveTo(x - edge, y0);
-          ctx.lineTo(x - edge, y1);
-          ctx.moveTo(x + edge, y0);
-          ctx.lineTo(x + edge, y1);
-        }
-      }
-      ctx.stroke();
-
-      ctx.fillStyle = "rgba(255,255,255,0.88)";
-      for (const cell of cells) {
-        const L = {
-          n: roads.has(cellKey(cell.c, cell.r - 1)),
-          e: roads.has(cellKey(cell.c + 1, cell.r)),
-          s: roads.has(cellKey(cell.c, cell.r + 1)),
-          w: roads.has(cellKey(cell.c - 1, cell.r)),
-        };
-        const n = Number(L.n) + Number(L.e) + Number(L.s) + Number(L.w);
-        const corner = n === 2 && (L.n || L.s) && (L.e || L.w);
-        if (n < 3 && !corner) continue;
-        const x = (cell.c + 0.5) * CELL;
-        const y = (cell.r + 0.5) * CELL;
-        const band = CELL * 0.1;
-        const span = asphalt * 1.55;
-        const zebra = (x0: number, y0: number, w: number, h: number, across: boolean) => {
-          const steps = 4;
-          for (let i = 0; i < steps; i += 1) {
-            if (across) ctx.fillRect(x0 + (i * w) / steps + 1, y0, w / steps - 2, h);
-            else ctx.fillRect(x0, y0 + (i * h) / steps + 1, w, h / steps - 2);
-          }
-        };
-        if (L.n) zebra(x - span / 2, y - asphalt - band * 0.15, span, band, true);
-        if (L.s) zebra(x - span / 2, y + asphalt - band * 0.85, span, band, true);
-        if (L.w) zebra(x - asphalt - band * 0.15, y - span / 2, band, span, false);
-        if (L.e) zebra(x + asphalt - band * 0.85, y - span / 2, band, span, false);
-      }
-
-      if (night > 0.18) {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        for (const cell of cells) {
-          if ((cell.c + cell.r) % 3 !== 0) continue;
-          const horizontal = roads.has(cellKey(cell.c + 1, cell.r)) || roads.has(cellKey(cell.c - 1, cell.r));
-          const vertical = roads.has(cellKey(cell.c, cell.r - 1)) || roads.has(cellKey(cell.c, cell.r + 1));
-          const x = (cell.c + 0.5) * CELL + (horizontal && !vertical ? 0 : -asphalt - CELL * 0.08);
-          const y = (cell.r + 0.5) * CELL + (horizontal && !vertical ? -asphalt - CELL * 0.08 : 0);
-          const glow = ctx.createRadialGradient(x, y, 1, x, y, CELL * 1.15);
-          glow.addColorStop(0, `rgba(255, 220, 140, ${0.9 * night})`);
-          glow.addColorStop(0.45, `rgba(255, 176, 60, ${0.28 * night})`);
-          glow.addColorStop(1, "rgba(255, 160, 40, 0)");
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(x, y, CELL * 1.15, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = `rgba(255, 244, 210, ${night})`;
-          ctx.beginPath();
-          ctx.arc(x, y, CELL * 0.05, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-    }
-
-    function draw() {
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx!.fillStyle = "#08343c";
-      ctx!.fillRect(0, 0, cssW, cssH);
-      applyWorld();
-      if (map.complete && map.naturalWidth) ctx!.drawImage(map, 0, 0, WORLD_W, WORLD_H);
-      else {
-        for (let r = 0; r < ROWS; r += 1) {
-          for (let c = 0; c < COLS; c += 1) {
-            ctx!.fillStyle = LAND[r]![c] ? "#e4d3ae" : "#1a7c8c";
-            ctx!.fillRect(c * CELL, r * CELL, CELL, CELL);
-          }
-        }
-      }
-
-      const showGrid = toolRef.current !== null;
-      if (showGrid) {
-        ctx!.strokeStyle = "rgba(72, 52, 24, 0.22)";
-        ctx!.lineWidth = 1.4 / cam.z;
-        for (let r = 0; r < ROWS; r += 1) {
-          for (let c = 0; c < COLS; c += 1) {
-            if (!LAND[r]![c]) continue;
-            ctx!.strokeRect(c * CELL + 1, r * CELL + 1, CELL - 2, CELL - 2);
-          }
-        }
-      }
-
-      const night = nightAmount(vis);
-      if (night > 0.05) {
-        ctx!.fillStyle = `rgba(4, 10, 28, ${night * 0.78})`;
-        ctx!.fillRect(0, 0, WORLD_W, WORLD_H);
-        const dusk = Math.max(0, 1 - Math.abs(night - 0.42) / 0.42);
-        if (dusk > 0.04) {
-          ctx!.fillStyle = `rgba(228, 112, 42, ${dusk * 0.18})`;
-          ctx!.fillRect(0, 0, WORLD_W, WORLD_H);
-        }
-      }
-
-      const roads = new Set(simRef.current.roads);
-      drawStreets(roads, night);
-
-      if (hover && simRef.current.started) {
-        const blocked =
-          !isLand(hover.c, hover.r) ||
-          roads.has(cellKey(hover.c, hover.r)) ||
-          simRef.current.buildings.some((b) => b.c === hover!.c && b.r === hover!.r);
-        const bad =
-          toolRef.current?.kind === "bulldoze"
-            ? !roads.has(cellKey(hover.c, hover.r)) &&
-              !simRef.current.buildings.some((b) => b.c === hover!.c && b.r === hover!.r)
-            : blocked && toolRef.current !== null;
-        ctx!.fillStyle = bad ? "rgba(181, 82, 58, 0.32)" : "rgba(14, 110, 120, 0.28)";
-        if (hover.c >= 0 && hover.r >= 0 && hover.c < COLS && hover.r < ROWS) {
-          ctx!.fillRect(hover.c * CELL, hover.r * CELL, CELL, CELL);
-        }
-      }
-
-      const zoneBox = zoneRectRef.current;
-      if (zoneBox) {
-        const c0 = Math.min(zoneBox.c0, zoneBox.c1);
-        const r0 = Math.min(zoneBox.r0, zoneBox.r1);
-        const c1 = Math.max(zoneBox.c0, zoneBox.c1);
-        const r1 = Math.max(zoneBox.r0, zoneBox.r1);
-        ctx!.fillStyle = "rgba(57, 255, 57, 0.16)";
-        ctx!.strokeStyle = "#146b22";
-        ctx!.lineWidth = 2;
-        ctx!.fillRect(c0 * CELL, r0 * CELL, (c1 - c0 + 1) * CELL, (r1 - r0 + 1) * CELL);
-        ctx!.strokeRect(c0 * CELL, r0 * CELL, (c1 - c0 + 1) * CELL, (r1 - r0 + 1) * CELL);
-      }
-
-      const paintLot = (
-        kind: Kind,
-        img: HTMLImageElement | undefined,
-        c: number,
-        r: number,
-        alpha: number,
-        pop: number,
-      ) => {
-        if (!img) return;
-        const face = streetFace(c, r, roads);
-        const lot = lotSize(kind, img, face.axis);
-        const at = lotAnchor(c, r, face.side);
-        ctx!.save();
-        ctx!.translate(at.x, at.y);
-        ctx!.globalAlpha = alpha * 0.42;
-        ctx!.fillStyle = "rgba(12, 24, 18, 0.55)";
-        ctx!.beginPath();
-        ctx!.ellipse(lot.dw * 0.08, 3, lot.dw * 0.42, Math.max(3, lot.dw * 0.1), 0, 0, Math.PI * 2);
-        ctx!.fill();
-        ctx!.scale(at.flip * pop, pop);
-        ctx!.globalAlpha = alpha;
-        ctx!.drawImage(img, -lot.dw / 2, at.hang * lot.dh, lot.dw, lot.dh);
-        if (night > 0.22 && kind !== "park" && kind !== "modern" && alpha > 0.9) {
-          ctx!.globalAlpha = 1;
-          ctx!.globalCompositeOperation = "lighter";
-          const cols = kind === "villa" || kind === "shop" ? 2 : 3;
-          const rows = kind === "tower" || kind === "liberation" || kind === "kuwait" || kind === "boubyan" ? 5 : 3;
-          for (let i = 0; i < cols; i += 1) {
-            for (let j = 0; j < rows; j += 1) {
-              const h = (c * 13 + r * 7 + i * 5 + j * 3) % 7;
-              if (h > 4) continue;
-              ctx!.fillStyle = `rgba(255, ${190 + (h % 3) * 16}, 110, ${0.9 * night})`;
-              const top = at.hang < 0 ? -lot.dh * 0.8 : lot.dh * 0.12;
-              ctx!.fillRect(-lot.dw * 0.28 + i * lot.dw * 0.22, top + j * lot.dh * 0.15, lot.dw * 0.1, lot.dh * 0.07);
-            }
-          }
-        }
-        ctx!.restore();
-      };
-
-      if (hover && simRef.current.started && toolRef.current?.kind === "build") {
-        const spot = hover;
-        const build = toolRef.current.building;
-        const ghost = sprites.get(build);
-        const blocked =
-          !isLand(spot.c, spot.r) ||
-          roads.has(cellKey(spot.c, spot.r)) ||
-          simRef.current.buildings.some((b) => b.c === spot.c && b.r === spot.r);
-        if (ghost && isLand(spot.c, spot.r) && !blocked) paintLot(build, ghost, spot.c, spot.r, 0.62, 1);
-      }
-
-      const ordered = [...simRef.current.buildings].sort((a, b) => a.c + a.r - (b.c + b.r));
-      for (const b of ordered) {
-        const img = sprites.get(b.kind);
-        const age = b.born > 0 ? t - b.born : 10;
-        const pop = age < 0.28 ? 0.78 + 0.22 * (age / 0.28) : 1;
-        paintLot(b.kind, img, b.c, b.r, 1 - night * (b.kind === "park" ? 0.35 : 0.62), pop);
-      }
-
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      coinHits.length = 0;
-      ctx!.font = "700 12px 'Noto Kufi Arabic', sans-serif";
-      ctx!.textAlign = "center";
-      ctx!.textBaseline = "middle";
-      for (const b of simRef.current.buildings) {
-        if (b.stored < 1) continue;
-        const img = sprites.get(b.kind);
-        const face = streetFace(b.c, b.r, roads);
-        const lot = lotSize(b.kind, img, face.axis);
-        const at = lotAnchor(b.c, b.r, face.side);
-        const screen = worldToScreen(at.x, at.y);
-        const dh = lot.dh * cam.z;
-        const px = screen.x;
-        const py = screen.y + (at.hang < 0 ? -dh : dh * 0.15) - 10 + Math.sin(t * 3 + b.c) * 3;
-        coinHits.push({ id: b.id, x: px, y: py });
-        ctx!.fillStyle = "#f3eee4";
-        ctx!.beginPath();
-        ctx!.arc(px, py, 15, 0, Math.PI * 2);
-        ctx!.fill();
-        ctx!.fillStyle = "#b8893d";
-        ctx!.beginPath();
-        ctx!.arc(px, py, 12, 0, Math.PI * 2);
-        ctx!.fill();
-        ctx!.fillStyle = "#1c1915";
-        const label = Math.floor(b.stored) > 999 ? "999" : String(Math.floor(b.stored));
-        ctx!.fillText(label, px, py + 0.5);
-      }
-
-      for (const f of floaters) {
-        const at = worldToScreen(f.x, f.y);
-        const px = at.x;
-        const py = at.y - (1 - f.life / 0.95) * 36;
-        ctx!.globalAlpha = Math.max(0, f.life / 0.95);
-        ctx!.fillStyle = "#08343c";
-        ctx!.font = "800 16px 'Noto Kufi Arabic', sans-serif";
-        ctx!.fillText(f.text, px, py);
-        ctx!.globalAlpha = 1;
-      }
-    }
-
     function frame(now: number) {
-      if (!running) return;
-      const prev = clockRef.current || now;
-      const dt = Math.min(0.05, (now - prev) / 1000);
-      clockRef.current = now;
-      timeRef.current = t;
-      t += dt;
-      const spClock = !simRef.current.started ? 0.35 : simRef.current.speed === 0 ? 0 : simRef.current.speed === 1 ? 1 : simRef.current.speed === 2 ? 1.7 : 2.6;
-      vis = (vis + (dt * spClock) / 34) % 1;
-      if (simRef.current.started) {
-        const sp = simRef.current.speed;
-        const scale = sp === 1 ? 1 : sp === 2 ? 4 : sp === 3 ? 12 : 0;
-        const daysPerSec = sp === 1 ? 6 : sp === 2 ? 24 : sp === 3 ? 72 : 0;
-        if (scale > 0) {
-          acc += dt * scale;
-          while (acc >= 0.25) {
-            tick(simRef.current, 0.25);
-            acc -= 0.25;
-          }
-          advanceDays(simRef.current, dt * daysPerSec);
+      const dt = Math.min(0.1, previous ? (now - previous) / 1000 : 0);
+      previous = now;
+      elapsed += dt;
+      timeRef.current = elapsed;
+      const sim = simRef.current;
+      // Whatever goes wrong in one step, the next frame must still be scheduled,
+      // or the calendar and the map freeze for good.
+      raf = requestAnimationFrame(frame);
+      try {
+        step(sim, dt);
+      } catch (error) {
+        console.error(error);
+      }
+      try {
+        world?.sync(sim, elapsed);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    function step(sim: Sim, dt: number) {
+      if (sim.started && sim.speed > 0) {
+        const scale = sim.speed === 1 ? 1 : sim.speed === 2 ? 4 : 12;
+        const daysPerSec = sim.speed === 1 ? 6 : sim.speed === 2 ? 24 : 72;
+        acc += dt * scale;
+        // Income is linear in time, so one tick per frame covers all elapsed steps
+        // (big cities used to run dozens of full ticks per frame at top speed).
+        if (acc >= 0.25) {
+          const step = Math.floor(acc / 0.25) * 0.25;
+          tick(sim, step);
+          acc -= step;
+        }
+        const logBefore = sim.log[0];
+        advanceDays(sim, dt * daysPerSec);
+        if (sim.log[0] !== logBefore && sim.log[0]) {
+          // Disasters, loans paid off, events ending: show what just happened.
+          const news = sim.log[0];
+          if (/حريق|عاصفة|سيول|انقطاع/.test(news)) audio.play("error", sim.mute);
+          toastRef.current(news);
         }
         hudAcc += dt;
         if (hudAcc > 0.45) {
           hudAcc = 0;
+          notePromotion();
           syncRef.current();
         }
       }
-      for (const f of floaters) f.life -= dt;
-      for (let i = floaters.length - 1; i >= 0; i -= 1) {
-        if (floaters[i]!.life <= 0) floaters.splice(i, 1);
-      }
-      draw();
-      raf = requestAnimationFrame(frame);
     }
-
-    function onVis() {
-      if (document.hidden) hiddenAt = performance.now();
-      else if (hiddenAt && simRef.current.started) {
+    function onVisibility() {
+      if (document.hidden) {
+        flushRef.current();
+        hiddenAt = performance.now();
+        previous = 0;
+      } else if (hiddenAt && simRef.current.started) {
         const sec = Math.min(12, (performance.now() - hiddenAt) / 1000);
-        const sp = simRef.current.speed;
-        const scale = sp === 1 ? 1 : sp === 2 ? 4 : sp === 3 ? 12 : 0;
-        const daysPerSec = sp === 1 ? 6 : sp === 2 ? 24 : sp === 3 ? 72 : 0;
-        if (scale > 0) {
+        const scale =
+          simRef.current.speed === 1
+            ? 1
+            : simRef.current.speed === 2
+              ? 4
+              : simRef.current.speed === 3
+                ? 12
+                : 0;
+        const days = simRef.current.speed === 1 ? 6 : simRef.current.speed === 2 ? 24 : 72;
+        if (scale) {
           tick(simRef.current, sec * scale);
-          advanceDays(simRef.current, Math.min(90, sec * daysPerSec));
+          advanceDays(simRef.current, Math.min(90, sec * days));
         }
+        hiddenAt = 0;
         syncRef.current();
       }
     }
-
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
-    canvas.addEventListener("pointerdown", onDown);
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointercancel", onUp);
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-    document.addEventListener("visibilitychange", onVis);
-    raf = requestAnimationFrame(frame);
-
-    const zoom = (factor: number) => {
-      const wx = cam.x;
-      const wy = cam.y;
-      cam.z *= factor;
-      clampCam();
-      cam.x = wx;
-      cam.y = wy;
-      clampCam();
+    function onGraphicsLost() {
+      setGraphicsError(true);
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    const onPageHide = () => flushRef.current();
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("city-graphics-lost", onGraphicsLost);
+    const onSaveNow = () => flushRef.current();
+    window.addEventListener("city-save-now", onSaveNow);
+    // A city restored from the cloud is now in storage: load it in place.
+    const onLoadSaved = () => {
+      const next = loadSim(FREE_ZONE);
+      if (next.district) {
+        next.started = true;
+        next.speed = 0;
+      }
+      simRef.current = next;
+      freezeSaves(false);
+      setSelected(null);
+      setSnap(cloneSim(next));
+      world?.sync(next, timeRef.current, true);
+      saveSim(next);
+      cloudLast = "";
     };
-    canvas.dataset.ready = "1";
-    (canvas as HTMLCanvasElement & { __zoom?: (n: number) => void }).__zoom = zoom;
-
+    window.addEventListener("city-load-saved", onLoadSaved);
+    // Signed in to the cloud: upload every 3 minutes when the game changed.
+    let cloudLast = "";
+    let cloudBusy = false;
+    let cloudWarned = false;
+    let cloudNewerWarned = false;
+    const cloudTimer = window.setInterval(() => {
+      const session = loadSession();
+      if (!session || cloudBusy || !simRef.current.started) return;
+      flushRef.current();
+      const mark = JSON.stringify(snapshotLocal()).length + ":" + Math.floor(simRef.current.day);
+      if (mark === cloudLast) return;
+      cloudBusy = true;
+      const here = simRef.current;
+      cloudInfo(session)
+        .then((there) => {
+          // Never let the automatic save replace a cloud city that is further along
+          // (a fresh city on a phone whose storage was cleared, say).
+          if (there && there.savedAt > 0 && there.day > here.day + 30) {
+            if (!cloudNewerWarned) {
+              cloudNewerWarned = true;
+              toastRef.current(t("مدينتك في السحابة أحدث من اللي على الجهاز. استرجعها من «الحفظ السحابي»"));
+            }
+            throw new Error("cloud-newer");
+          }
+          return pushSave(session, aboutGame(here));
+        })
+        .then(() => {
+          cloudLast = mark;
+          cloudWarned = false;
+        })
+        .catch((e: unknown) => {
+          if (e instanceof Error && e.message === "cloud-newer") return;
+          // Say once why the automatic cloud save did not go through.
+          if (cloudWarned) return;
+          cloudWarned = true;
+          toastRef.current(
+            t("الحفظ السحابي التلقائي ما نجح: {why}", {
+              why: errorText(e instanceof CloudFail ? e.code : "network"),
+            }),
+          );
+        })
+        .finally(() => {
+          cloudBusy = false;
+        });
+    }, 180_000);
+    canvas.addEventListener("webglcontextrestored", restoreGraphics);
     window.__city = {
-      place(kind: string, c: number, r: number) {
+      place(kind, c, r) {
         if (!(kind in CATALOG)) return "bad kind";
         simRef.current.started = true;
-        const act = placeBuilding(simRef.current, kind as Kind, c, r, t);
+        const act = placeBuilding(simRef.current, kind as Kind, c, r, timeRef.current);
         if (!act.ok) return act.msg;
         noteQuests();
         syncRef.current();
         return "ok";
       },
-      road(c: number, r: number) {
+      road(c, r) {
         simRef.current.started = true;
         const act = placeRoad(simRef.current, c, r);
         if (!act.ok) return act.msg;
@@ -941,69 +604,175 @@ export function CityGame() {
         return act.fresh ? "ok" : "exists";
       },
       coins: () => simRef.current.coins,
+      // Development-only helper for visual checks; absent from production builds.
+      grant: import.meta.env.DEV
+        ? (amount: number, days = 0) => {
+            simRef.current.coins += amount;
+            if (days > 0) advanceDays(simRef.current, days);
+            syncRef.current();
+          }
+        : undefined,
       pop: () => stats(simRef.current).pop,
       started() {
         simRef.current.started = true;
         syncRef.current();
       },
     };
-
+    if (failed) setGraphicsError(true);
+    raf = requestAnimationFrame(frame);
     return () => {
-      running = false;
       cancelAnimationFrame(raf);
-      ro.disconnect();
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
-      canvas.removeEventListener("wheel", onWheel);
-      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("city-save-now", onSaveNow);
+      window.removeEventListener("city-load-saved", onLoadSaved);
+      window.clearInterval(cloudTimer);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("city-graphics-lost", onGraphicsLost);
+      canvas.removeEventListener("webglcontextrestored", restoreGraphics);
+      world?.dispose();
+      worldRef.current = null;
       delete window.__city;
+      delete window.__city3d;
     };
   }, []);
 
   useEffect(() => {
+    if (worldRef.current) worldRef.current.disabled = districtChooser;
+  }, [districtChooser]);
+
+  // Language: pick the saved/browser choice after hydration, then keep 3D labels in step.
+  useEffect(() => bootLang(), []);
+  useEffect(() => {
+    worldRef.current?.setLang(lang);
+  }, [lang]);
+
+  // The tutorial watches the city and moves on when the player does each step.
+  useEffect(() => {
+    if (tutorial < 0 || !snap.started) return;
+    const now = {
+      roads: snap.roads.length,
+      buildings: snap.buildings.length,
+      collected: snap.collected,
+      levels: snap.buildings.reduce((n, b) => n + b.level, 0),
+    };
+    const base = tutorialBase.current;
+    if (!base) {
+      tutorialBase.current = now;
+      return;
+    }
+    const done =
+      (tutorial === 0 && snap.speed > 0) ||
+      (tutorial === 1 && now.roads > base.roads) ||
+      (tutorial === 2 && now.buildings > base.buildings) ||
+      (tutorial === 3 && now.collected > base.collected) ||
+      (tutorial === 4 && now.levels > base.levels);
+    if (done) advanceTutorial(tutorial);
+  }, [snap, tutorial]);
+
+  useEffect(() => {
+    if (!snap.started) return;
+    const footer = document.querySelector("main.game-shell footer");
+    if (!footer) return;
+    // Re-frame while the HUD settles after opening a district; later footer changes
+    // (hints, cards) must not yank the camera away from where the player moved it.
+    const until = performance.now() + 1500;
+    const watch = new ResizeObserver(() => {
+      if (performance.now() < until) worldRef.current?.frameDistrict();
+    });
+    watch.observe(footer);
+    worldRef.current?.frameDistrict();
+    return () => watch.disconnect();
+  }, [snap.started, snap.district]);
+
+  useEffect(() => {
+    worldRef.current?.setTool(tool);
+    worldRef.current?.setZone(zone);
+    if (tool?.kind !== "road") lastRoadCell.current = null;
+  }, [tool, zone]);
+
+  useEffect(() => {
     const shell = document.querySelector("main.game-shell");
     const apply = () => {
-      const legacy = typeof window.orientation === "number" ? window.orientation : 0;
-      const angle = screen.orientation?.angle ?? legacy;
-      const portraitViewport = window.innerHeight >= window.innerWidth;
-      const turned = angle === 90 || angle === -90 || angle === 270;
-      const mode = portraitViewport && turned ? (angle === 90 ? "right" : "left") : "";
-      document.documentElement.dataset.orient = mode;
-      shell?.classList.toggle("city-wide", !portraitViewport || mode !== "");
+      const portrait = window.innerHeight >= window.innerWidth;
+      // WebGL already uses the actual CSS viewport; rotating the DOM again produces
+      // an offset canvas on portrait phones. A portrait cloud can rotate its CSS
+      // screenshot without changing canvas/input coordinates.
+      delete document.documentElement.dataset.orient;
+      shell?.classList.toggle("city-wide", !portrait);
     };
     apply();
     window.addEventListener("resize", apply);
     window.addEventListener("orientationchange", apply);
-    screen.orientation?.addEventListener("change", apply);
     return () => {
       window.removeEventListener("resize", apply);
       window.removeEventListener("orientationchange", apply);
-      screen.orientation?.removeEventListener("change", apply);
-      document.documentElement.dataset.orient = "";
+      delete document.documentElement.dataset.orient;
       shell?.classList.remove("city-wide");
     };
   }, []);
 
+  const hasLegacy = () => localStorage.getItem("omdat-kuwait-v1") !== null;
   const stored = totalStored(snap);
   const selectedB = snap.buildings.find((b) => b.id === selected) ?? null;
+
+  function chooseDistrict(id: DistrictId) {
+    if (simRef.current.started) saveSim(simRef.current);
+    const next = loadSim(id);
+    if (!next.started && next.buildings.length === 0) simRef.current = createInitialDistrict(id);
+    else simRef.current = next;
+    simRef.current.speed = 0;
+    simRef.current.started = true;
+    localStorage.setItem("omdat-kuwait-selected-district", id);
+    setDistrictChooser(false);
+    setConfirmReset(false);
+    setSelected(null);
+    setTool(null);
+    setZone(null);
+    zoneRectRef.current = null;
+    worldRef.current?.sync(simRef.current, timeRef.current, true);
+    sync();
+  }
+
+  function resumeLegacy() {
+    if (simRef.current.started) saveSim(simRef.current);
+    simRef.current = loadSim();
+    simRef.current.speed = 0;
+    localStorage.removeItem("omdat-kuwait-selected-district");
+    setDistrictChooser(false);
+    setTool(null);
+    setZone(null);
+    setSelected(null);
+    setConfirmReset(false);
+    setSnap(cloneSim(simRef.current));
+    worldRef.current?.sync(simRef.current, timeRef.current, true);
+    pushToast(msg("استعدت مدينة الكويت القديمة دون تغيير حفظها"));
+  }
+
+  function stopAndSave() {
+    simRef.current.speed = 0;
+    if (simRef.current.started) saveSim(simRef.current);
+    // Merely opening or browsing the selector never writes an unstarted city.
+    setSnap(cloneSim(simRef.current));
+  }
 
   function start() {
     simRef.current.started = true;
     simRef.current.speed = 1;
+    worldRef.current?.sync(simRef.current, timeRef.current, true);
     sync();
   }
 
   function reset() {
-    simRef.current = createInitial();
+    const district = simRef.current.district ?? null;
+    simRef.current = district ? createInitialDistrict(district) : createInitial();
     simRef.current.started = true;
     simRef.current.speed = 1;
     setTool(null);
     setSelected(null);
     setConfirmReset(false);
+    worldRef.current?.sync(simRef.current, timeRef.current, true);
     sync();
-    pushToast("مدينة جديدة على خريطة الكويت");
+    pushToast(msg("مدينة جديدة على خريطة الكويت"));
   }
 
   function onUpgrade() {
@@ -1021,7 +790,7 @@ export function CityGame() {
     const n = collectAll(simRef.current);
     if (n <= 0) return;
     sync();
-    pushToast(`+${fmt(n)} د.ك`);
+    pushToast(t("+{amount} د.ك", { amount: fmt(n) }));
   }
 
   function onSpeed(n: 0 | 1 | 2 | 3) {
@@ -1030,7 +799,147 @@ export function CityGame() {
   }
 
   function onTax(n: number) {
-    simRef.current.tax = Math.max(0, Math.min(300, n));
+    simRef.current.tax = Math.max(0, Number.isFinite(n) ? n : 0);
+    sync();
+  }
+
+  function onCost(key: CostKey, value: number) {
+    simRef.current.costs = { ...simRef.current.costs, [key]: Math.max(0, Math.min(COST_MAX, value)) };
+    sync();
+  }
+
+  function onAutoRaise(pct: number) {
+    simRef.current.autoRaise = pct;
+    sync();
+  }
+
+  function finance(act: { ok: boolean; msg: string }) {
+    pushToast(act.msg);
+    sync();
+  }
+
+  function onCrisis(kind: CrisisKind) {
+    const act = startCrisis(simRef.current, kind);
+    pushToast(act.msg);
+    sync();
+  }
+
+  function onMusic() {
+    const next = !music;
+    setMusic(next);
+    audioRef.current?.music(next);
+  }
+
+  async function onPhoto() {
+    const world = worldRef.current;
+    const canvas = canvasRef.current;
+    if (!world || !canvas) return;
+    try {
+      const shot =
+        world instanceof CityWorld &&
+        typeof (world as { snapshot?: () => string }).snapshot === "function"
+          ? (world as unknown as { snapshot: () => string }).snapshot()
+          : canvas.toDataURL("image/jpeg", 0.92);
+      const img = new Image();
+      img.src = shot;
+      await img.decode();
+      const out = document.createElement("canvas");
+      out.width = img.width;
+      out.height = img.height + 90;
+      const ctx = out.getContext("2d")!;
+      ctx.fillStyle = "#0e6e78";
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(img, 0, 0);
+      const st = stats(simRef.current);
+      ctx.fillStyle = "#f3eee4";
+      // The caption sits on the reading side: right in Arabic, left in English.
+      const rtl = dirOf() === "rtl";
+      const x = rtl ? out.width - 24 : 24;
+      ctx.textAlign = rtl ? "right" : "left";
+      ctx.direction = rtl ? "rtl" : "ltr";
+      ctx.font = "bold 34px 'Noto Kufi Arabic', sans-serif";
+      const name = districtById(simRef.current.district)?.name ?? "الكويت";
+      ctx.fillText(t("المحافظ · {name}", { name }), x, img.height + 42);
+      ctx.font = "22px 'Noto Kufi Arabic', sans-serif";
+      ctx.fillText(
+        t("{residents} ساكن · رضا {happy}%", { residents: st.residents, happy: st.happy }),
+        x,
+        img.height + 74,
+      );
+      const blob = await new Promise<Blob | null>((ok) => out.toBlob(ok, "image/jpeg", 0.9));
+      if (!blob) throw new Error("no image");
+      const file = new File([blob], "kuwait-city.jpg", { type: "image/jpeg" });
+      const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+      if (nav.share && nav.canShare?.({ files: [file] })) {
+        await nav.share({ files: [file], title: t("مدينتي في المحافظ") });
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "kuwait-city.jpg";
+        a.click();
+        window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        pushToast(t("تم حفظ صورة المدينة"));
+      }
+    } catch {
+      pushToast(t("ما قدرت ألتقط الصورة"));
+    }
+  }
+
+  function onLoan(amount: number, rate: number) {
+    const act = takeLoan(simRef.current, amount, rate);
+    pushToast(act.ok ? t("دخل حسابك {amount} د.ك من البنك", { amount: fmt(amount) }) : act.msg);
+    sync();
+  }
+
+  function onPay(target: PayTarget, amount?: number) {
+    const s = simRef.current;
+    if (target.kind === "all") finance(payObligations(s, amount));
+    else if (target.kind === "murabaha") finance(repayMurabaha(s, target.id, amount));
+    else if (target.kind === "npc") finance(repayNpc(s, target.id, amount));
+    else {
+      const act = repayLoan(s, amount ?? s.loan);
+      pushToast(
+        act.ok
+          ? s.loan <= 0
+            ? t("سدّدت التمويل كاملاً")
+            : t("تم السداد، والباقي {left} د.ك", { left: fmt(s.loan) })
+          : act.msg,
+      );
+      sync();
+    }
+  }
+
+  function onEvent(kind: EventKind) {
+    const act = startEvent(simRef.current, kind);
+    if (!act.ok) pushToast(act.msg);
+    sync();
+  }
+
+  function onModel(kind: ModelKind) {
+    const act = buyModelArea(simRef.current, kind, timeRef.current);
+    if (!act.ok) {
+      pushToast(act.msg);
+      return;
+    }
+    advanceQuest(simRef.current);
+    notifyRef.current.promotion();
+    worldRef.current?.focus({ c: act.c, r: act.r }, 30);
+    sync();
+    pushToast(t("تم البناء: {n} مبنى", { n: act.built }));
+  }
+
+  function onLawBudget(key: keyof Ordinances, patch: Partial<LawBudget>) {
+    const cur = simRef.current.lawBudget[key];
+    simRef.current.lawBudget = {
+      ...simRef.current.lawBudget,
+      [key]: {
+        ...cur,
+        ...patch,
+        mode: "percent",
+        period: "month",
+        value: Math.min(LAW_MAX_PCT, Math.max(0, patch.value ?? cur.value)),
+      },
+    };
     sync();
   }
 
@@ -1058,6 +967,7 @@ export function CityGame() {
   }
 
   function onRoad() {
+    lastRoadCell.current = null;
     setSelected(null);
     setTool((t) => (t?.kind === "road" ? null : { kind: "road" }));
   }
@@ -1081,12 +991,37 @@ export function CityGame() {
     setZone(null);
     setTool(null);
     sync();
-    pushToast(`تم التنظيم: ${act.roads} طريق، ${act.built} مبنى`);
+    pushToast(
+      simRef.current.district
+        ? t("امتلأت القطع: {n} مبنى", { n: act.built })
+        : t("تم التنظيم: {roads} طريق، {n} مبنى", { roads: act.roads, n: act.built }),
+    );
   }
 
   function onZoneCancel() {
     zoneRectRef.current = null;
     setZone(null);
+  }
+
+  function onDemolish() {
+    setSelected(null);
+    setZone(null);
+    zoneRectRef.current = null;
+    setTool((t) => (t?.kind === "demolish" ? null : { kind: "demolish" }));
+  }
+
+  function onDemolishApply() {
+    if (!zone) return;
+    const act = bulldozeArea(simRef.current, zone.c0, zone.r0, zone.c1, zone.r1);
+    if (!act.ok) {
+      pushToast(act.msg);
+      return;
+    }
+    if (selected && !simRef.current.buildings.some((b) => b.id === selected)) setSelected(null);
+    zoneRectRef.current = null;
+    setZone(null);
+    sync();
+    pushToast(t("تم هدم {n} عنصر", { n: fmt(act.removed ?? 0) }));
   }
 
   function onBulldoze() {
@@ -1096,7 +1031,9 @@ export function CityGame() {
 
   function onBuild(kind: Kind) {
     setSelected(null);
-    setTool((t) => (t?.kind === "build" && t.building === kind ? null : { kind: "build", building: kind }));
+    setTool((t) =>
+      t?.kind === "build" && t.building === kind ? null : { kind: "build", building: kind },
+    );
   }
 
   function onLuck() {
@@ -1105,21 +1042,38 @@ export function CityGame() {
     sync();
   }
 
+  function onRotate(by: number | "north") {
+    if (by === "north") worldRef.current?.northUp();
+    else worldRef.current?.rotate(by);
+  }
+
   function onZoom(factor: number) {
-    const node = canvasRef.current as (HTMLCanvasElement & { __zoom?: (n: number) => void }) | null;
-    node?.__zoom?.(factor);
+    worldRef.current?.zoom(factor);
+  }
+
+  function onDayMode(mode: DayMode) {
+    setDayModeState(mode);
+    worldRef.current?.setDayMode(mode);
   }
 
   return (
     <main className="game-shell relative bg-sc-bar text-sc-mint">
-      <h1 className="sr-only">عمدة الكويت</h1>
+      <h1 className="sr-only">{t("المحافظ")}</h1>
+      <div className="coin-fly-layer" aria-hidden="true" />
       <canvas
         ref={canvasRef}
         data-testid="city-canvas"
-        aria-label="خريطة مدينة الكويت"
+        aria-label={t("خريطة مدينة الكويت ثلاثية الأبعاد")}
         className="absolute inset-0 h-full w-full touch-none"
       />
+      {graphicsError && (
+        <p className="graphics-note" role="status">
+          {t("عرض متوافق: اللعب كامل، والتجسيد ثنائي الأبعاد لعدم توفر WebGL.")}
+        </p>
+      )}
       <CityHud
+        dayMode={dayMode}
+        onDayMode={onDayMode}
         snap={snap}
         tool={tool}
         cat={cat}
@@ -1128,19 +1082,119 @@ export function CityGame() {
         confirmReset={confirmReset}
         toasts={toasts}
         onStart={start}
+        onDistricts={() => chooseDistrict(FREE_ZONE)}
+        onFocusDistrict={() => worldRef.current?.frameDistrict()}
         onSpeed={onSpeed}
         onCategory={onCategory}
         onRoad={onRoad}
         onBulldoze={onBulldoze}
         onZone={onZone}
+        onDemolish={onDemolish}
         onBuild={onBuild}
         onTax={onTax}
+        onCost={onCost}
+        onAutoRaise={onAutoRaise}
+        onDeposit={(a, rate) => finance(depositMoney(simRef.current, a, rate))}
+        onWithdraw={(a) => finance(withdrawMoney(simRef.current, a))}
+        onBond={(i) => finance(buyBond(simRef.current, i))}
+        onProject={(i) => finance(startProject(simRef.current, i))}
+        onConsult={() => finance(hireConsultant(simRef.current))}
+        onMudaraba={(a, r) => finance(depositMudaraba(simRef.current, a, r))}
+        onMudarabaWithdraw={() => finance(withdrawMudaraba(simRef.current))}
+        onSukuk={(issuer, a, r, y) => finance(buySukuk(simRef.current, issuer, a, r, y))}
+        onMurabaha={(a, p, m) => finance(takeMurabaha(simRef.current, a, p, m))}
+        onHousingAid={(pct) => {
+          simRef.current.housingAid = Math.max(0, Math.min(COST_MAX, Math.round(pct)));
+          sync();
+        }}
+        onGiveAid={(amount) => finance(giveAid(simRef.current, amount))}
+        onInsure={(on, kind) =>
+          finance(kind === "disaster" ? setDisasterInsurance(simRef.current, on) : setInsurance(simRef.current, on))
+        }
+        onDevelop={(kind, dev) => {
+          const act = startDevelopment(simRef.current, kind, undefined, dev);
+          if (!act.ok) pushToast(act.msg);
+          else {
+            pushToast(t("تم تسوير الموقع وبدأ البناء"));
+            worldRef.current?.focus(
+              { c: act.site.c + act.site.w / 2, r: act.site.r + act.site.h / 2 },
+              34,
+            );
+          }
+          sync();
+        }}
+        onPickSite={(kind, dev) => {
+          setSelected(null);
+          setTool({ kind: "site", project: kind, developer: dev });
+          pushToast(t("اضغط على الخريطة في مكان المشروع"));
+        }}
+        player={player ?? { name: t("المحافظ"), avatar: "🧔🏽" }}
+        onEditPlayer={() => setEditPlayer(true)}
+        onBuilderHire={() => finance(hireBuilder(simRef.current))}
+        onBuilderFire={() => finance(fireBuilder(simRef.current))}
+        onBuilderShare={(pct) => {
+          simRef.current.builder.share = Math.max(1, Math.min(100, Math.round(pct)));
+          sync();
+        }}
+        onNpcOpen={(id: NpcId) => {
+          greet(simRef.current, id);
+          markRead(simRef.current, id);
+          sync();
+        }}
+        onChat={(id, text) => {
+          chat(simRef.current, id, text);
+          markRead(simRef.current, id);
+          sync();
+        }}
+        onLend={(id, amount, rate, months) => {
+          finance(lendTo(simRef.current, id, amount, rate, months));
+          markRead(simRef.current, id);
+        }}
+        onBorrow={(id, amount, rate, months) => {
+          finance(borrowFrom(simRef.current, id, amount, rate, months));
+          markRead(simRef.current, id);
+        }}
+        onNpcRepay={(id) => finance(repayNpc(simRef.current, id))}
+        onNpcAudit={(id) => finance(auditNpc(simRef.current, id))}
+        onNpcAccount={(id) => finance(holdToAccount(simRef.current, id))}
+        onDonate={(kind, cause, amount) => {
+          const act = donate(simRef.current, kind, cause, amount);
+          if (!act.ok) pushToast(act.msg);
+          else {
+            worldRef.current?.sync(simRef.current, timeRef.current, true);
+            pushToast(simRef.current.log[0] ?? "");
+          }
+          sync();
+        }}
+        onCrisis={onCrisis}
+        onPhoto={onPhoto}
+        onMusic={onMusic}
+        music={music}
+        tutorial={tutorial}
+        onTutorialSkip={() => {
+          localStorage.setItem("omdat-tutorial", "done");
+          setTutorial(-1);
+        }}
+        onPanel={(p) => {
+          if (p === "budget" && tutorial === TUTORIAL.length - 1) advanceTutorial(tutorial);
+        }}
+        celebration={celebration}
+        onCelebrationClose={nextCelebration}
+        onLoan={onLoan}
+        onPay={onPay}
+        onEvent={onEvent}
+        onModel={onModel}
         onOrdinance={onOrdinance}
+        onLawBudget={onLawBudget}
         onDisaster={onDisaster}
         onRandom={onRandom}
         onLuck={onLuck}
         onUpgrade={onUpgrade}
         onCollect={onCollectAll}
+        onAutoCollect={(months) => {
+          setAutoCollect(simRef.current, months);
+          sync();
+        }}
         onMute={() => {
           simRef.current.mute = !simRef.current.mute;
           sync();
@@ -1149,9 +1203,88 @@ export function CityGame() {
         onReset={reset}
         onCancelReset={() => setConfirmReset(false)}
         onZoom={onZoom}
+        onRotate={onRotate}
+        heading={heading}
+        graphics={graphics}
+        onGraphics={(mode) => {
+          worldRef.current?.setGraphicsMode(mode);
+          setGraphics(mode);
+          pushToast(
+            mode === "auto"
+              ? t("الرسوم تلقائية: تخف وحدها إذا الجهاز بطيء")
+              : mode === "low"
+                ? t("الرسوم خفيفة: أسرع وأخف على الجهاز")
+                : t("الرسوم عالية: أجمل شكل، وقد تكون أبطأ"),
+          );
+        }}
         zone={zone}
         onZoneApply={onZoneApply}
+        onBoard={(patch) => {
+          Object.assign(simRef.current.board, patch);
+          if (patch.auto !== undefined)
+            pushToast(
+              patch.auto
+                ? t("المجلس يدير المدينة الآن، وصلاحياتك كلها باقية")
+                : t("استعدت الإدارة من المجلس"),
+            );
+          sync();
+        }}
+        onPower={(dept, on) => {
+          simRef.current.board.powers = { ...simRef.current.board.powers, [dept]: on };
+          sync();
+        }}
+        onApprove={(key) => finance(approveProject(simRef.current, key))}
+        onParam={(dept, key, value) => {
+          setDeptParam(simRef.current, dept, key, value);
+          sync();
+        }}
+        onOrder={(dept, kind, count) => finance(addOrder(simRef.current, dept, kind, count))}
+        onBuyStock={(id, pct) => finance(buyStock(simRef.current, id, pct))}
+        onSellStock={(id, pct) => finance(sellStock(simRef.current, id, pct))}
+        onCancelOrder={(id) => {
+          cancelOrder(simRef.current, id);
+          sync();
+        }}
+        onVoicesSeen={() => {
+          simRef.current.voicesSeen = simRef.current.day;
+          sync();
+        }}
+        onDemolishApply={onDemolishApply}
         onZoneCancel={onZoneCancel}
+      />
+      {snap.started && (editPlayer || !player) && (
+        <PlayerSetup
+          initial={player}
+          onSave={(p) => {
+            savePlayer(p);
+            setPlayer(p);
+            setEditPlayer(false);
+            pushToast(t("أهلاً {name}!", { name: p.name }));
+          }}
+        />
+      )}
+      {welcome && (
+        <WelcomeBack
+          daily={welcome.daily}
+          streak={welcome.streak}
+          offline={welcome.offline}
+          months={welcome.months}
+          onClose={() => {
+            setWelcome(null);
+            sync();
+          }}
+        />
+      )}
+      <DistrictSelector
+        open={districtChooser}
+        current={simRef.current.district ?? null}
+        onClose={() => {
+          if (districtChooser && simRef.current.started) simRef.current.speed = 0;
+          setDistrictChooser(false);
+        }}
+        onChoose={chooseDistrict}
+        onResumeLegacy={resumeLegacy}
+        onHasLegacy={hasLegacy}
       />
     </main>
   );
