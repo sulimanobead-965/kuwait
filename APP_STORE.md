@@ -71,7 +71,7 @@ npm run app:open    # يفتح المشروع في Xcode (على الماك فق
 ابدأ مساعداً للمختار في حي من أحياء الكويت، وابنِ طريقك إلى منصب المحافظ.
 
 • خريطة الكويت الحقيقية كاملة: من العبدلي إلى الخيران، مع جزيرة بوبيان وفيلكا — ابنِ الجسور إليها.
-• معالم الكويت: أبراج الكويت، برج الحمراء، برج التجارية، برج البنك الوطني، حديقة الشهيد، المباركية، الأفنيوز، مركز جابر الثقافي.
+• معالم الكويت: أبراج الكويت، برج الحمراء، برج التجارية، حديقة الشهيد، المباركية، مركز جابر الثقافي.
 • اقتصاد حقيقي: ضرائب، رسوم معيشة، قروض وتمويل إسلامي، ودائع، سندات وصكوك، تأمين.
 • سوق أسهم بشركات اللعبة: اشترِ حصصاً واربح توزيعات سنوية.
 • مجلس الإدارة: أعطِ أوامرك لمدراء الإدارات، أو سلّمهم المدينة في اللعب الآلي.
@@ -79,7 +79,7 @@ npm run app:open    # يفتح المشروع في Xcode (على الماك فق
 • ميناء ومصافٍ ومصانع، وكوارث وأزمات عالمية، وآراء الناس وشكاواهم.
 • عربي وإنجليزي، يعمل بدون إنترنت، بلا إعلانات ولا جمع بيانات.
 
-**الكلمات المفتاحية (100 حرف):** الكويت,مدينة,محاكاة,بناء,اقتصاد,استراتيجية,محافظ,أبراج,بوبيان,فيلكا
+**الكلمات المفتاحية (100 حرف):** الكويت,مدينة,محاكاة,بناء,اقتصاد,استراتيجية,محافظ,أبراج,الكويت,فيلكا
 
 ### Store text (English)
 **Subtitle:** Build Kuwait, block by block
@@ -87,7 +87,7 @@ npm run app:open    # يفتح المشروع في Xcode (على الماك فق
 **Description:**
 Start as the mukhtar's assistant in a Kuwaiti neighbourhood and rise to governor.
 • The whole real map of Kuwait, from Abdali to Al-Khiran, with Bubiyan and Failaka — build bridges to them.
-• Kuwait's landmarks: Kuwait Towers, Al Hamra, Al Tijaria, NBK Tower, Al Shaheed Park, Mubarakiya, The Avenues, Jaber Cultural Centre.
+• Kuwait's landmarks: Kuwait Towers, Al Hamra, Al Tijaria, Al Shaheed Park, Mubarakiya, Jaber Cultural Centre.
 • A real economy: taxes, living fees, loans and Islamic finance, deposits, bonds and sukuk, insurance.
 • A stock market of the game's companies with yearly dividends.
 • A board of directors you can command, or hand the city to on autopilot.

@@ -1201,7 +1201,7 @@ export const QUESTS: {
     done: (s) => s.buildings.filter((b) => b.kind === "hamra").length >= 1,
   },
   {
-    text: "افتتح مجمع الأفنيوز",
+    text: "افتتح المجمع التجاري",
     reward: 25000,
     total: 1,
     era: 2,

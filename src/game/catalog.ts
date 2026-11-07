@@ -367,7 +367,7 @@ export const CATALOG: Record<Kind, Def> = {
   },
   boubyan: {
     kind: "boubyan",
-    name: "برج بوبيان",
+    name: "برج الأمان",
     blurb: "برج زجاجي على الشارع",
     cost: 3200,
     cat: "landmarks",
@@ -424,7 +424,7 @@ export const CATALOG: Record<Kind, Def> = {
   },
   avenues: {
     kind: "avenues",
-    name: "مجمع الأفنيوز",
+    name: "مجمع تجاري",
     blurb: "أكبر مجمع تسوق: دخل ووظائف كثيرة",
     cost: 11000,
     cat: "landmarks",
@@ -502,8 +502,8 @@ export const CATALOG: Record<Kind, Def> = {
   },
   nbk: {
     kind: "nbk",
-    name: "برج البنك الوطني",
-    blurb: "برج زجاجي منحني كالشراع، مقر بنك الكويت الوطني",
+    name: "برج الديرة",
+    blurb: "برج زجاجي منحني كالشراع، مقر بنك الديرة",
     cost: 9500,
     cat: "landmarks",
     pop: 0,
