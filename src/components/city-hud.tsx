@@ -918,7 +918,7 @@ export function CityHud({
                   onClick={onDistricts}
                   className="sc-menu sc-on mt-4 w-full text-base"
                 >
-                  {t("اختر الحي وابدأ")}
+                  {t("ابدأ")}
                 </button>
                 {hasLegacy && (
                   <button

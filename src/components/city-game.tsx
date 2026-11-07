@@ -4,7 +4,10 @@ import { payObligations } from "@/game/obligations";
 import { addOrder, approveProject, cancelOrder, setDeptParam } from "@/game/board";
 import { buyStock, sellStock } from "@/game/stocks";
 import { DistrictSelector } from "@/components/district-selector";
-import { districtById, isDistrictId, type DistrictId } from "@/game/districts";
+import { districtById, type DistrictId } from "@/game/districts";
+
+/** The game has one map now: the free zone, the whole city. */
+const FREE_ZONE: DistrictId = "free";
 import { CityWorld, type WorldDiagnostics } from "@/game/three/renderer";
 import type { Cell } from "@/game/three/camera";
 import type { DayMode } from "@/game/three/day-night";
@@ -309,8 +312,7 @@ export function CityGame() {
       worldRef.current = world;
       failed = true;
     }
-    const savedDistrict = localStorage.getItem("omdat-kuwait-selected-district");
-    simRef.current = loadSim(isDistrictId(savedDistrict) ? savedDistrict : null);
+    simRef.current = loadSim(FREE_ZONE);
     if (simRef.current.district) {
       simRef.current.started = true;
       simRef.current.speed = 0;
@@ -523,8 +525,7 @@ export function CityGame() {
     window.addEventListener("city-save-now", onSaveNow);
     // A city restored from the cloud is now in storage: load it in place.
     const onLoadSaved = () => {
-      const d = localStorage.getItem("omdat-kuwait-selected-district");
-      const next = loadSim(isDistrictId(d) ? d : null);
+      const next = loadSim(FREE_ZONE);
       if (next.district) {
         next.started = true;
         next.speed = 0;
@@ -730,9 +731,6 @@ export function CityGame() {
     zoneRectRef.current = null;
     worldRef.current?.sync(simRef.current, timeRef.current, true);
     sync();
-    pushToast(
-      msg("{name}: حُفظ تقدّمك، ويمكنك التبديل من زر الأحياء", { name: districtById(id)!.name }),
-    );
   }
 
   function resumeLegacy() {
@@ -1084,10 +1082,7 @@ export function CityGame() {
         confirmReset={confirmReset}
         toasts={toasts}
         onStart={start}
-        onDistricts={() => {
-          stopAndSave();
-          setDistrictChooser(true);
-        }}
+        onDistricts={() => chooseDistrict(FREE_ZONE)}
         onFocusDistrict={() => worldRef.current?.frameDistrict()}
         onSpeed={onSpeed}
         onCategory={onCategory}

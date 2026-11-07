@@ -162,7 +162,6 @@ export function MoreSheet({
         // Always offers the other language, written in that language.
         { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },
         { id: "cloud", label: t("الحفظ السحابي"), icon: <Cloud size={20} /> },
-        { id: "districts", label: t("الأحياء"), icon: <MapIcon size={20} /> },
         {
           // How detailed the 3D map is drawn: "light" for slower phones.
           id: "graphics",

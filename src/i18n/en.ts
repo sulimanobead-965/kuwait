@@ -1562,4 +1562,5 @@ export const EN: Record<string, string> = {
   "نزاهة {name} تنكشف بالتدقيق فقط.": "{name}'s honesty is revealed only by an audit.",
   "المحادثة والقروض": "Chat and loans",
   "الوضع المالي": "Finances",
+  "ابدأ": "Start",
 };
