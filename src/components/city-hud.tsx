@@ -29,6 +29,7 @@ import {
   RotateCcw,
   RotateCw,
   Navigation2,
+  Banknote,
 } from "lucide-react";
 import { CATALOG, kindsIn, maxLevelOf, ROAD_COST, type Category, type Kind } from "@/game/catalog";
 import {
@@ -1118,12 +1119,11 @@ export function CityHud({
                   data-tut="collect"
                   data-testid="collect-all"
                   onClick={onCollect}
-                  className="sc-menu sc-on min-w-0 flex-1 flex-col px-1 leading-tight"
+                  aria-label={t("اجمع {amount}", { amount: money(stored) })}
+                  title={t("اجمع {amount}", { amount: money(stored) })}
+                  className="sc-menu sc-on grid min-w-0 flex-1 place-items-center px-1"
                 >
-                  <span className="block">{t("اجمع")}</span>
-                  <span className="block truncate" dir="ltr">
-                    {money(stored)}
-                  </span>
+                  <Banknote size={24} strokeWidth={2.4} aria-hidden="true" />
                 </button>
               ) : null}
               <Menu on={more} testid="menu-more" onClick={() => setMore((m) => !m)}>
@@ -1474,7 +1474,11 @@ function Budget({
           />
         </label>
         <p className="text-[11px] opacity-80">
-          {t("مع الجمع التلقائي تحتفظ المباني بدخل الفترة كاملاً حتى موعد الجمع، فما يضيع شيء.")}
+          {every > 0
+            ? t("المبلغ اللي فوق يتجمّع في المباني ويُجمع كله تلقائياً في {date}، وما يضيع منه شيء.", {
+                date: formatCityDate((Math.floor(snap.day / 30 / every) + 1) * every * 30),
+              })
+            : t("مع الجمع التلقائي تحتفظ المباني بدخل الفترة كاملاً حتى موعد الجمع، فما يضيع شيء.")}
         </p>
       </div>
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">

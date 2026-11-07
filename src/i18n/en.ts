@@ -1444,4 +1444,5 @@ export const EN: Record<string, string> = {
   "كل كم يُجمع الدخل تلقائياً": "How often income is collected automatically",
   "مع الجمع التلقائي تحتفظ المباني بدخل الفترة كاملاً حتى موعد الجمع، فما يضيع شيء.": "With automatic collection, buildings keep the whole period's income until it is collected, so nothing is lost.",
   "جُمع دخل المباني تلقائياً: {amount} د.ك": "Building income collected automatically: {amount} KD",
+  "المبلغ اللي فوق يتجمّع في المباني ويُجمع كله تلقائياً في {date}، وما يضيع منه شيء.": "The amount above builds up in the buildings and is all collected automatically on {date}; none of it is lost.",
 };
