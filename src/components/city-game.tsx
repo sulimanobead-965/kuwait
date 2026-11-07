@@ -72,6 +72,7 @@ import {
   routeOnLand,
   isLand,
   saveSim,
+  setDisasterInsurance,
   stats,
   tick,
   totalStored,
@@ -1110,7 +1111,9 @@ export function CityGame() {
           sync();
         }}
         onGiveAid={(amount) => finance(giveAid(simRef.current, amount))}
-        onInsure={(on) => finance(setInsurance(simRef.current, on))}
+        onInsure={(on, kind) =>
+          finance(kind === "disaster" ? setDisasterInsurance(simRef.current, on) : setInsurance(simRef.current, on))
+        }
         onDevelop={(kind, dev) => {
           const act = startDevelopment(simRef.current, kind, undefined, dev);
           if (!act.ok) pushToast(act.msg);

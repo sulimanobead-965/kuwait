@@ -2797,6 +2797,7 @@ export function advanceDays(s: Sim, days: number) {
       }
     }
     const crisis = crisisOf(s);
+    disasterInsuranceMonth(s);
     financeMonth(s, {
       log: (msg) => pushLog(s, msg),
       handover: () => placePackage(s, "homes", 0),
@@ -2897,6 +2898,57 @@ function endEvent(s: Sim) {
   s.event = null;
 }
 
+// ------------------------------------------------- disaster and crisis insurance
+
+/**
+ * Monthly premium for disaster and crisis cover: 0.2٪ of the treasury (what a disaster
+ * bill scales with) plus 5٪ of a month's income (what a crisis cuts).
+ */
+export function disasterPremium(s: Sim) {
+  const income = Math.max(0, monthlyIncome(s) + feeRevenue(s));
+  return Math.round(Math.max(0, s.coins) * 0.002 + income * 0.05);
+}
+
+export function setDisasterInsurance(s: Sim, on: boolean) {
+  s.finance.disasterInsured = on;
+  return {
+    ok: true as const,
+    msg: on
+      ? t("أمّنت المدينة ضد الكوارث والأزمات: الحرائق والعواصف والسيول والانقطاعات تُدفع عنك، وفي الأزمات تعوّضك الشركة عن الدخل الضائع")
+      : t("ألغيت تأمين الكوارث والأزمات"),
+  };
+}
+
+/** The insurer pays a disaster bill; returns what it paid. */
+function coverDisaster(s: Sim, bill: number) {
+  if (!s.finance.disasterInsured || bill <= 0) return 0;
+  s.coins += bill;
+  s.finance.disasterClaims += bill;
+  return bill;
+}
+
+/**
+ * Each month: the premium, and during a crisis the income the crisis took (and a
+ * war's civil-defence spending) paid back.
+ */
+function disasterInsuranceMonth(s: Sim) {
+  const f = s.finance;
+  if (!f.disasterInsured) return;
+  const premium = disasterPremium(s);
+  s.coins -= premium;
+  s.ytd.spend += premium;
+  f.disasterPremiums += premium;
+  const crisis = crisisOf(s);
+  if (!crisis) return;
+  const income = Math.max(0, monthlyIncome(s) + feeRevenue(s));
+  const lost = income * (1 / CRISES[crisis].income - 1);
+  const defence = crisis === "war" ? priceOf(40 + s.buildings.length * 2, s) : 0;
+  const paid = Math.round(lost + defence);
+  if (paid <= 0) return;
+  s.coins += paid;
+  f.disasterClaims += paid;
+}
+
 /** Money a disaster takes from the treasury right away. */
 export function disasterBill(s: Sim, kind: DisasterKind) {
   const size = s.buildings.length * 8;
@@ -2928,7 +2980,8 @@ export function triggerDisaster(
     }
     const bill = disasterBill(s, "fire");
     s.coins -= bill;
-    const entry = msg("حريق ضرب {name} · خسارة {amount} د.ك", { name, amount: bill });
+    const entry0 = msg("حريق ضرب {name} · خسارة {amount} د.ك", { name, amount: bill });
+    const entry = coverDisaster(s, bill) ? msg("{text} · دفعتها شركة التأمين", { text: entry0 }) : entry0;
     pushLog(s, entry);
     return { ok: true, msg: tx(entry) };
   }
@@ -2936,7 +2989,8 @@ export function triggerDisaster(
     s.disaster = { kind: "storm", until: s.day + 50 };
     const bill = disasterBill(s, "storm");
     s.coins -= bill;
-    const entry = msg("عاصفة رملية تغطي الكويت · تنظيف {amount} د.ك", { amount: bill });
+    const entry0 = msg("عاصفة رملية تغطي الكويت · تنظيف {amount} د.ك", { amount: bill });
+    const entry = coverDisaster(s, bill) ? msg("{text} · دفعتها شركة التأمين", { text: entry0 }) : entry0;
     pushLog(s, entry);
     return { ok: true, msg: tx(entry) };
   }
@@ -2944,14 +2998,16 @@ export function triggerDisaster(
     s.disaster = { kind: "flood", until: s.day + 30 };
     const bill = disasterBill(s, "flood");
     s.coins -= bill;
-    const entry = msg("أمطار وسيول تغرق الشوارع · تصريف {amount} د.ك", { amount: bill });
+    const entry0 = msg("أمطار وسيول تغرق الشوارع · تصريف {amount} د.ك", { amount: bill });
+    const entry = coverDisaster(s, bill) ? msg("{text} · دفعتها شركة التأمين", { text: entry0 }) : entry0;
     pushLog(s, entry);
     return { ok: true, msg: tx(entry) };
   }
   s.disaster = { kind: "blackout", until: s.day + 36 };
   const bill = disasterBill(s, "blackout");
   s.coins -= bill;
-  const entry = msg("انقطاع كهرباء على الأحياء · إصلاح {amount} د.ك", { amount: bill });
+  const entry0 = msg("انقطاع كهرباء على الأحياء · إصلاح {amount} د.ك", { amount: bill });
+  const entry = coverDisaster(s, bill) ? msg("{text} · دفعتها شركة التأمين", { text: entry0 }) : entry0;
   pushLog(s, entry);
   return { ok: true, msg: tx(entry) };
 }

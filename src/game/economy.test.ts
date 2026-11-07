@@ -319,3 +319,29 @@ test("cloud save: sign up, save, sign in on another device and restore", async (
     g.localStorage = oldStorage;
   }
 });
+
+test("disaster and crisis insurance pays disaster bills and lost crisis income", async () => {
+  const sim = await import("./sim.ts");
+  const s = createInitial();
+  s.started = true;
+  s.randomDisasters = false;
+  s.coins = 1_000_000;
+  // Uninsured: the storm bill comes out of the treasury.
+  let before = s.coins;
+  sim.triggerDisaster(s, "storm");
+  assert.ok(s.coins < before);
+  s.disaster = null;
+  // Insured: the same disaster costs nothing.
+  sim.setDisasterInsurance(s, true);
+  before = s.coins;
+  sim.triggerDisaster(s, "flood");
+  assert.equal(s.coins, before);
+  assert.ok(s.finance.disasterClaims > 0);
+  // A crisis: the insurer pays back the month's lost income.
+  s.disaster = null;
+  sim.startCrisis(s, "war");
+  const claims = s.finance.disasterClaims;
+  advanceDays(s, 31);
+  assert.ok(s.finance.disasterClaims > claims, "lost income paid back");
+  assert.ok(s.finance.disasterPremiums > 0, "premium charged");
+});

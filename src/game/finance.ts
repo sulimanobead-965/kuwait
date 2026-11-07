@@ -59,6 +59,10 @@ export type FinanceState = {
   insured: boolean;
   premiums: number;
   claims: number;
+  /** Disaster and crisis cover (fires, storms, floods, blackouts; economic crises, pandemics, wars). */
+  disasterInsured: boolean;
+  disasterPremiums: number;
+  disasterClaims: number;
   /** Lifetime numbers for the report and achievements. */
   earned: number;
   lost: number;
@@ -146,6 +150,9 @@ export function emptyFinance(): FinanceState {
     insured: false,
     premiums: 0,
     claims: 0,
+    disasterInsured: false,
+    disasterPremiums: 0,
+    disasterClaims: 0,
     mudaraba: 0,
     mudarabaRate: 0.08,
     earned: 0,
@@ -172,6 +179,9 @@ export function loadFinance(raw: unknown): FinanceState {
   f.insured = Boolean(p.insured);
   f.premiums = Math.max(0, n(p.premiums));
   f.claims = Math.max(0, n(p.claims));
+  f.disasterInsured = Boolean(p.disasterInsured);
+  f.disasterPremiums = Math.max(0, n(p.disasterPremiums));
+  f.disasterClaims = Math.max(0, n(p.disasterClaims));
   for (const key of ["devFees", "devDown"] as const) {
     const raw = p[key];
     if (raw && typeof raw === "object")

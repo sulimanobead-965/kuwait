@@ -31,6 +31,7 @@ import {
   ERAS,
   eraOf,
   developerOpen,
+  disasterPremium,
   formatCityDate,
   stats,
   type CostKey,
@@ -369,7 +370,7 @@ export function Companies({
   onSukuk: (issuer: "islamic" | "developer", amount: number, expected: number, years: number) => void;
   onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
-  onInsure: (on: boolean) => void;
+  onInsure: (on: boolean, kind?: "money" | "disaster") => void;
 }) {
   const f = snap.finance;
   const [dev, setDev] = useState<DeveloperId>("marsa");
@@ -411,6 +412,7 @@ export function Companies({
         </div>
       </div>
       <Insurance snap={snap} onInsure={onInsure} />
+      <DisasterInsurance snap={snap} onInsure={(on) => onInsure(on, "disaster")} />
       {crisisOf(snap) === "economic" && (
         <p className="rounded-md bg-coral px-2 py-1 text-xs font-extrabold text-sc-ink">
           {t("أزمة اقتصادية: خطر إفلاس البنوك والشركات مرتفع جداً الآن.")}
@@ -915,6 +917,42 @@ export function Insurance({ snap, onInsure }: { snap: Sim; onInsure: (on: boolea
         className={`sc-menu mt-1 w-full text-xs ${f.insured ? "" : "sc-on"}`}
       >
         {f.insured ? t("التأمين مفعّل · إلغاء") : t("أمّن كل أموالي وقروضي")}
+      </button>
+    </section>
+  );
+}
+
+export function DisasterInsurance({ snap, onInsure }: { snap: Sim; onInsure: (on: boolean) => void }) {
+  const f = snap.finance;
+  const on = f.disasterInsured;
+  return (
+    <section
+      className={`rounded-md border-2 p-2 ${on ? "border-sc-leaf bg-sc-lime/30" : "border-sc-ink/30 bg-sc-mint"} text-sc-ink`}
+      data-testid="disaster-insurance"
+    >
+      <p className="flex items-center gap-1 text-sm font-extrabold">
+        <ShieldCheck size={16} /> {t("تأمين الكوارث والأزمات")}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed">
+        {t(
+          "يدفع عنك فاتورة كل كارثة كاملة (حريق، عاصفة، سيول، انقطاع كهرباء)، وفي الأزمات العالمية (اقتصادية، وباء، حرب) يعوّضك كل شهر عن الدخل اللي نقص ومصاريف الدفاع المدني. القسط الشهري: ٠٫٢٪ من رصيد الخزينة + ٥٪ من دخل الشهر.",
+        )}
+      </p>
+      <p className="mt-1 text-xs font-extrabold">
+        {t("القسط هذا الشهر: {amount} د.ك · دفعت {paid} · عُوّضت {claims}", {
+          amount: fmt(disasterPremium(snap)),
+          paid: money(f.disasterPremiums),
+          claims: money(f.disasterClaims),
+        })}
+      </p>
+      <button
+        type="button"
+        data-testid="disaster-insurance-toggle"
+        aria-pressed={on}
+        onClick={() => onInsure(!on)}
+        className={`sc-menu mt-1 w-full text-xs ${on ? "" : "sc-on"}`}
+      >
+        {on ? t("تأمين الكوارث مفعّل · إلغاء") : t("أمّن المدينة ضد الكوارث والأزمات")}
       </button>
     </section>
   );

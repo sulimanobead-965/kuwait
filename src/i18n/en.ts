@@ -1424,4 +1424,11 @@ export const EN: Record<string, string> = {
   "جودة الرسوم: عالية": "Graphics quality: high",
   "جودة الرسوم: خفيفة": "Graphics quality: light",
   "اجمع": "Collect",
+  "تأمين الكوارث والأزمات": "Disaster & crisis insurance",
+  "يدفع عنك فاتورة كل كارثة كاملة (حريق، عاصفة، سيول، انقطاع كهرباء)، وفي الأزمات العالمية (اقتصادية، وباء، حرب) يعوّضك كل شهر عن الدخل اللي نقص ومصاريف الدفاع المدني. القسط الشهري: ٠٫٢٪ من رصيد الخزينة + ٥٪ من دخل الشهر.": "Pays every disaster bill in full (fire, storm, flood, blackout), and during world crises (economic, pandemic, war) pays back each month the income lost and civil-defence costs. Monthly premium: 0.2% of the treasury + 5% of the month's income.",
+  "تأمين الكوارث مفعّل · إلغاء": "Disaster cover on · cancel",
+  "أمّن المدينة ضد الكوارث والأزمات": "Insure the city against disasters and crises",
+  "أمّنت المدينة ضد الكوارث والأزمات: الحرائق والعواصف والسيول والانقطاعات تُدفع عنك، وفي الأزمات تعوّضك الشركة عن الدخل الضائع": "The city is insured against disasters and crises: fires, storms, floods and blackouts are paid for you, and in crises the insurer pays back lost income",
+  "ألغيت تأمين الكوارث والأزمات": "Disaster and crisis insurance cancelled",
+  "{text} · دفعتها شركة التأمين": "{text} · paid by the insurer",
 };

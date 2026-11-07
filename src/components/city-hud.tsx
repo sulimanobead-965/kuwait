@@ -438,7 +438,7 @@ export function CityHud({
   onMurabaha: (amount: number, profit: number, months: number) => void;
   onHousingAid: (pct: number) => void;
   onGiveAid: (amount: number) => void;
-  onInsure: (on: boolean) => void;
+  onInsure: (on: boolean, kind?: "money" | "disaster") => void;
   onDevelop: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onPickSite: (kind: DevelopmentKind, developer: DeveloperId) => void;
   onCrisis: (kind: CrisisKind) => void;
