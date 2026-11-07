@@ -7,6 +7,7 @@
  * Pure functions over `Sim`; `sim.ts` calls `financeMonth` once per game month.
  */
 import type { Sim } from "./sim";
+import { book, emptyLedger, loadLedger, type Ledger } from "./ledger";
 import { msg, percentSign, t, bigNum } from "../i18n/index.ts";
 
 export type CompanyId = "bank" | "islamic" | "developer" | "consultant";
@@ -59,6 +60,8 @@ export type FinanceState = {
   insured: boolean;
   premiums: number;
   claims: number;
+  /** Profit and loss per kind of investment, year by year (see ledger.ts). */
+  ledger: Ledger;
   /** Disaster and crisis cover (fires, storms, floods, blackouts; economic crises, pandemics, wars). */
   disasterInsured: boolean;
   disasterPremiums: number;
@@ -150,6 +153,7 @@ export function emptyFinance(): FinanceState {
     insured: false,
     premiums: 0,
     claims: 0,
+    ledger: emptyLedger(),
     disasterInsured: false,
     disasterPremiums: 0,
     disasterClaims: 0,
@@ -179,6 +183,7 @@ export function loadFinance(raw: unknown): FinanceState {
   f.insured = Boolean(p.insured);
   f.premiums = Math.max(0, n(p.premiums));
   f.claims = Math.max(0, n(p.claims));
+  f.ledger = loadLedger(p.ledger);
   f.disasterInsured = Boolean(p.disasterInsured);
   f.disasterPremiums = Math.max(0, n(p.disasterPremiums));
   f.disasterClaims = Math.max(0, n(p.disasterClaims));
@@ -548,6 +553,7 @@ export function claim(s: Sim, loss: number) {
   if (!s.finance.insured || loss <= 0) return 0;
   s.coins += loss;
   s.finance.claims += loss;
+  book(s, "insurance", loss);
   s.finance.lost = Math.max(0, s.finance.lost - loss);
   return loss;
 }
@@ -572,6 +578,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     const premium = monthlyPremium(s);
     s.coins -= premium;
     f.premiums += premium;
+    book(s, "insurance", -premium);
   }
   // Bankruptcy risk. A consultancy contract warns early, so half the money is saved.
   const shield = consulting(s) ? 0.5 : 0;
@@ -605,6 +612,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       sukuk.reduce((n, b) => n + b.amount * (0.7 + 0.3 * shield), 0);
     s.coins += recovered;
     f.lost += exposed - recovered;
+    book(s, "bankruptcy", -(exposed - recovered), exposed);
     if (claim(s, exposed - recovered) > 0)
       ctx.log(
         msg("{company} عوّضك عن الخسارة بالكامل: {amount} د.ك", {
@@ -631,6 +639,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       bonds.reduce((n, b) => n + b.amount * (0.4 + 0.6 * shield), 0);
     s.coins += recovered;
     f.lost += exposed - recovered;
+    book(s, "bankruptcy", -(exposed - recovered), exposed);
     if (claim(s, exposed - recovered) > 0)
       ctx.log(
         msg("{company} عوّضك عن الخسارة بالكامل: {amount} د.ك", {
@@ -656,6 +665,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     const recovered = exposed * (0.2 + 0.8 * shield);
     s.coins += recovered;
     f.lost += exposed - recovered;
+    book(s, "bankruptcy", -(exposed - recovered), exposed);
     if (claim(s, exposed - recovered) > 0)
       ctx.log(
         msg("{company} عوّضك عن الخسارة بالكامل: {amount} د.ك", {
@@ -692,6 +702,8 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       f.claims += covered;
       s.coins += 0;
     }
+    book(s, "mudaraba", result, f.mudaraba);
+    if (covered) book(s, "insurance", covered);
     f.mudaraba = Math.max(0, f.mudaraba + result + covered);
     if (result >= 0) f.earned += result;
     else if (!covered) f.lost -= result;
@@ -709,6 +721,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     } else if (f.insured) {
       // The insurer pays a missed installment for you.
       f.claims += due;
+      book(s, "insurance", due);
       m.left -= due;
       if (m.left <= 0.5) f.murabaha = f.murabaha.filter((x) => x.id !== m.id);
     } else {
@@ -722,9 +735,12 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
   // Interest compounds inside the deposit; coupons are paid out.
   if (f.deposit > 0 && isOpen(s, "bank")) {
     const interest = (f.deposit * f.depositRate) / 12;
+    book(s, "deposit", interest, f.deposit);
     f.deposit += interest;
     f.earned += interest;
   }
+  const bondBase = f.bonds.filter((b) => !b.sukuk).reduce((n, b) => n + b.amount, 0);
+  const sukukBase = f.bonds.filter((b) => b.sukuk).reduce((n, b) => n + b.amount, 0);
   for (const bond of [...f.bonds]) {
     if (!isOpen(s, bond.issuer)) continue;
     // Sukuk profit follows the asset's income: ±25٪ around the expected share.
@@ -733,6 +749,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
       (bond.sukuk ? (ctx.economicCrisis ? 0.4 : 0.75) + ctx.random() * 0.5 : 1);
     s.coins += coupon;
     f.earned += coupon;
+    book(s, bond.sukuk ? "sukuk" : "bonds", coupon, bond.sukuk ? sukukBase : bondBase);
     if (s.day >= bond.matures) {
       s.coins += bond.amount;
       f.bonds = f.bonds.filter((b) => b.id !== bond.id);
@@ -751,6 +768,7 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
     const back = project.amount * project.payback;
     s.coins += back;
     f.earned += back - project.amount;
+    book(s, "devProjects", back - project.amount, project.amount);
     f.projects = f.projects.filter((p) => p.id !== project.id);
     const homes = project.handover ? ctx.handover() : 0;
     ctx.log(

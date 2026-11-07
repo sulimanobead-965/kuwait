@@ -15,6 +15,7 @@ import { msg, t, type Params, bigNum } from "../i18n/index.ts";
 import { CATALOG, type Kind } from "./catalog";
 import { freeLot, runPlans } from "./builder";
 import { deposit, withdraw } from "./finance";
+import { book } from "./ledger";
 import { DEVELOPMENTS, type DevelopmentKind } from "./developments";
 import {
   coastal,
@@ -734,6 +735,7 @@ export function approveProject(s: Sim, key: string, by: "governor" | "board" = "
     return { ok: false, msg: t("تحتاج {amount} د.ك لهذا المشروع", { amount: fmt(cost) }) };
   s.coins -= cost;
   s.ytd.spend += cost;
+  book(s, "board", -cost, cost);
   // Municipal bonds bring cash in now, against monthly interest.
   if (key === "bonds") {
     const cash = Math.round(25_000 * projectScale(s));
@@ -1007,6 +1009,7 @@ export function boardMonth(s: Sim) {
   carryOutOrders(s);
   const money = projectMoney(s);
   s.coins += money.income - money.upkeep;
+  book(s, "board", money.income - money.upkeep);
   s.ytd.income += money.income;
   s.ytd.spend += money.upkeep;
   if (!b.auto) return;

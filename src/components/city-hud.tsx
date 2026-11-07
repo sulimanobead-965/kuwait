@@ -114,6 +114,7 @@ import { obligations, type Obligation } from "@/game/obligations";
 import { Board, MegaProjects } from "@/components/hud-board";
 import { StockMarket } from "@/components/hud-stocks";
 import { CloudPanel } from "@/components/hud-cloud";
+import { LedgerReport } from "@/components/hud-ledger";
 import type { StockId } from "@/game/stocks";
 import { boardFee, projectMoney, type BoardState, type DeptId } from "@/game/board";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang, bigNum, getLang } from "@/i18n";
@@ -154,7 +155,8 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
   {
     title: "التقارير وآراء الناس",
     tabs: [
-      { id: "report", label: "التقرير السنوي" },
+      { id: "report", label: "التقرير" },
+      { id: "ledger", label: "الاستثمار" },
       { id: "graphs", label: "الرسوم" },
       { id: "voices", label: "آراء الناس" },
       { id: "achievements", label: "الإنجازات" },
@@ -186,7 +188,8 @@ type Panel =
   | "voices"
   | "board"
   | "stocks"
-  | "cloud";
+  | "cloud"
+  | "ledger";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -743,7 +746,7 @@ export function CityHud({
                 </h2>
               </div>
               {groupOf(panel) && (
-                <div className="mx-2 mb-2 flex gap-1" role="tablist" data-testid="panel-tabs">
+                <div className="mx-2 mb-2 flex flex-wrap gap-1" role="tablist" data-testid="panel-tabs">
                   {groupOf(panel)!.tabs.map((tab) => (
                     <button
                       key={tab.id}
@@ -752,7 +755,7 @@ export function CityHud({
                       aria-selected={panel === tab.id}
                       data-testid={`tab-${tab.id}`}
                       onClick={() => setPanel(tab.id)}
-                      className={`sc-menu h-9 min-w-0 flex-1 px-1 text-xs ${panel === tab.id ? "sc-on" : ""}`}
+                      className={`sc-menu h-9 min-w-[30%] flex-1 whitespace-nowrap px-2 text-xs ${panel === tab.id ? "sc-on" : ""}`}
                     >
                       {t(tab.label)}
                     </button>
@@ -812,6 +815,7 @@ export function CityHud({
                   />
                 )}
                 {panel === "report" && <YearReport snap={snap} />}
+                {panel === "ledger" && <LedgerReport snap={snap} />}
                 {panel === "voices" && <Voices snap={snap} />}
                 {panel === "stocks" && <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} />}
                 {panel === "cloud" && <CloudPanel snap={snap} />}

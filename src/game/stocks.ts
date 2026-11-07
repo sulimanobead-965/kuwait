@@ -9,6 +9,7 @@ import { msg, t, bigNum } from "../i18n/index.ts";
 import { COMPANIES, INSURER } from "./finance";
 import { DEVELOPERS } from "./developments";
 import type { Sim } from "./sim";
+import { book } from "./ledger";
 
 export type StockId =
   | "bank"
@@ -149,6 +150,7 @@ export function sellStock(s: Sim, id: StockId, pct: number) {
     s.stocks.paid[id] = 0;
   }
   const gain = value - basis;
+  book(s, "stocks", gain, basis);
   return {
     ok: true,
     msg:
@@ -192,6 +194,7 @@ export function stockYear(s: Sim) {
     total += stakeValue(s, id, s.stocks.own[id]) * STOCKS[id].yield;
   }
   if (total <= 0) return null;
+  book(s, "stocks", total, STOCK_IDS.reduce((n, id) => n + s.stocks.paid[id], 0));
   s.coins += total;
   s.ytd.income += total;
   s.stocks.dividends += total;

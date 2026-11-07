@@ -387,3 +387,21 @@ test("graph history survives the compact save", async () => {
   assert.equal(back.length, s.history.length);
   assert.equal(Math.round(back[back.length - 1]!.approval!), Math.round(s.history[s.history.length - 1]!.approval));
 });
+
+test("the investment ledger books profits and losses per year and keeps ten years", async () => {
+  const sim = await import("./sim.ts");
+  const { deposit } = await import("./finance.ts");
+  const { ledgerSummary } = await import("./ledger.ts");
+  const s = createInitial();
+  s.started = true;
+  s.randomDisasters = false;
+  s.coins = 1_000_000_000;
+  deposit(s, 300_000_000);
+  for (let y = 0; y < 12; y += 1) advanceDays(s, 365);
+  const r = ledgerSummary(s);
+  assert.ok(r.years <= 10 && r.years >= 9, "ten years kept");
+  const dep = r.lines.find((x) => x.key === "deposit");
+  assert.ok(dep && dep.gain > 0 && dep.base >= 300_000_000, "deposit interest booked");
+  assert.ok(Math.abs(r.total - r.lines.reduce((n, x) => n + x.gain, 0)) < 1, "total is the sum");
+  void sim;
+});

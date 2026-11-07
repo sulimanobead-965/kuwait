@@ -36,6 +36,7 @@ import {
 import { COLS, FINE_ROW0, GRID_GEN, isForeign, OLD_COL0, islandAt, ISLANDS, isIsland, LAND, ROWS } from "./land";
 import { msg, t, tx } from "../i18n/index.ts";
 import { lonLatToCell } from "./places";
+import { book, closeLedgerYear } from "./ledger";
 export { districtById, isDistrictLand } from "./districts";
 import {
   districtById,
@@ -2400,6 +2401,7 @@ export function developmentMonth(s: Sim, random = Math.random) {
       const back = site.amount * 0.2;
       s.coins += back;
       s.finance.lost += site.amount - back;
+      book(s, "sites", -(site.amount - back), site.amount);
       claim(s, site.amount - back);
       pushLog(
         s,
@@ -2893,6 +2895,7 @@ function closeYear(s: Sim) {
   boardYear(s, s.ytd.income - s.ytd.spend);
   const st = stats(s);
   const year = new Date(EPOCH + Math.floor(s.day) * 86400000).getUTCFullYear() - 1;
+  closeLedgerYear(s, year);
   s.years.push({
     year,
     residents: st.residents,
@@ -2944,6 +2947,7 @@ function coverDisaster(s: Sim, bill: number) {
   if (!s.finance.disasterInsured || bill <= 0) return 0;
   s.coins += bill;
   s.finance.disasterClaims += bill;
+  book(s, "insurance", bill);
   return bill;
 }
 
@@ -2958,6 +2962,7 @@ function disasterInsuranceMonth(s: Sim) {
   s.coins -= premium;
   s.ytd.spend += premium;
   f.disasterPremiums += premium;
+  book(s, "insurance", -premium);
   const crisis = crisisOf(s);
   if (!crisis) return;
   const income = Math.max(0, monthlyIncome(s) + feeRevenue(s));
@@ -2967,6 +2972,7 @@ function disasterInsuranceMonth(s: Sim) {
   if (paid <= 0) return;
   s.coins += paid;
   f.disasterClaims += paid;
+  book(s, "insurance", paid);
 }
 
 /** Money a disaster takes from the treasury right away. */
