@@ -132,6 +132,35 @@ export type HudTool =
   | null;
 
 type GraphKey = Exclude<keyof Sample, "day">;
+/** Related panels shown as tabs of one window. */
+const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = [
+  {
+    title: "الميزانية والمشاريع",
+    tabs: [
+      { id: "budget", label: "الميزانية" },
+      { id: "laws", label: "القوانين" },
+      { id: "graphs", label: "الرسوم" },
+      { id: "projects", label: "المشاريع" },
+    ],
+  },
+  {
+    title: "مجلس الإدارة والمستشارون",
+    tabs: [
+      { id: "board", label: "مجلس الإدارة" },
+      { id: "advisors", label: "المستشارون" },
+    ],
+  },
+  {
+    title: "التقارير والإنجازات",
+    tabs: [
+      { id: "report", label: "التقرير السنوي" },
+      { id: "achievements", label: "الإنجازات" },
+    ],
+  },
+];
+const groupOf = (p: Panel | null) => (p ? PANEL_GROUPS.find((g) => g.tabs.some((tab) => tab.id === p)) : undefined);
+const BUDGET_GROUP: Panel[] = PANEL_GROUPS[0]!.tabs.map((tab) => tab.id);
+
 type Panel =
   | "graphs"
   | "budget"
@@ -485,7 +514,9 @@ export function CityHud({
     setTray(false);
   }, [snap.district]);
   function togglePanel(next: Panel) {
-    setPanel((p) => (p === next ? null : next));
+    // A button opens its group; pressing it again while any tab of it is open closes it.
+    const group = PANEL_GROUPS.find((g) => g.tabs.some((tab) => tab.id === next));
+    setPanel((p) => (p === next || (group && p && group.tabs.some((tab) => tab.id === p)) ? null : next));
   }
 
   function openCat(id: Category) {
@@ -646,11 +677,12 @@ export function CityHud({
         <div className="relative min-h-0 flex-1">
           <div className="absolute inset-x-0 top-2 flex flex-col items-center gap-1 px-16">
             {snap.started && <CrisisBanner snap={snap} />}
-            {toasts.map((item) => (
-              <p key={item.id} className="sc-lcd text-sm">
-                {tx(item.text)}
-              </p>
-            ))}
+            {!snap.started &&
+              toasts.map((item) => (
+                <p key={item.id} className="sc-lcd text-sm">
+                  {tx(item.text)}
+                </p>
+              ))}
           </div>
           {zone && tool?.kind === "demolish" ? (
             <DemolishCard snap={snap} zone={zone} onApply={onDemolishApply} onCancel={onZoneCancel} />
@@ -672,22 +704,32 @@ export function CityHud({
                   <X size={18} />
                 </button>
                 <h2 className="flex-1 text-center text-base">
-                  {panel === "graphs" && t("الرسوم")}
-                  {panel === "budget" && t("الميزانية")}
-                  {panel === "laws" && t("القوانين")}
-                  {panel === "advisors" && t("المستشارون")}
+                  {groupOf(panel) ? t(groupOf(panel)!.title) : null}
                   {panel === "disasters" && t("الكوارث")}
-                  {panel === "projects" && t("المشاريع والفعاليات")}
-                  {panel === "companies" && t("الشركات والاستثمار")}
-                  {panel === "report" && t("التقرير السنوي")}
-                  {panel === "achievements" && t("الحقب والإنجازات")}
+                  {panel === "companies" && t("الاستثمار")}
                   {panel === "people" && t("اللاعبون والمحادثات")}
                   {panel === "voices" && t("آراء الناس")}
-                  {panel === "board" && t("مجلس الإدارة")}
                   {panel === "stocks" && t("سوق الأسهم")}
                   {panel === "cloud" && t("الحفظ السحابي")}
                 </h2>
               </div>
+              {groupOf(panel) && (
+                <div className="mx-2 mb-2 flex gap-1" role="tablist" data-testid="panel-tabs">
+                  {groupOf(panel)!.tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={panel === tab.id}
+                      data-testid={`tab-${tab.id}`}
+                      onClick={() => setPanel(tab.id)}
+                      className={`sc-menu h-9 min-w-0 flex-1 px-1 text-xs ${panel === tab.id ? "sc-on" : ""}`}
+                    >
+                      {t(tab.label)}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 {panel === "graphs" && (
                   <Graphs
@@ -1026,22 +1068,19 @@ export function CityHud({
             )}
             <div className="hud-actions flex gap-1.5 px-2 py-2">
               <Menu
-                on={panel === "budget"}
+                on={panel !== null && BUDGET_GROUP.includes(panel)}
                 tut="menu-budget"
                 testid="menu-budget"
                 onClick={() => togglePanel("budget")}
               >
                 {t("الميزانية")}
               </Menu>
-              <Menu on={panel === "projects"} testid="menu-projects" onClick={() => togglePanel("projects")}>
-                {t("المشاريع")}
-              </Menu>
               <Menu
                 on={panel === "companies"}
                 testid="menu-companies"
                 onClick={() => togglePanel("companies")}
               >
-                {t("الشركات")}
+                {t("الاستثمار")}
               </Menu>
               {stored > 0 ? (
                 <button
@@ -1101,6 +1140,20 @@ export function CityHud({
             >
               <span className="truncate">{line}</span>
             </button>
+            {toasts.length > 0 && (
+              <div
+                className="hud-news flex w-full flex-col bg-[#b8322a] px-3 py-1 text-start text-sm font-bold text-white"
+                dir={dir}
+                role="status"
+                data-testid="news-strip"
+              >
+                {toasts.map((item) => (
+                  <span key={item.id} className="truncate">
+                    {tx(item.text)}
+                  </span>
+                ))}
+              </div>
+            )}
           </footer>
         )}
         {snap.started && tutorial >= 0 && !panel && (

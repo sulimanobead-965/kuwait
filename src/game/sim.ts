@@ -2759,8 +2759,11 @@ export function advanceDays(s: Sim, days: number) {
     });
     stockMonth(s, { economic: crisis === "economic", war: crisis === "war", pandemic: crisis === "pandemic" });
     developmentMonth(s);
+    // News only when the construction advisor actually built something (not the
+    // monthly "the budget did not cover any work" note).
+    const worksBefore = s.builder.works;
     const works = builderMonth(s);
-    if (works) pushLog(s, msg("مستشار البناء: {works}", { works }));
+    if (works && s.builder.works > worksBefore) pushLog(s, msg("مستشار البناء: {works}", { works }));
     for (const line of npcMonth(s)) pushLog(s, line);
     boardMonth(s);
     residentsSpeak(s);

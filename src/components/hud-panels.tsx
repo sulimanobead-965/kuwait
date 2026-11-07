@@ -1,23 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Award,
-  BarChart3,
   Building2,
-  Camera,
   Check,
-  Dices,
   Flame,
   Landmark,
   Lock,
   Map as MapIcon,
-  Music,
   Newspaper,
   RotateCcw,
   ScrollText,
   Siren,
   Users,
-  Volume2,
-  VolumeX,
   Languages,
   X,
   ShieldCheck,
@@ -162,57 +156,48 @@ export function MoreSheet({
   onClose: () => void;
 }) {
   const lang = useLang();
-  const items: { id: MoreAction; label: string; icon: ReactNode }[] = [
-    { id: "districts", label: t("الأحياء"), icon: <MapIcon size={20} /> },
-    { id: "report", label: t("التقرير السنوي"), icon: <Newspaper size={20} /> },
-    { id: "graphs", label: t("الرسوم"), icon: <BarChart3 size={20} /> },
-    { id: "advisors", label: t("المستشارون"), icon: <Users size={20} /> },
-    { id: "laws", label: t("القوانين"), icon: <ScrollText size={20} /> },
-    { id: "disasters", label: t("الكوارث والأزمات"), icon: <Siren size={20} /> },
-    { id: "achievements", label: t("الإنجازات"), icon: <Award size={20} /> },
-    { id: "photo", label: t("صورة المدينة"), icon: <Camera size={20} /> },
-    { id: "luck", label: t("حظ"), icon: <Dices size={20} /> },
-    {
-      id: "music",
-      label: t(music ? "إيقاف الموسيقى" : "تشغيل الموسيقى"),
-      icon: <Music size={20} />,
-    },
-    {
-      id: "mute",
-      label: t(snap.mute ? "تشغيل الأصوات" : "كتم الأصوات"),
-      icon: snap.mute ? <VolumeX size={20} /> : <Volume2 size={20} />,
-    },
-    {
-      id: "board",
-      label: snap.board?.auto ? t("مجلس الإدارة (آلي)") : t("مجلس الإدارة"),
-      icon: <Briefcase size={20} />,
-    },
-    { id: "stocks", label: t("سوق الأسهم"), icon: <LineChart size={20} /> },
-    {
-      id: "voices",
-      label:
-        unreadVoices(snap) > 0
-          ? t("آراء الناس ({n})", { n: unreadVoices(snap) })
-          : t("آراء الناس"),
-      icon: <MessageSquare size={20} />,
-    },
-    { id: "people", label: t("اللاعبون"), icon: <Users size={20} /> },
-    {
-      id: "graphics",
-      label:
-        graphics === "auto"
-          ? t("الرسوم: تلقائية")
-          : graphics === "high"
-            ? t("الرسوم: عالية")
-            : t("الرسوم: خفيفة"),
-      icon: <Gauge size={20} />,
-    },
-    { id: "cloud", label: t("الحفظ السحابي"), icon: <Cloud size={20} /> },
-    { id: "profile", label: t("ملفي"), icon: <Award size={20} /> },
-    // Always offers the other language, written in that language.
-    { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },
-    { id: "reset", label: t("مدينة جديدة"), icon: <RotateCcw size={20} /> },
-  ];
+  // "Me" opens its own short list: profile, language, cloud save, new city, districts.
+  const [mine, setMine] = useState(false);
+  const items: { id: MoreAction | "me"; label: string; icon: ReactNode }[] = mine
+    ? [
+        { id: "profile", label: t("تعديل ملفي"), icon: <Award size={20} /> },
+        // Always offers the other language, written in that language.
+        { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },
+        { id: "cloud", label: t("الحفظ السحابي"), icon: <Cloud size={20} /> },
+        { id: "districts", label: t("الأحياء"), icon: <MapIcon size={20} /> },
+        { id: "reset", label: t("مدينة جديدة"), icon: <RotateCcw size={20} /> },
+      ]
+    : [
+        {
+          id: "board",
+          label: snap.board?.auto ? t("مجلس الإدارة والمستشارون (آلي)") : t("مجلس الإدارة والمستشارون"),
+          icon: <Briefcase size={20} />,
+        },
+        { id: "report", label: t("التقارير والإنجازات"), icon: <Newspaper size={20} /> },
+        { id: "disasters", label: t("الكوارث والأزمات"), icon: <Siren size={20} /> },
+        { id: "stocks", label: t("سوق الأسهم"), icon: <LineChart size={20} /> },
+        {
+          id: "voices",
+          label:
+            unreadVoices(snap) > 0
+              ? t("آراء الناس ({n})", { n: unreadVoices(snap) })
+              : t("آراء الناس"),
+          icon: <MessageSquare size={20} />,
+        },
+        { id: "people", label: t("اللاعبون"), icon: <Users size={20} /> },
+        {
+          id: "graphics",
+          label:
+            graphics === "auto"
+              ? t("الرسوم: تلقائية")
+              : graphics === "high"
+                ? t("الرسوم: عالية")
+                : t("الرسوم: خفيفة"),
+          icon: <Gauge size={20} />,
+        },
+        { id: "me", label: t("ملفي"), icon: <Award size={20} /> },
+      ];
+  void music;
   return (
     <div
       className="more-sheet sc-panel pointer-events-auto"
@@ -221,7 +206,19 @@ export function MoreSheet({
       aria-label={t("المزيد")}
     >
       <div className="flex items-center justify-between px-1 pb-2">
-        <p className="text-sm font-extrabold">{t("المزيد")}</p>
+        <p className="flex items-center gap-2 text-sm font-extrabold">
+          {mine && (
+            <button
+              type="button"
+              className="text-xs underline underline-offset-4"
+              data-testid="more-back"
+              onClick={() => setMine(false)}
+            >
+              {t("رجوع")}
+            </button>
+          )}
+          {mine ? t("ملفي") : t("المزيد")}
+        </p>
         <button type="button" className="sc-x" aria-label={t("إغلاق")} onClick={onClose}>
           <X size={16} />
         </button>
@@ -232,7 +229,7 @@ export function MoreSheet({
             key={item.id}
             type="button"
             data-testid={`more-${item.id}`}
-            onClick={() => onPick(item.id)}
+            onClick={() => (item.id === "me" ? setMine(true) : onPick(item.id))}
             className="more-item"
           >
             {item.icon}
