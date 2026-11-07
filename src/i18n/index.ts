@@ -98,6 +98,10 @@ export function num(n: number) {
 }
 
 const BIG: [number, string, string][] = [
+  [1e24, "سبتليون", "Sp"],
+  [1e21, "سكستليون", "Sx"],
+  [1e18, "كوينتليون", "Qi"],
+  [1e15, "كوادريليون", "Qa"],
   [1e12, "ترليون", "T"],
   [1e9, "مليار", "B"],
 ];
@@ -129,8 +133,10 @@ function param(v: Param, lang: Lang): string {
   if (Array.isArray(v)) return v.map((x) => param(x, lang)).join(lang === "ar" ? "، " : ", ");
   if (typeof v === "number") return Math.abs(v) >= 1e9 ? bigNum(v, lang) : num(v);
   // Amounts stored in words («1.2 مليار») read as "1.2B" in English.
-  if (lang === "en" && / (مليار|ترليون)$/.test(v))
-    return v.replace(/ مليار$/, "B").replace(/ ترليون$/, "T");
+  if (lang === "en") {
+    const unit = BIG.find(([, ar]) => v.endsWith(` ${ar}`));
+    if (unit) return v.slice(0, -unit[1].length - 1) + unit[2];
+  }
   if (v.startsWith(MARK)) return tx(v, lang);
   return lang === "en" ? (EN[v] ?? v) : v;
 }

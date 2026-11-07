@@ -397,7 +397,14 @@ test("the investment ledger books profits and losses per year and keeps ten year
   s.randomDisasters = false;
   s.coins = 1_000_000_000;
   deposit(s, 300_000_000);
-  for (let y = 0; y < 12; y += 1) advanceDays(s, 365);
+  // No bank failure or crisis by chance in this test.
+  const random = Math.random;
+  Math.random = () => 0.5;
+  try {
+    for (let y = 0; y < 12; y += 1) advanceDays(s, 365);
+  } finally {
+    Math.random = random;
+  }
   const r = ledgerSummary(s);
   assert.ok(r.years <= 10 && r.years >= 9, "ten years kept");
   const dep = r.lines.find((x) => x.key === "deposit");
