@@ -752,15 +752,26 @@ body {
   top: max(0.5rem, env(safe-area-inset-top));
 }
 
-/* Small iPhones (SE, mini): tighter status row so money and people fit. */
-@media (max-width: 360px) {
+/* Phones up to Pro Max: speed buttons a little narrower so date, money and people all fit. */
+@media (max-width: 440px) {
+  .hud-status .sc-round {
+    width: 2.3rem;
+  }
+
+  .hud-status .sc-lcd {
+    padding-inline: 0.35rem;
+  }
+}
+
+/* iPhones up to 400px wide (SE, mini, 13–15): tighter status row so money and people fit. */
+@media (max-width: 400px) {
   .hud-status .sc-lcd {
     padding-inline: 0.3rem;
     font-size: 0.75rem;
   }
 
   .hud-status .sc-round {
-    width: 2.4rem;
+    width: 2.2rem;
     height: 2.4rem;
   }
 

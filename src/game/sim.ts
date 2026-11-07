@@ -234,6 +234,8 @@ const DIRS = [
   [0, -1],
 ] as const;
 const EPOCH = Date.UTC(1961, 1, 13);
+/** Saves keep any date up to ten thousand years on (the old 400-year cap pulled long games back). */
+const MAX_DAY = 365 * 10_000;
 
 export function cellKey(c: number, r: number) {
   return `${c},${r}`;
@@ -2278,12 +2280,34 @@ export function findDevelopmentSite(
 ) {
   const def = DEVELOPMENTS[kind];
   if (noRoom(s, kind)) return null;
-  const area = areaTables(s, true, false);
-  const spot = nearestRect(def.w, def.h, near ?? cityCenter(s), (c, r) =>
-    area.free(c, r, def.w, def.h) && (!def.coast || area.coast(c, r, def.w, def.h)),
-  );
+  const search = (area: ReturnType<typeof areaTables>) =>
+    nearestRect(def.w, def.h, near ?? cityCenter(s), (c, r) =>
+      area.free(c, r, def.w, def.h) && (!def.coast || area.coast(c, r, def.w, def.h)),
+    );
+  let spot = search(devTables(s, false));
+  // The kept tables can be a few months old: re-check the spot, and look again on
+  // fresh tables only when the city has since built over it.
+  if (spot && developmentBlocker(s, kind, spot.c, spot.r)) spot = search(devTables(s, true));
   if (!spot) markNoRoom(s, kind);
   return spot;
+}
+
+/**
+ * The map scan behind development sites takes ~80 ms on a big city, and the board
+ * asks for a site every month. Big cities keep the tables for a quarter (the spot
+ * found is checked against the live city before use); small ones rebuild on change.
+ */
+const devTableMemo = new WeakMap<Sim, { sig: string; area: ReturnType<typeof areaTables> }>();
+function devTables(s: Sim, fresh: boolean) {
+  const sig =
+    s.buildings.length < 1500
+      ? `${s.buildings.length}:${s.roads.length}:${s.sites.length}`
+      : `${Math.floor(s.day / 90)}:${s.sites.length}:${s.district ?? ""}`;
+  const hit = devTableMemo.get(s);
+  if (!fresh && hit && hit.sig === sig) return hit.area;
+  const area = areaTables(s, true, false);
+  devTableMemo.set(s, { sig, area });
+  return area;
 }
 
 /**
@@ -3303,7 +3327,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.quest = clamp(Number(p.quest) || 0, 0, QUESTS.length);
     s.mute = Boolean(p.mute);
     s.started = Boolean(p.started);
-    s.day = clamp(Number(p.day) || 0, 0, 365 * 400);
+    s.day = clamp(Number(p.day) || 0, 0, MAX_DAY);
     s.speed = clamp(Number(p.speed ?? 1), 0, 3) as Sim["speed"];
     s.tax = Math.max(0, Number(p.tax ?? 7) || 0);
     s.randomDisasters = Boolean(p.randomDisasters);

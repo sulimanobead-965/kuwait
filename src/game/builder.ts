@@ -113,21 +113,33 @@ function replacePlan(s: Sim, b: Building): Plan {
 const lotCache = new WeakMap<Sim, { sig: string; lots: { c: number; r: number }[] }>();
 
 function lotFinder(s: Sim) {
-  // Once per game month (and when a site starts or ends): placing buildings only
-  // uses lots up, and every lot is re-checked before use, so a fresh scan after each
-  // building (several full-map scans a month) bought nothing but freezes.
+  // Once per game month (a quarter on very big cities, where the scan alone costs
+  // ~30 ms), and when a site starts or ends. Placing buildings only uses lots up, and
+  // every lot is re-checked before use (still free, still on a road), so rescanning
+  // after each building or road bought nothing but freezes.
+  const big = s.buildings.length >= 8000;
   const sig =
     s.buildings.length < 1500
       ? `${s.buildings.length}:${s.roads.length}:${s.sites.length}`
-      : `${Math.floor(s.day / 30)}:${s.roads.length}:${s.sites.length}:${s.district ?? ""}`;
+      : big
+        ? `${Math.floor(s.day / 90)}:${s.sites.length}:${s.district ?? ""}`
+        : `${Math.floor(s.day / 30)}:${s.roads.length}:${s.sites.length}:${s.district ?? ""}`;
   const hit = lotCache.get(s);
   const lots = hit && hit.sig === sig ? hit.lots : scanLots(s);
   if (!hit || hit.sig !== sig) lotCache.set(s, { sig, lots });
+  const roads = roadSet(s);
+  const onRoad = (c: number, r: number) =>
+    roads.has(cellKey(c + 1, r)) ||
+    roads.has(cellKey(c - 1, r)) ||
+    roads.has(cellKey(c, r + 1)) ||
+    roads.has(cellKey(c, r - 1));
   let next = 0;
   return () => {
     while (next < lots.length) {
       const lot = lots[next++]!;
-      if (!cellTaken(s, lot.c, lot.r) && !siteAt(s.sites, lot.c, lot.r)) return lot;
+      if (cellTaken(s, lot.c, lot.r) || siteAt(s.sites, lot.c, lot.r)) continue;
+      if (big && !onRoad(lot.c, lot.r)) continue;
+      return lot;
     }
     return null;
   };

@@ -133,6 +133,10 @@ test("v2 save serializes all playable fields without mutating during clones", ()
     clone.buildings[0].level++;
     assert.notEqual(clone.roads.length, loaded.roads.length);
     assert.notEqual(clone.buildings[0].level, loaded.buildings[0].level);
+    // A city played for 480 years keeps its date when it is opened again.
+    s.day = 176_901;
+    saveSim(s);
+    assert.equal(Math.floor(loadSim().day), 176_901);
   } finally {
     if (original === undefined) Reflect.deleteProperty(globalThis, "localStorage");
     else globalThis.localStorage = original;
