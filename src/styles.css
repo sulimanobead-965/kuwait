@@ -769,11 +769,11 @@ body {
   }
 }
 
-/* iPad and wide screens: actions and status share one row, panels become a side sheet. */
-@media (min-width: 700px) {
+/* Wide screens (iPad Pro landscape, desktop): actions and status share one row. */
+@media (min-width: 1100px) {
   .sc-status {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(30rem, 1fr) minmax(0, auto);
     align-items: center;
   }
 
@@ -783,12 +783,19 @@ body {
 
   .sc-status > .hud-actions {
     grid-column: 1;
-    max-width: 40rem;
+    max-width: 44rem;
   }
 
   .sc-status > .hud-status {
     grid-column: 2;
     padding-block: 0.5rem;
+  }
+}
+
+/* iPad and wide screens: panels become a side sheet. */
+@media (min-width: 700px) {
+  .hud-actions .sc-menu {
+    font-size: 0.95rem;
   }
 
   .hud-panel {
@@ -813,7 +820,7 @@ body {
 @media (orientation: landscape) and (max-height: 500px) {
   .sc-status {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(21rem, 1fr) minmax(0, auto);
     align-items: center;
   }
 
@@ -857,8 +864,30 @@ body {
   }
 
   .hud-left {
-    top: 3.5rem;
+    top: 4.4rem;
     gap: 0.3rem;
+    /* Too many buttons for one column this short: wrap into a second column inward. */
+    direction: ltr;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    max-height: calc(100dvh - 4.4rem - 4.5rem);
+  }
+
+  .hud-tools {
+    direction: rtl;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    max-height: calc(100dvh - 4.5rem);
+  }
+
+  .sc-status .sc-menu {
+    padding-inline: 0.1rem;
+    font-size: 0.7rem;
+  }
+
+  .hud-status .sc-round {
+    width: 2rem;
+    height: 2rem;
   }
 
   .hud-left .view-3d-badge {
