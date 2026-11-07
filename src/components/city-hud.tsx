@@ -508,7 +508,8 @@ export function CityHud({
     typeof localStorage !== "undefined" && localStorage.getItem("omdat-kuwait-v1") !== null;
   const st = stats(snap);
   const selected = snap.buildings.find((b) => b.id === selectedId) ?? null;
-  const lines = bulletin(snap, st);
+  // Green strip: residents' comments and advice; the news itself runs in the red strip.
+  const lines = bulletin(snap, st, false);
   const dem = demand(snap, st);
   const line = lines[ticker % lines.length] ?? "";
   const unseenVoices = (snap.voices ?? []).some((v) => v.day > (snap.voicesSeen ?? -1));
@@ -556,7 +557,15 @@ export function CityHud({
             >
               <LayoutGrid size={18} />
             </Round>
-            <Round label={t("طرق")} tut="tool-road" on={tool?.kind === "road"} onClick={onRoad}>
+            <Round
+              label={t("طرق")}
+              tut="tool-road"
+              on={tool?.kind === "road"}
+              onClick={() => {
+                setTray(false);
+                onRoad();
+              }}
+            >
               <Route size={18} />
             </Round>
             <Round
@@ -587,13 +596,23 @@ export function CityHud({
             >
               <Factory size={18} />
             </Round>
-            <Round label={t("هدم")} on={tool?.kind === "bulldoze"} onClick={onBulldoze}>
+            <Round
+              label={t("هدم")}
+              on={tool?.kind === "bulldoze"}
+              onClick={() => {
+                setTray(false);
+                onBulldoze();
+              }}
+            >
               <Trash2 size={18} />
             </Round>
             <Round
               label={t("هدم منطقة")}
               on={tool?.kind === "demolish"}
-              onClick={onDemolish}
+              onClick={() => {
+                setTray(false);
+                onDemolish();
+              }}
             >
               <Eraser size={18} />
             </Round>

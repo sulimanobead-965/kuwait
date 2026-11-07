@@ -376,3 +376,14 @@ test("automatic collection gathers building income on the chosen schedule withou
   advanceDays(s, 31);
   assert.ok((s.collected ?? 0) > collected, "collected at the year mark");
 });
+
+test("graph history survives the compact save", async () => {
+  const sim = await import("./sim.ts");
+  const s = createInitial();
+  s.started = true;
+  for (let i = 0; i < 5; i += 1) advanceDays(s, 30);
+  const packed = sim.packHistory(s.history);
+  const back = sim.unpackHistory(JSON.parse(JSON.stringify(packed)));
+  assert.equal(back.length, s.history.length);
+  assert.equal(Math.round(back[back.length - 1]!.approval!), Math.round(s.history[s.history.length - 1]!.approval));
+});

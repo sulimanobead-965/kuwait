@@ -278,10 +278,12 @@ export function freeLot(s: Sim) {
  * One month of work. Returns a short report (also kept in `s.builder.last`), or null
  * when not hired. The budget is `share٪` of the balance at the start of the month.
  */
-export function builderMonth(s: Sim) {
+export function builderMonth(s: Sim, reserve = 0) {
   const b = s.builder;
   if (!b.hired) return null;
-  const budget = Math.floor(Math.max(0, s.coins) * (b.share / 100));
+  // The share is of what is left after a reserve for the coming months' running costs,
+  // so even at 100% the advisor never empties the treasury into a deficit.
+  const budget = Math.floor(Math.max(0, s.coins - reserve) * (b.share / 100));
   const before = stats(s).residents;
   let left = budget;
   let spent = 0;

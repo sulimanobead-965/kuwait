@@ -12,7 +12,7 @@ import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import { loadVoices, voicesMonth, type Voice } from "./voices";
 import { emptyStocks, loadStocks, stockMonth, stockYear, type StockState } from "./stocks";
-import { boardEffect, boardMonth, boardYear, emptyBoard, loadBoard, type BoardState, type ProjectEffects } from "./board";
+import { boardEffect, boardMonth, boardYear, emptyBoard, loadBoard, projectMoney, type BoardState, type ProjectEffects } from "./board";
 
 const BOARD_EFFECT_KEYS = {
   happy: 1,
@@ -1938,10 +1938,10 @@ export function planZone(
   pick: ZonePick,
   now: number,
 ): { ok: true; roads: number; built: number } | { ok: false; msg: string } {
-  let cA = Math.max(0, Math.min(c0, c1));
-  let cB = Math.min(COLS - 1, Math.max(c0, c1));
-  let rA = Math.max(0, Math.min(r0, r1));
-  let rB = Math.min(ROWS - 1, Math.max(r0, r1));
+  const cA = Math.max(0, Math.min(c0, c1));
+  const cB = Math.min(COLS - 1, Math.max(c0, c1));
+  const rA = Math.max(0, Math.min(r0, r1));
+  const rB = Math.min(ROWS - 1, Math.max(r0, r1));
   if (!pick.streets && !pick.schools && !pick.fire && !pick.landmarks && !pick.parks) {
     return { ok: false, msg: t("اختر ماذا يُبنى في المنطقة") };
   }
@@ -2830,7 +2830,7 @@ export function advanceDays(s: Sim, days: number) {
     // News only when the construction advisor actually built something (not the
     // monthly "the budget did not cover any work" note).
     const worksBefore = s.builder.works;
-    const works = builderMonth(s);
+    const works = builderMonth(s, 3 * (monthlyUpkeep(s) + projectMoney(s).upkeep));
     if (works && s.builder.works > worksBefore) pushLog(s, msg("مستشار البناء: {works}", { works }));
     for (const line of npcMonth(s)) pushLog(s, line);
     boardMonth(s);
@@ -3068,10 +3068,10 @@ export function residentsSpeak(s: Sim, random: () => number = Math.random) {
   );
 }
 
-export function bulletin(s: Sim, st = stats(s)) {
+export function bulletin(s: Sim, st = stats(s), news = true) {
   const m = metrics(s, st);
   // Stored log entries plus live advice, all shown in the current language.
-  const lines = s.log.map((entry) => tx(entry));
+  const lines = news ? s.log.map((entry) => tx(entry)) : [];
   // The latest things residents said, between the news.
   for (const v of (s.voices ?? []).slice(0, 3).reverse())
     lines.splice(Math.min(1, lines.length), 0, `💬 ${t(v.name)}: ${tx(v.text)}`);
@@ -3341,8 +3341,9 @@ export function loadSim(district?: DistrictId | null): Sim {
         born: 0,
       });
     }
-    if (Array.isArray(p.history)) {
-      for (const rawH of p.history.slice(-1200)) {
+    const rawHistory = Array.isArray(p.history) ? p.history : unpackHistory((p as { historyZ?: unknown }).historyZ);
+    if (rawHistory.length) {
+      for (const rawH of rawHistory.slice(-1200)) {
         if (!rawH || typeof rawH !== "object") continue;
         const h = rawH as Partial<Sample>;
         s.history.push({
@@ -3406,7 +3407,9 @@ export function saveSim(s: Sim) {
     disaster: s.disaster,
     randomDisasters: s.randomDisasters,
     log: s.log.slice(0, 8),
-    history: s.history.slice(-1200),
+    // Graph samples as a table (field names once) at one decimal: the 1,200 samples
+    // with their names and 15-digit fractions were most of the save.
+    historyZ: packHistory(s.history.slice(-1200)),
     difficulty: s.difficulty,
     luckAt: s.luckAt,
     costs: s.costs,
@@ -3449,7 +3452,7 @@ export function saveSim(s: Sim) {
   } catch {
     // Storage full: drop the long history and try once more; never break the game loop.
     try {
-      localStorage.setItem(key, JSON.stringify({ ...data, history: s.history.slice(-120), log: [] }));
+      localStorage.setItem(key, JSON.stringify({ ...data, historyZ: packHistory(s.history.slice(-120)), log: [] }));
       saveFull = false;
     } catch {
       saveFull = true;
@@ -3461,6 +3464,21 @@ let saveFull = false;
 /** True when the last save did not fit in the browser's storage. */
 export function saveFailed() {
   return saveFull;
+}
+
+export function packHistory(list: Sample[]) {
+  const keys = list.length ? Object.keys(list[0]!) : [];
+  return {
+    k: keys,
+    v: list.map((h) => keys.map((k) => Math.round(Number((h as Record<string, unknown>)[k]) * 10) / 10 || 0)),
+  };
+}
+
+export function unpackHistory(z: unknown): Partial<Sample>[] {
+  if (!z || typeof z !== "object") return [];
+  const { k, v } = z as { k?: unknown; v?: unknown };
+  if (!Array.isArray(k) || !Array.isArray(v)) return [];
+  return v.filter(Array.isArray).map((row) => Object.fromEntries(k.map((key, i) => [String(key), row[i]])) as Partial<Sample>);
 }
 
 /** Roads as row runs: "r:c0-c1,c2;r2:...". */
