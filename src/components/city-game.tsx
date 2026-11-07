@@ -29,7 +29,7 @@ import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/h
 import { fireBuilder, hireBuilder } from "@/game/builder";
 import { borrowFrom, chat, greet, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
 import { CATALOG, type Category, type Kind } from "@/game/catalog";
-import { CloudFail, loadSession, pushSave, snapshotLocal } from "@/game/cloud";
+import { CloudFail, cloudInfo, loadSession, pushSave, snapshotLocal } from "@/game/cloud";
 import { aboutGame, errorText } from "@/components/hud-cloud";
 import {
   advanceDays,
@@ -58,6 +58,7 @@ import {
   coastal,
   collectAll,
   saveFailed,
+  freezeSaves,
   LAW_MAX_PCT,
   collectOne,
   createInitial,
@@ -517,10 +518,28 @@ export function CityGame() {
     window.addEventListener("city-graphics-lost", onGraphicsLost);
     const onSaveNow = () => flushRef.current();
     window.addEventListener("city-save-now", onSaveNow);
+    // A city restored from the cloud is now in storage: load it in place.
+    const onLoadSaved = () => {
+      const d = localStorage.getItem("omdat-kuwait-selected-district");
+      const next = loadSim(isDistrictId(d) ? d : null);
+      if (next.district) {
+        next.started = true;
+        next.speed = 0;
+      }
+      simRef.current = next;
+      freezeSaves(false);
+      setSelected(null);
+      setSnap(cloneSim(next));
+      world?.sync(next, timeRef.current, true);
+      saveSim(next);
+      cloudLast = "";
+    };
+    window.addEventListener("city-load-saved", onLoadSaved);
     // Signed in to the cloud: upload every 3 minutes when the game changed.
     let cloudLast = "";
     let cloudBusy = false;
     let cloudWarned = false;
+    let cloudNewerWarned = false;
     const cloudTimer = window.setInterval(() => {
       const session = loadSession();
       if (!session || cloudBusy || !simRef.current.started) return;
@@ -528,12 +547,26 @@ export function CityGame() {
       const mark = JSON.stringify(snapshotLocal()).length + ":" + Math.floor(simRef.current.day);
       if (mark === cloudLast) return;
       cloudBusy = true;
-      pushSave(session, aboutGame(simRef.current))
+      const here = simRef.current;
+      cloudInfo(session)
+        .then((there) => {
+          // Never let the automatic save replace a cloud city that is further along
+          // (a fresh city on a phone whose storage was cleared, say).
+          if (there && there.savedAt > 0 && there.day > here.day + 30) {
+            if (!cloudNewerWarned) {
+              cloudNewerWarned = true;
+              toastRef.current(t("مدينتك في السحابة أحدث من اللي على الجهاز. استرجعها من «الحفظ السحابي»"));
+            }
+            throw new Error("cloud-newer");
+          }
+          return pushSave(session, aboutGame(here));
+        })
         .then(() => {
           cloudLast = mark;
           cloudWarned = false;
         })
         .catch((e: unknown) => {
+          if (e instanceof Error && e.message === "cloud-newer") return;
           // Say once why the automatic cloud save did not go through.
           if (cloudWarned) return;
           cloudWarned = true;
@@ -587,6 +620,7 @@ export function CityGame() {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("city-save-now", onSaveNow);
+      window.removeEventListener("city-load-saved", onLoadSaved);
       window.clearInterval(cloudTimer);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("city-graphics-lost", onGraphicsLost);

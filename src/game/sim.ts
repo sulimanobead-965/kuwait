@@ -3250,8 +3250,17 @@ function num(v: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * While a cloud city is being written into storage, the city still on screen must
+ * not save over it (it used to, on the page hiding for the reload).
+ */
+let savesFrozen = false;
+export function freezeSaves(on = true) {
+  savesFrozen = on;
+}
+
 export function saveSim(s: Sim) {
-  if (typeof localStorage === "undefined") return;
+  if (typeof localStorage === "undefined" || savesFrozen) return;
   const data = {
     v: 2,
     coins: s.coins,

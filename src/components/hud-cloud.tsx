@@ -92,12 +92,21 @@ export function CloudPanel({ snap }: { snap: Sim }) {
     }
   }
 
-  const upload = (s: CloudSession) =>
-    run(async () => {
+  const [confirmPush, setConfirmPush] = useState(false);
+  const upload = (s: CloudSession) => {
+    // A cloud city further along than this one is not replaced without a second tap.
+    if (info && info.day > snap.day + 30 && !confirmPush) {
+      setConfirmPush(true);
+      setNote({ text: t("مدينة السحابة أكبر وأحدث من هذي. اضغط «احفظ الآن» مرة ثانية إذا تبي تستبدلها"), bad: true });
+      return;
+    }
+    setConfirmPush(false);
+    return run(async () => {
       flushGame();
       setInfo(await pushSave(s, aboutGame(snap)));
       setNote({ text: t("تم حفظ مدينتك في السحابة") });
     });
+  };
 
   const download = (s: CloudSession) =>
     run(async () => {
@@ -106,8 +115,10 @@ export function CloudPanel({ snap }: { snap: Sim }) {
         setNote({ text: t("ما في مدينة محفوظة في هذا الحساب بعد"), bad: true });
         return;
       }
-      setNote({ text: t("تم الاسترجاع. اللعبة تفتح من جديد…") });
-      window.setTimeout(() => window.location.reload(), 600);
+      // The game loads the restored city in place (a page reload let the old city
+      // save over it while the page closed).
+      window.dispatchEvent(new Event("city-load-saved"));
+      setNote({ text: t("تم استرجاع مدينتك من السحابة") });
     });
 
   const when = (ms: number) =>

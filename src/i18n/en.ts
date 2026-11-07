@@ -1407,4 +1407,7 @@ export const EN: Record<string, string> = {
   "لكل قانون تختار بالمؤشر نسبة سنوية من دخل المدينة تُصرف عليه، وتُقسّط على أشهر السنة. كلما زادت النسبة قوي أثر القانون، حتى ٣ أضعاف.": "For each law, pick with the slider a yearly share of the city's income to spend on it, paid across the months. The bigger the share, the stronger the law, up to 3×.",
   "أو اكتب أي نسبة (بلا حد أعلى)": "Or type any rate (no upper limit)",
   "الحفظ السحابي التلقائي ما نجح: {why}": "Automatic cloud save failed: {why}",
+  "مدينة السحابة أكبر وأحدث من هذي. اضغط «احفظ الآن» مرة ثانية إذا تبي تستبدلها": "The cloud city is bigger and newer than this one. Tap “Save now” again to replace it",
+  "تم استرجاع مدينتك من السحابة": "Your city was restored from the cloud",
+  "مدينتك في السحابة أحدث من اللي على الجهاز. استرجعها من «الحفظ السحابي»": "Your cloud city is newer than the one on this device. Restore it from “Cloud save”",
 };

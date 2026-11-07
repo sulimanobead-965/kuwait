@@ -12,6 +12,8 @@
  * (the App Store build, a saved copy) `cloudDb()` resolves null and the feature hides.
  */
 
+import { freezeSaves } from "./sim";
+
 const PART = 200_000;
 const SESSION_KEY = "omdat-cloud";
 /** Device settings that stay on each device. */
@@ -271,6 +273,9 @@ export async function pullSave(session: CloudSession) {
       packed += text;
     }
     const snap = JSON.parse(await decodeSave(packed)) as Record<string, string>;
+    // Stop the city on screen from saving over the restored one; the game lifts
+    // this once it has loaded the restored city.
+    freezeSaves(true);
     restoreLocal(snap);
     return true;
   } catch (e) {
