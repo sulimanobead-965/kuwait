@@ -1352,3 +1352,34 @@ export function TutorialCard({ step, onSkip }: { step: number; onSkip: () => voi
     </div>
   );
 }
+
+/** What the approval meter is made of: every reason it rose or fell, biggest first. */
+export function ApprovalWhy({ snap }: { snap: Sim }) {
+  const st = stats(snap);
+  const parts = new Map<string, number>();
+  for (const [label, n] of st.why ?? []) parts.set(label, (parts.get(label) ?? 0) + n);
+  const list = [...parts].filter(([, n]) => n !== 0).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const raw = st.rawHappy ?? st.happy;
+  return (
+    <div className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="approval-why">
+      <p className="text-sm font-extrabold">{t("رضا الناس الآن {n}%", { n: st.happy })}</p>
+      {raw < st.happy && (
+        <p className="text-xs font-bold text-coral">
+          {t("الرضا الحقيقي {n}٪، والمؤشر ما ينزل تحت ٦٪: عالج الأسباب الحمراء أولاً عشان يبين أثر أي تحسين.", { n: raw })}
+        </p>
+      )}
+      <p className="mt-1 text-xs opacity-80">{t("يبدأ من ٥٢ وتضيف عليه أو تنقص منه هذه الأسباب:")}</p>
+      <ul className="mt-1 space-y-0.5 text-xs">
+        {list.map(([label, n]) => (
+          <li key={label} className="flex justify-between gap-2">
+            <span>{t(label)}</span>
+            <span dir="ltr" className={`font-extrabold ${n < 0 ? "text-coral" : "text-sc-leaf"}`}>
+              {n > 0 ? "+" : ""}
+              {n}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

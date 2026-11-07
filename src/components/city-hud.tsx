@@ -45,6 +45,7 @@ import type { NpcId } from "@/game/npcs";
 import { DEVELOPERS, type DeveloperId, type DevelopmentKind } from "@/game/developments";
 import { unreadCount } from "@/game/npcs";
 import {
+  ApprovalWhy,
   Achievements,
   CelebrationCard,
   Companies,
@@ -1514,6 +1515,7 @@ function Budget({
           </span>
         </div>
       </div>
+      <ApprovalWhy snap={snap} />
       <p className="text-xs" data-testid="income-breakdown">
         {t("دخل الشهر = رسوم المعيشة {fees} + دخل المباني {buildings} د.ك", {
           fees: fmt(feeRevenue(snap, st)),

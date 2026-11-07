@@ -218,6 +218,9 @@ export type CityStats = {
   /** Lowest service coverage, 0–1. */
   service: number;
   happy: number;
+  /** Approval before it is held between 6 and 100, and every reason it moved. */
+  rawHappy?: number;
+  why?: [string, number][];
   powerUse: number;
   powerGive: number;
   waterUse: number;
@@ -1297,6 +1300,13 @@ export function stats(s: Sim): CityStats {
 function computeStats(s: Sim): CityStats {
   let pop = 0;
   let happy = 52;
+  // Every reason the mood moved, for the approval breakdown.
+  const why: [string, number][] = [];
+  const add = (label: string, n: number) => {
+    const v = Math.round(n);
+    if (v !== 0) why.push([label, v]);
+    happy += v;
+  };
   let powerUse = 0;
   let powerGive = 0;
   let waterUse = 0;
@@ -1320,7 +1330,7 @@ function computeStats(s: Sim): CityStats {
   // a village's few gardens matter as much as a big city's many. Up to ±25 points;
   // the raw sum used to reach thousands and pinned approval at 100%.
   const perHome = amenity / Math.max(4, homes);
-  happy += Math.round(25 * Math.tanh(perHome / 6));
+  add("الحدائق والمدارس والمعالم", 25 * Math.tanh(perHome / 6));
   const capacity = pop;
   pop = Math.round(capacity * clamp(s.occupancy ?? 1, OCCUPANCY_MIN, 1));
   const blackout = s.disaster?.kind === "blackout" && s.day < s.disaster.until;
@@ -1328,28 +1338,28 @@ function computeStats(s: Sim): CityStats {
   const grace = pop < 20;
   const shortP = !grace && powerUse > powerGive;
   const shortW = !grace && waterUse > waterGive;
-  if (shortP) happy -= 18;
-  if (shortW) happy -= 14;
-  if (pop >= 48 && police === 0) happy -= 10;
+  if (shortP) add("نقص الكهرباء", -18);
+  if (shortW) add("نقص الماء", -14);
+  if (pop >= 48 && police === 0) add("لا يوجد مركز شرطة", -10);
   // Tax above 8%: 0.6 a point up to 40%, then a point per 5% more, with no ceiling.
-  if (s.tax > 8) happy -= Math.round((Math.min(s.tax, 40) - 8) * 0.6 + Math.max(0, s.tax - 40) / 5);
-  if (s.tax < 5) happy += 5;
+  if (s.tax > 8) add("الضريبة", -((Math.min(s.tax, 40) - 8) * 0.6 + Math.max(0, s.tax - 40) / 5));
+  if (s.tax < 5) add("الضريبة", 5);
   // Laws and the board's projects lift the mood, but together by 20 points at most.
-  happy += clamp(lawEffect(s, "happy"), -20, 20);
+  add("القوانين والمشاريع", clamp(lawEffect(s, "happy"), -20, 20));
   const hit = s.disaster && s.day < s.disaster.until ? s.disaster.kind : null;
-  if (hit === "storm") happy -= 14;
-  if (hit === "flood") happy -= 10;
+  if (hit === "storm") add("عاصفة", -14);
+  if (hit === "flood") add("سيول", -10);
   // Services: each missing one costs up to 9 points once the city is past a village.
   const cover = serviceCoverage(s, capacity);
   const service = Math.min(...Object.values(cover));
   // A village forgives a lot; a big district without services does not.
   const weight = clamp((capacity - 60) / 400, 0, 1) * 9;
-  for (const v of Object.values(cover)) happy -= Math.round((1 - v) * weight);
+  add("نقص الخدمات", -Object.values(cover).reduce((n, v) => n + Math.round((1 - v) * weight), 0));
   // Living costs above the normal tariff anger people; below it pleases them.
-  happy -= Math.round(Math.min(120, Math.max(-12, (costIndex(s) - 100) / 6)));
+  add("غلاء المعيشة", -Math.min(120, Math.max(-12, (costIndex(s) - 100) / 6)));
   // Support beyond free rent is cash in hand: a little more goodwill, capped.
-  if ((s.housingAid ?? 0) > 100) happy += Math.min(6, Math.round(((s.housingAid ?? 0) - 100) / 25));
-  if ((s.aidUntil ?? 0) > s.day) happy += s.aidHappy ?? 0;
+  if ((s.housingAid ?? 0) > 100) add("دعم السكن", Math.min(6, Math.round(((s.housingAid ?? 0) - 100) / 25)));
+  if ((s.aidUntil ?? 0) > s.day) add("المساعدات", s.aidHappy ?? 0);
   const crisis = crisisOf(s);
   if (crisis) {
     let hit2 = CRISES[crisis].happy;
@@ -1357,18 +1367,19 @@ function computeStats(s: Sim): CityStats {
       hit2 *=
         (1 - serviceCoverage(s, capacity).clinic * 0.6) *
         Math.max(0.2, 1 - lawEffect(s, "pandemic"));
-    happy -= Math.round(hit2);
+    add("الأزمة", -hit2);
   }
   const mood = calendarMood(s);
-  if (mood.national) happy += 6;
-  if (mood.eid) happy += 4;
-  if (mood.ramadan && s.buildings.some((b) => b.kind === "mosque")) happy += 4;
-  if (consulting(s)) happy += 3;
+  if (mood.national) add("المناسبات", 6);
+  if (mood.eid) add("المناسبات", 4);
+  if (mood.ramadan && s.buildings.some((b) => b.kind === "mosque")) add("المناسبات", 4);
+  if (consulting(s)) add("الاستشارات", 3);
   const ev = activeEvent(s);
-  if (ev) happy += ev.happy;
-  happy += Math.min(12, s.fame ?? 0);
-  happy += charityMood(s);
-  happy = clamp(Math.round(happy), 6, 100);
+  if (ev) add("الفعاليات", ev.happy);
+  add("الشهرة", Math.min(12, s.fame ?? 0));
+  add("التبرعات", charityMood(s));
+  const rawHappy = Math.round(happy);
+  happy = clamp(rawHappy, 6, 100);
   const utilP = powerUse === 0 || grace ? 1 : Math.min(1, powerGive / powerUse);
   const utilW = waterUse === 0 || grace ? 1 : Math.min(1, waterGive / waterUse);
   const util = Math.min(utilP, utilW);
@@ -1384,6 +1395,8 @@ function computeStats(s: Sim): CityStats {
     capacity,
     service,
     happy,
+    rawHappy,
+    why,
     powerUse,
     powerGive,
     waterUse,
@@ -2223,6 +2236,8 @@ export function placePackage(
   kind: ModelKind,
   now: number,
   at?: { c: number; r: number } | null,
+  /** Buildings to put first instead of the package's usual list. */
+  planOverride?: Kind[],
 ) {
   const def = MODEL_AREAS[kind];
   const site = at ?? findModelSite(s, def.w, def.h);
@@ -2248,7 +2263,7 @@ export function placePackage(
     for (let r = r0 + 1; r < r1; r += 1)
       for (let c = c0 + 1; c < c1; c += 1)
         if (!roadSet(s).has(cellKey(c, r))) lots.push({ c, r });
-    const plan = [...def.plan];
+    const plan = [...(planOverride ?? def.plan)];
     let i = 0;
     for (const lot of lots) {
       const kind2 = plan.shift() ?? def.filler[i++ % def.filler.length]!;
@@ -3279,6 +3294,24 @@ export function createInitialDistrict(district: DistrictId, seed = true): Sim {
   return s;
 }
 
+const STARTER_SERVICES: Kind[] = [
+  "power",
+  "power",
+  "power",
+  "power",
+  "water",
+  "water",
+  "water",
+  "police",
+  "police",
+  "police",
+  "fire",
+  "school",
+  "school",
+  "clinic",
+  "clinic",
+];
+
 const STARTER: Kind[] = ["villa", "villa", "villa", "modern", "shop", "school", "park", "power", "water"];
 
 function seedStarter(s: Sim) {
@@ -3304,11 +3337,10 @@ function seedStarter(s: Sim) {
       }
     } else {
       placePackage(s, "homes", 0);
-      const plant = findModelSite(s, 2, 1);
-      if (plant) {
-        placeBuilding(s, "power", plant.c, plant.r, 0);
-        placeBuilding(s, "water", plant.c + 1, plant.r, 0);
-      }
+      // A services block next door, so the first city has the power, water, police,
+      // fire cover, schools and clinics its homes need: approval starts near 60%
+      // instead of stuck at the bottom, and every choice after that shows.
+      placePackage(s, "services", 0, null, STARTER_SERVICES);
     }
   } finally {
     prepaid = false;
