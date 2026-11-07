@@ -23,6 +23,12 @@ export type NpcDef = {
   lendRate: number;
   greet: string[];
   style: "formal" | "warm" | "merchant" | "young" | "builder";
+  /** Companies and stakes owned (value at the start; grows with their fortunes). */
+  holdings: { name: string; pct: number; value: number }[];
+  /** Bank debt at the start, paid off over five years. */
+  bankDebt: number;
+  /** Chance that a tender they win is overpriced at the city's expense. */
+  integrity: number;
 };
 
 export const NPCS: readonly NpcDef[] = [
@@ -37,6 +43,12 @@ export const NPCS: readonly NpcDef[] = [
     lendRate: 0.08,
     greet: ["حيّاك الله يا جار", "هلا والله بالمحافظ", "مساء الخير، شلونك وشلون أهلك؟"],
     style: "formal",
+    holdings: [
+      { name: "شركة الجهراء للأغذية", pct: 60, value: 2_000_000 },
+      { name: "حصة في بنك الخليج", pct: 2, value: 800_000 },
+    ],
+    bankDebt: 500_000,
+    integrity: 0.05,
   },
   {
     id: "umsalem",
@@ -49,6 +61,12 @@ export const NPCS: readonly NpcDef[] = [
     lendRate: 0.1,
     greet: ["أهلين يا ولدي", "هلا بك، شخبارك؟", "يا هلا، عسى أمورك طيبة"],
     style: "warm",
+    holdings: [
+      { name: "مشغل أم سالم للخياطة", pct: 100, value: 150_000 },
+      { name: "حصة في تعاونية الفحيحيل", pct: 5, value: 300_000 },
+    ],
+    bankDebt: 50_000,
+    integrity: 0.02,
   },
   {
     id: "bukhalid",
@@ -61,6 +79,12 @@ export const NPCS: readonly NpcDef[] = [
     lendRate: 0.18,
     greet: ["هلا هلا، عندي لك صفقة", "يا مرحبا، السوق اليوم حامي", "أهلاً يا محافظ، شنو عندك؟"],
     style: "merchant",
+    holdings: [
+      { name: "مجموعة بو خالد التجارية", pct: 80, value: 5_000_000 },
+      { name: "عقارات المباركية", pct: 40, value: 3_000_000 },
+    ],
+    bankDebt: 2_000_000,
+    integrity: 0.25,
   },
   {
     id: "sara",
@@ -73,6 +97,12 @@ export const NPCS: readonly NpcDef[] = [
     lendRate: 0.14,
     greet: ["هاي! عندي فكرة مشروع", "أهلاً، شفت أرقام السوق اليوم؟", "مرحبا! خلنا نسوي شي كبير"],
     style: "young",
+    holdings: [
+      { name: "تطبيق سارة للتوصيل", pct: 70, value: 400_000 },
+      { name: "محفظة أسهم تقنية", pct: 100, value: 200_000 },
+    ],
+    bankDebt: 150_000,
+    integrity: 0.1,
   },
   {
     id: "meshal",
@@ -85,6 +115,12 @@ export const NPCS: readonly NpcDef[] = [
     lendRate: 0.12,
     greet: ["السلام عليكم يا طويل العمر", "هلا بالمحافظ، عندك شغل؟", "يا هلا، المعدات جاهزة"],
     style: "builder",
+    holdings: [
+      { name: "شركة مشعل للمقاولات", pct: 90, value: 1_500_000 },
+      { name: "معدات الأحمدي الثقيلة", pct: 50, value: 600_000 },
+    ],
+    bankDebt: 900_000,
+    integrity: 0.3,
   },
 ];
 
@@ -110,6 +146,23 @@ export type NpcState = {
   iOwe: NpcLoan[];
   chat: { from: "me" | "them"; text: string }[];
   unread: number;
+  /** How their companies have done since the start (1 = unchanged). */
+  assets: number;
+  /** Bank debt still owed. */
+  bankDebt: number;
+  /** Tenders won from the city (latest 20). */
+  tenders: { title: string; amount: number; day: number }[];
+  /** Their account statement (latest 30 entries; + in, − out). */
+  statement: { day: number; text: string; amount: number }[];
+  year: { income: number; expense: number };
+  lastYear: { income: number; expense: number };
+  /** Overcharges on tenders not yet found by an audit (hidden from the player). */
+  irregular: number;
+  /** Proven by the last audit and not yet settled. */
+  flagged: number;
+  audits: { day: number; found: number; recovered: number }[];
+  /** Barred from tenders until this game day after being held to account. */
+  bannedUntil: number;
 };
 
 export function emptyNpcs(): NpcState[] {
@@ -121,6 +174,16 @@ export function emptyNpcs(): NpcState[] {
     iOwe: [],
     chat: [],
     unread: 0,
+    assets: 1,
+    bankDebt: d.bankDebt,
+    tenders: [],
+    statement: [],
+    year: { income: 0, expense: 0 },
+    lastYear: { income: 0, expense: 0 },
+    irregular: 0,
+    flagged: 0,
+    audits: [],
+    bannedUntil: 0,
   }));
 }
 
@@ -154,6 +217,24 @@ export function loadNpcs(raw: unknown): NpcState[] {
           .slice(-40)
       : [];
     target.unread = Math.max(0, Number(p.unread) || 0);
+    const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    const q = p as Partial<NpcState>;
+    target.assets = Math.max(0.05, num(q.assets, 1));
+    if (q.bankDebt !== undefined) target.bankDebt = Math.max(0, num(q.bankDebt));
+    target.tenders = Array.isArray(q.tenders)
+      ? q.tenders.filter((x) => x && typeof x.title === "string").map((x) => ({ title: x.title, amount: num(x.amount), day: num(x.day) })).slice(-20)
+      : [];
+    target.statement = Array.isArray(q.statement)
+      ? q.statement.filter((x) => x && typeof x.text === "string").map((x) => ({ day: num(x.day), text: x.text, amount: num(x.amount) })).slice(-30)
+      : [];
+    target.year = { income: num(q.year?.income), expense: num(q.year?.expense) };
+    target.lastYear = { income: num(q.lastYear?.income), expense: num(q.lastYear?.expense) };
+    target.irregular = Math.max(0, num(q.irregular));
+    target.flagged = Math.max(0, num(q.flagged));
+    target.audits = Array.isArray(q.audits)
+      ? q.audits.map((a) => ({ day: num(a?.day), found: num(a?.found), recovered: num(a?.recovered) })).slice(-10)
+      : [];
+    target.bannedUntil = num(q.bannedUntil);
   }
   return base;
 }
@@ -455,12 +536,142 @@ export function greet(s: Sim, id: NpcId) {
  * and borrowers may default (more likely at high rates and in a crisis). Returns
  * news lines for the city log.
  */
+// ------------------------------------------------------------ their finances
+
+const TENDERS = [
+  "صيانة طرق",
+  "بناء مدرسة",
+  "توسعة مستوصف",
+  "تمديد شبكة مياه",
+  "إنارة الشوارع",
+  "تجميل الواجهة البحرية",
+  "توريد معدات بلدية",
+  "تنظيف وصيانة الحدائق",
+];
+
+/** One line on their account statement (+ money in, − out), and the year's totals. */
+function post(n: NpcState, day: number, text: string, amount: number) {
+  if (!amount) return;
+  n.statement.push({ day, text, amount });
+  if (n.statement.length > 30) n.statement.splice(0, n.statement.length - 30);
+  if (amount > 0) n.year.income += amount;
+  else n.year.expense -= amount;
+}
+
+/** What their companies and stakes are worth today. */
+export function holdingsOf(n: NpcState) {
+  return npcDef(n.id).holdings.map((h) => ({ ...h, value: h.value * n.assets }));
+}
+
+/** Their balance sheet: cash, companies, debts, and what is owed between you. */
+export function npcWorth(n: NpcState) {
+  const companies = holdingsOf(n).reduce((t, h) => t + h.value, 0);
+  const owesMe = n.owesMe.reduce((t, l) => t + l.left, 0);
+  const iOwe = n.iOwe.reduce((t, l) => t + l.left, 0);
+  const net = n.cash + companies + iOwe - n.bankDebt - owesMe;
+  return { cash: n.cash, companies, bankDebt: n.bankDebt, owesMe, iOwe, net };
+}
+
+/** What an audit of this person costs: 0.2٪ of their wealth, at least 5,000 KD. */
+export function auditCost(s: Sim, id: NpcId) {
+  const w = npcWorth(npcOf(s, id));
+  return Math.round(Math.max(5_000, (w.cash + w.companies) * 0.002));
+}
+
+/**
+ * Audit their dealings with the city. Any overcharge on tenders is found and recorded;
+ * an honest person is offended by the suspicion.
+ */
+export function auditNpc(s: Sim, id: NpcId) {
+  const n = npcOf(s, id);
+  const d = npcDef(id);
+  const cost = auditCost(s, id);
+  if (s.coins < cost) return { ok: false as const, msg: t("تحتاج {amount} د.ك لتكاليف التدقيق", { amount: fmt(cost) }) };
+  s.coins -= cost;
+  const found = n.irregular;
+  n.irregular = 0;
+  n.flagged += found;
+  n.audits = [...n.audits, { day: s.day, found, recovered: 0 }].slice(-10);
+  if (found > 0) {
+    n.trust = Math.max(0, n.trust - 10);
+    say(n, "them", t("هذي أخطاء محاسبية بسيطة… خلنا نتفاهم"));
+    return { ok: true as const, msg: t("التدقيق على {name}: مخالفات بقيمة {amount} د.ك في المناقصات", { name: t(d.name), amount: fmt(found) }) };
+  }
+  n.trust = Math.max(0, n.trust - 12);
+  say(n, "them", t("حساباتي نظيفة! ليش تشك فيني؟"));
+  return { ok: true as const, msg: t("التدقيق على {name}: حساباته نظيفة", { name: t(d.name) }) };
+}
+
+/**
+ * Hold them to account for what an audit proved: the overcharge back with a 20٪
+ * penalty (as far as their cash goes) and five years without tenders.
+ */
+export function holdToAccount(s: Sim, id: NpcId) {
+  const n = npcOf(s, id);
+  const d = npcDef(id);
+  if (n.flagged <= 0) return { ok: false as const, msg: t("ما في مخالفات ثابتة بالتدقيق") };
+  const due = n.flagged * 1.2;
+  const paid = Math.min(Math.max(0, n.cash), due);
+  n.cash -= paid;
+  s.coins += paid;
+  post(n, s.day, t("غرامة واسترداد مخالفات للمدينة"), -paid);
+  const last = n.audits[n.audits.length - 1];
+  if (last) last.recovered += paid;
+  n.flagged = 0;
+  n.bannedUntil = s.day + 5 * 360;
+  n.trust = Math.max(0, n.trust - 15);
+  say(n, "them", t("دفعت اللي عليّ… بس ما توقعتها منك"));
+  return {
+    ok: true as const,
+    msg: t("حاسبت {name}: استرددت {amount} د.ك وموقوف عن المناقصات ٥ سنوات", { name: t(d.name), amount: fmt(paid) }),
+  };
+}
+
+/** Their companies, debts and tenders move on by a month. */
+function npcFinanceMonth(s: Sim, n: NpcState, crisis: string | null, random: () => number) {
+  const d = npcDef(n.id);
+  // Companies grow with the economy (and shrink in a crisis); they pay out profits.
+  n.assets = Math.max(0.05, n.assets * (1 + (crisis === "economic" ? -0.02 : d.growth / 12) + (random() - 0.5) * 0.02));
+  const profit = holdingsOf(n).reduce((t, h) => t + h.value, 0) * 0.008 * (crisis ? 0.5 : 1);
+  n.cash += profit;
+  post(n, s.day, t("أرباح الشركات والحصص"), profit);
+  if (n.bankDebt > 0) {
+    const pay = Math.min(n.bankDebt, d.bankDebt / 60);
+    n.bankDebt -= pay;
+    n.cash -= pay;
+    post(n, s.day, t("قسط قرض البنك"), -pay);
+  }
+  const living = Math.max(500, n.cash * 0.002);
+  n.cash -= living;
+  post(n, s.day, t("مصاريف ومعيشة"), -living);
+  // Now and then a tender from the city.
+  if (n.bannedUntil <= s.day && random() < 0.15) {
+    const title = pick(TENDERS, random);
+    const amount = Math.round((20_000 + s.buildings.length * 300) * (0.5 + random() * 1.5));
+    const margin = amount * (0.08 + random() * 0.12);
+    n.tenders = [...n.tenders, { title, amount, day: s.day }].slice(-20);
+    n.cash += margin;
+    post(n, s.day, t("ربح مناقصة: {title}", { title: t(title) }), margin);
+    // Some overcharge the city.
+    if (random() < d.integrity && s.coins > amount * 20) {
+      const extra = Math.round(amount * (0.1 + random() * 0.2));
+      n.irregular += extra;
+      n.cash += extra;
+      s.coins -= extra;
+    }
+  }
+  if (Math.floor(s.day / 30) % 12 === 0) {
+    n.lastYear = n.year;
+    n.year = { income: 0, expense: 0 };
+  }
+}
+
 export function npcMonth(s: Sim, random = Math.random) {
   const news: string[] = [];
   const crisis = s.crisis && s.day < s.crisis.until ? s.crisis.kind : null;
   for (const n of s.npcs) {
     const d = npcDef(n.id);
-    n.cash *= 1 + (crisis === "economic" ? -0.01 : d.growth / 12);
+    npcFinanceMonth(s, n, crisis, random);
     // They pay you.
     for (const loan of [...n.owesMe]) {
       const odds = d.risk * (1 + loan.rate * 4) * (crisis ? 3 : 1);
@@ -484,6 +695,7 @@ export function npcMonth(s: Sim, random = Math.random) {
       const pay = Math.min(loan.installment, loan.left);
       s.coins += pay;
       n.cash -= pay;
+      post(n, s.day, t("قسط دين المحافظ"), -pay);
       loan.left -= pay;
       if (loan.left <= 0.5) {
         n.owesMe = n.owesMe.filter((l) => l.id !== loan.id);
@@ -502,6 +714,7 @@ export function npcMonth(s: Sim, random = Math.random) {
       if (s.coins >= pay) {
         s.coins -= pay;
         n.cash += pay;
+        post(n, s.day, t("قسط من المحافظ"), pay);
         loan.left -= pay;
         if (loan.left <= 0.5) {
           n.iOwe = n.iOwe.filter((l) => l.id !== loan.id);

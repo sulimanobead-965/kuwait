@@ -405,3 +405,45 @@ test("the investment ledger books profits and losses per year and keeps ten year
   assert.ok(Math.abs(r.total - r.lines.reduce((n, x) => n + x.gain, 0)) < 1, "total is the sum");
   void sim;
 });
+
+test("donations: any amount as waqf, zakat or sadaqa; building causes build, approval rises", async () => {
+  const sim = await import("./sim.ts");
+  const s = createInitial();
+  s.started = true;
+  s.randomDisasters = false;
+  s.coins = 10_000_000_000;
+  const r = 28 + FINE_ROW0, c = 21 + OLD_COL0;
+  for (let i = 0; i < 12; i += 1) placeRoad(s, c + i, r);
+  for (let i = 0; i < 6; i += 1) placeBuilding(s, "apartments", c + i, r + 1, 0);
+  const before = sim.stats(s).happy;
+  const mosques = s.buildings.filter((b) => b.kind === "mosque").length;
+  assert.equal(sim.donate(s, "waqf", "mosque", 5_000_000_000).ok, true, "no ceiling on the amount");
+  assert.ok(s.buildings.filter((b) => b.kind === "mosque").length > mosques, "mosques built");
+  assert.equal(sim.donate(s, "sadaqa", "aid", 100_000).ok, true);
+  assert.equal(sim.donate(s, "zakat", "orphans", sim.zakatDue(s)).ok, true);
+  assert.ok(sim.charityMood(s) > 0);
+  assert.ok(sim.stats(s).happy >= before);
+  assert.equal(sim.donate(s, "sadaqa", "aid", s.coins + 1).ok, false, "only what the treasury holds");
+});
+
+test("virtual players have a financial statement, can be audited and held to account", async () => {
+  const npcs = await import("./npcs.ts");
+  const s = createInitial();
+  s.started = true;
+  s.randomDisasters = false;
+  s.coins = 1_000_000_000;
+  const n = s.npcs.find((x) => x.id === "meshal")!;
+  for (let m = 0; m < 24; m += 1) advanceDays(s, 30);
+  assert.ok(n.statement.length > 0, "account statement");
+  assert.ok(npcs.npcWorth(n).companies > 0, "companies and stakes");
+  // An overcharge hidden in a tender is found by an audit and paid back with a fine.
+  n.irregular = 100_000;
+  n.cash = 1_000_000;
+  const coins = s.coins;
+  assert.equal(npcs.auditNpc(s, "meshal").ok, true);
+  assert.equal(n.flagged, 100_000);
+  assert.equal(npcs.holdToAccount(s, "meshal").ok, true);
+  assert.ok(s.coins > coins, "money recovered");
+  assert.ok(n.bannedUntil > s.day, "barred from tenders");
+  assert.equal(npcs.holdToAccount(s, "meshal").ok, false, "nothing left to settle");
+});

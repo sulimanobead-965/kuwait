@@ -27,7 +27,7 @@ import {
 import { TUTORIAL, WelcomeBack, type Celebration } from "@/components/hud-panels";
 import { loadPlayer, PlayerSetup, savePlayer, type Player } from "@/components/hud-social";
 import { fireBuilder, hireBuilder } from "@/game/builder";
-import { borrowFrom, chat, greet, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
+import { auditNpc, borrowFrom, chat, greet, holdToAccount, lendTo, markRead, repayNpc, type NpcId } from "@/game/npcs";
 import { CATALOG, type Category, type Kind } from "@/game/catalog";
 import { CloudFail, cloudInfo, loadSession, pushSave, snapshotLocal } from "@/game/cloud";
 import { aboutGame, errorText } from "@/components/hud-cloud";
@@ -74,6 +74,7 @@ import {
   saveSim,
   setDisasterInsurance,
   setAutoCollect,
+  donate,
   stats,
   tick,
   totalStored,
@@ -1159,6 +1160,17 @@ export function CityGame() {
           markRead(simRef.current, id);
         }}
         onNpcRepay={(id) => finance(repayNpc(simRef.current, id))}
+        onNpcAudit={(id) => finance(auditNpc(simRef.current, id))}
+        onNpcAccount={(id) => finance(holdToAccount(simRef.current, id))}
+        onDonate={(kind, cause, amount) => {
+          const act = donate(simRef.current, kind, cause, amount);
+          if (!act.ok) pushToast(act.msg);
+          else {
+            worldRef.current?.sync(simRef.current, timeRef.current, true);
+            pushToast(simRef.current.log[0] ?? "");
+          }
+          sync();
+        }}
         onCrisis={onCrisis}
         onPhoto={onPhoto}
         onMusic={onMusic}

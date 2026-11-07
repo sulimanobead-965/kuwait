@@ -115,6 +115,8 @@ import { Board, MegaProjects } from "@/components/hud-board";
 import { StockMarket } from "@/components/hud-stocks";
 import { CloudPanel } from "@/components/hud-cloud";
 import { LedgerReport } from "@/components/hud-ledger";
+import { CharityPanel } from "@/components/hud-charity";
+import type { CharityCause, CharityKind } from "@/game/charity";
 import type { StockId } from "@/game/stocks";
 import { boardFee, projectMoney, type BoardState, type DeptId } from "@/game/board";
 import { currency, dirOf, percentSign, setLang, t, tx, useLang, bigNum, getLang } from "@/i18n";
@@ -143,6 +145,7 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
       { id: "budget", label: "الميزانية" },
       { id: "laws", label: "القوانين" },
       { id: "projects", label: "المشاريع" },
+      { id: "charity", label: "التبرعات" },
     ],
   },
   {
@@ -189,7 +192,8 @@ type Panel =
   | "board"
   | "stocks"
   | "cloud"
-  | "ledger";
+  | "ledger"
+  | "charity";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -367,6 +371,9 @@ export function CityHud({
   onLend,
   onBorrow,
   onNpcRepay,
+  onNpcAudit,
+  onNpcAccount,
+  onDonate,
   onPay,
   onEvent,
   onModel,
@@ -437,6 +444,9 @@ export function CityHud({
   onLend: (id: NpcId, amount: number, rate: number, months: number) => void;
   onBorrow: (id: NpcId, amount: number, rate: number, months: number) => void;
   onNpcRepay: (id: NpcId) => void;
+  onNpcAudit: (id: NpcId) => void;
+  onNpcAccount: (id: NpcId) => void;
+  onDonate: (kind: CharityKind, cause: CharityCause, amount: number) => void;
   onConsult: () => void;
   onMudaraba: (amount: number, expected: number) => void;
   onMudarabaWithdraw: () => void;
@@ -816,6 +826,7 @@ export function CityHud({
                 )}
                 {panel === "report" && <YearReport snap={snap} />}
                 {panel === "ledger" && <LedgerReport snap={snap} />}
+                {panel === "charity" && <CharityPanel snap={snap} onDonate={onDonate} />}
                 {panel === "voices" && <Voices snap={snap} />}
                 {panel === "stocks" && <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} />}
                 {panel === "cloud" && <CloudPanel snap={snap} />}
@@ -840,6 +851,8 @@ export function CityHud({
                     onLend={onLend}
                     onBorrow={onBorrow}
                     onRepay={onNpcRepay}
+                    onAudit={onNpcAudit}
+                    onAccount={onNpcAccount}
                   />
                 )}
                 {panel === "projects" && (

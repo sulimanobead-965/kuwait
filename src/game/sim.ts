@@ -7,7 +7,7 @@ import {
   loadFinance,
   type FinanceState,
 } from "./finance";
-import { builderMonth, emptyBuilder, loadBuilder, type BuilderState } from "./builder";
+import { builderMonth, emptyBuilder, freeLot, loadBuilder, type BuilderState } from "./builder";
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
 import { loadVoices, voicesMonth, type Voice } from "./voices";
@@ -37,6 +37,7 @@ import { COLS, FINE_ROW0, GRID_GEN, isForeign, OLD_COL0, islandAt, ISLANDS, isIs
 import { msg, t, tx } from "../i18n/index.ts";
 import { lonLatToCell } from "./places";
 import { book, closeLedgerYear } from "./ledger";
+import { CHARITY_CAUSES, CHARITY_KINDS, emptyCharity, loadCharity, type CharityCause, type CharityKind, type CharityState } from "./charity";
 export { districtById, isDistrictLand } from "./districts";
 import {
   districtById,
@@ -89,6 +90,8 @@ export type Sim = {
    * percent (0 = none, 100 = rent-free, above 100 = rent paid plus extra cash help).
    */
   housingAid: number;
+  /** Waqf, zakat and sadaqa given, and their effect (see charity.ts). */
+  charity: CharityState;
   /** Collect all buildings' income automatically every N game months (0 = by hand). */
   autoCollect?: number;
   /** A one-off emergency grant: extra happiness until this day. */
@@ -985,6 +988,7 @@ export function createInitial(): Sim {
     costs: defaultCosts(),
     autoRaise: 0,
     housingAid: 0,
+    charity: emptyCharity(),
     aidUntil: 0,
     aidHappy: 0,
     years: [],
@@ -1354,6 +1358,7 @@ function computeStats(s: Sim): CityStats {
   const ev = activeEvent(s);
   if (ev) happy += ev.happy;
   happy += Math.min(12, s.fame ?? 0);
+  happy += charityMood(s);
   happy = clamp(Math.round(happy), 6, 100);
   const utilP = powerUse === 0 || grace ? 1 : Math.min(1, powerGive / powerUse);
   const utilW = waterUse === 0 || grace ? 1 : Math.min(1, waterGive / waterUse);
@@ -2975,6 +2980,96 @@ function disasterInsuranceMonth(s: Sim) {
   book(s, "insurance", paid);
 }
 
+// ---------------------------------------------------------------- charity
+
+/** Zakat on the city's wealth: 2.5٪ of the treasury and the money saved in the bank. */
+export function zakatDue(s: Sim) {
+  const f = s.finance;
+  return Math.max(0, Math.round((Math.max(0, s.coins) + f.deposit + f.mudaraba) * 0.025));
+}
+
+/**
+ * Approval from giving: zakat and sadaqa lift it for a while, waqf a little for good;
+ * together never more than 15 points.
+ */
+export function charityMood(s: Sim) {
+  // Worked out when giving (it depends on income, and income on approval).
+  const c = s.charity;
+  if (!c) return 0;
+  const now = c.until > s.day ? c.mood : 0;
+  return Math.min(15, Math.round(now + (c.waqfMood ?? 0)));
+}
+
+/**
+ * Give `amount` (no ceiling) as waqf, zakat or sadaqa to a cause. Building causes put
+ * up one building per its price (25 at most per gift, the rest goes to the needy);
+ * every gift lifts the mood by its size against a month's income.
+ */
+export function donate(s: Sim, kind: CharityKind, cause: CharityCause, amount: number): Act {
+  amount = Math.floor(amount);
+  if (!(amount > 0)) return { ok: false, msg: t("اكتب مبلغ التبرع") };
+  if (s.coins < amount) return { ok: false, msg: t("الرصيد ما يكفي لهذا التبرع") };
+  const c = s.charity ?? (s.charity = emptyCharity());
+  s.coins -= amount;
+  s.ytd.spend += amount;
+  c.given[kind] += amount;
+  c.byCause[cause] = (c.byCause[cause] ?? 0) + amount;
+  const def = CHARITY_CAUSES.find((x) => x.id === cause)!;
+  let built = 0;
+  if (def.build) {
+    const price = priceOf(CATALOG[def.build].cost, s);
+    const count = Math.min(25, Math.floor(amount / Math.max(1, price)));
+    for (let i = 0; i < count; i += 1) {
+      const lot = freeLot(s) ?? roadsideLot(s);
+      if (!lot) break;
+      // The gift pays for the building.
+      s.coins += price;
+      if (placeBuilding(s, def.build, lot.c, lot.r, 0).ok) built += 1;
+      else s.coins -= price;
+    }
+    c.buildings += built;
+  }
+  const income = Math.max(1000, monthlyIncome(s) + feeRevenue(s));
+  const lift = Math.min(10, 3 * Math.log10(1 + (amount / income) * 4)) * (kind === "zakat" ? 1.2 : 1);
+  if (kind === "waqf") {
+    c.waqf += amount;
+    c.waqfMood = Math.max(c.waqfMood ?? 0, Math.min(6, 2 * Math.log10(1 + c.waqf / income)));
+  }
+  else {
+    const months = kind === "zakat" ? 12 : 6;
+    c.mood = Math.min(12, Math.max(c.until > s.day ? c.mood : 0, lift));
+    c.until = Math.max(c.until, s.day + months * 30);
+  }
+  s.fame = Math.min(12, (s.fame ?? 0) + (amount >= income ? 1 : 0));
+  const kindName = CHARITY_KINDS.find((k) => k.id === kind)!.name;
+  const entry = built
+    ? msg("{kind} {amount} د.ك لـ«{cause}»: بُني {n} مبنى", { kind: kindName, amount: Math.round(amount), cause: def.name, n: built })
+    : msg("{kind} {amount} د.ك لـ«{cause}». الناس تدعي لك", { kind: kindName, amount: Math.round(amount), cause: def.name });
+  pushLog(s, entry);
+  return { ok: true };
+}
+
+/** Any open land cell beside a road (for gifts when the built-up blocks are full). */
+function roadsideLot(s: Sim) {
+  for (const key of s.roads) {
+    const comma = key.indexOf(",");
+    const c = +key.slice(0, comma),
+      r = +key.slice(comma + 1);
+    for (const [dc, dr] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const x = c + dc,
+        y = r + dr;
+      if (isLand(x, y) && !isForeign(x, y) && !cellTaken(s, x, y) && !siteAt(s.sites, x, y) && islandOpen(s, x, y))
+        return { c: x, r: y };
+    }
+  }
+  return null;
+}
+
 /** Money a disaster takes from the treasury right away. */
 export function disasterBill(s: Sim, kind: DisasterKind) {
   const size = s.buildings.length * 8;
@@ -3222,6 +3317,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.autoRaise = clamp(Number(p.autoRaise) || 0, 0, COST_MAX);
     s.housingAid = clamp(Number(p.housingAid) || 0, 0, COST_MAX);
     setAutoCollect(s, Number((p as { autoCollect?: number }).autoCollect) || 0);
+    s.charity = loadCharity((p as { charity?: unknown }).charity);
     s.aidUntil = Math.max(0, Number(p.aidUntil) || 0);
     s.aidHappy = clamp(Number(p.aidHappy) || 0, 0, 30);
     if (Array.isArray(p.years)) s.years = p.years.filter((y) => y && typeof y === "object").slice(-60);
@@ -3422,6 +3518,7 @@ export function saveSim(s: Sim) {
     autoRaise: s.autoRaise,
     housingAid: s.housingAid,
     autoCollect: s.autoCollect ?? 0,
+    charity: s.charity,
     aidUntil: s.aidUntil,
     aidHappy: s.aidHappy,
     years: s.years,

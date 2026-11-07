@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { NpcFinance } from "@/components/hud-npc";
 import { HardHat, MessageCircle, Send } from "lucide-react";
 import { stats, type Sim } from "@/game/sim";
 import { BUILDER_NAME, BUILDER_SIGN_ON, builderFee } from "@/game/builder";
@@ -239,6 +240,8 @@ export function People({
   onLend,
   onBorrow,
   onRepay,
+  onAudit,
+  onAccount,
 }: {
   snap: Sim;
   player: { name: string; avatar: string };
@@ -247,8 +250,11 @@ export function People({
   onLend: (id: NpcId, amount: number, rate: number, months: number) => void;
   onBorrow: (id: NpcId, amount: number, rate: number, months: number) => void;
   onRepay: (id: NpcId) => void;
+  onAudit: (id: NpcId) => void;
+  onAccount: (id: NpcId) => void;
 }) {
   const [open, setOpen] = useState<NpcId | null>(null);
+  const [view, setView] = useState<"chat" | "money">("chat");
   const [text, setText] = useState("");
   const [amount, setAmount] = useState(50_000);
   const [rate, setRate] = useState(10);
@@ -316,6 +322,25 @@ export function People({
           {t(d.name)} · <span className="font-medium">{t(d.role)}</span>
         </span>
       </div>
+      <div className="grid grid-cols-2 gap-1" role="tablist">
+        {(["chat", "money"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={view === v}
+            data-testid={`npc-view-${v}`}
+            onClick={() => setView(v)}
+            className={`sc-menu h-9 text-xs ${view === v ? "sc-on" : ""}`}
+          >
+            {v === "chat" ? t("المحادثة والقروض") : t("الوضع المالي")}
+          </button>
+        ))}
+      </div>
+      {view === "money" ? (
+        <NpcFinance snap={snap} id={open} onAudit={onAudit} onAccount={onAccount} />
+      ) : (
+      <>
       <div className="max-h-56 min-h-32 space-y-1 overflow-y-auto rounded-md bg-white/70 p-2 text-sm">
         {npc.chat.map((m, i) => (
           <p
@@ -413,6 +438,8 @@ export function People({
           {t("قرض حسن بلا فائدة ({amount} د.ك) · يرفع الثقة كثيراً", { amount: fmt(amount) })}
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }
