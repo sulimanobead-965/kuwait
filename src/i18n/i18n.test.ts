@@ -163,7 +163,7 @@ test("stored messages are language-independent and old saves still show", () => 
   assert.equal(tx(report, "en"), "Park ×2, School ×1 · 4,000 KD + 320 fee");
   assert.equal(tx(report, "ar"), "2 حديقة، 1 مدرسة · 4,000 د.ك + أتعاب 320");
   // Plain strings from older saves: known lines translate, anything else shows as is.
-  assert.equal(tx("سدّدت القرض كاملاً", "en"), "Loan fully repaid");
+  assert.equal(tx("سدّدت القرض كاملاً", "en"), "Financing fully repaid");
   assert.equal(tx("قرض 5,000 د.ك من البنك", "en"), "قرض 5,000 د.ك من البنك");
 });
 

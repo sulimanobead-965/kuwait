@@ -901,7 +901,7 @@ export function CityGame() {
       pushToast(
         act.ok
           ? s.loan <= 0
-            ? t("سدّدت القرض كاملاً")
+            ? t("سدّدت التمويل كاملاً")
             : t("تم السداد، والباقي {left} د.ك", { left: fmt(s.loan) })
           : act.msg,
       );

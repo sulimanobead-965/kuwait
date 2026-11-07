@@ -458,7 +458,7 @@ export function takeLoan(s: Sim, amount: number, rate = LOAN_RATE): Act {
   s.loanRate = s.loan + debt > 0 ? (s.loan * (s.loanRate ?? LOAN_RATE) + debt * rate) / (s.loan + debt) : rate;
   s.coins += amount;
   s.loan += debt;
-  pushLog(s, msg("قرض {amount} د.ك من البنك", { amount }));
+  pushLog(s, msg("تمويل {amount} د.ك من البنك", { amount }));
   return { ok: true };
 }
 
@@ -468,7 +468,7 @@ export function repayLoan(s: Sim, amount: number): Act {
   s.coins -= pay;
   s.loan -= pay;
   if (s.loan <= 0) {
-    pushLog(s, msg("سدّدت القرض كاملاً"));
+    pushLog(s, msg("سدّدت التمويل كاملاً"));
     if (!s.flags.includes("repaid")) s.flags.push("repaid");
   }
   return { ok: true };
@@ -838,7 +838,7 @@ export const ACHIEVEMENTS: readonly {
   { id: "happy", name: "شعب سعيد", detail: "رضا ٩٠٪", test: (_s, st) => st.happy >= 90 },
   { id: "rich", name: "خزينة عامرة", detail: "مليون د.ك في الصندوق", test: (s) => s.coins >= 1_000_000 },
   { id: "bonds", name: "مستثمر", detail: "اشترِ سندات", test: (s) => s.flags.includes("bonds") },
-  { id: "repaid", name: "بلا ديون", detail: "سدّد قرضاً كاملاً", test: (s) => s.flags.includes("repaid") },
+  { id: "repaid", name: "بلا ديون", detail: "سدّد تمويلاً كاملاً", test: (s) => s.flags.includes("repaid") },
   {
     id: "events",
     name: "عاصمة الفعاليات",
@@ -2850,7 +2850,7 @@ export function advanceDays(s: Sim, days: number) {
       s.ytd.spend += due;
       s.loan = Math.max(0, s.loan - due);
       if (s.loan === 0) {
-        pushLog(s, msg("سدّدت القرض كاملاً"));
+        pushLog(s, msg("سدّدت التمويل كاملاً"));
         if (!s.flags.includes("repaid")) s.flags.push("repaid");
       }
     }
@@ -3217,7 +3217,7 @@ export function bulletin(s: Sim, st = stats(s), news = true) {
   if (m.unemployment > 38) add("البطالة عالية. افتح محلات وأبراج");
   if (m.approval >= 72) add("الرضا عالٍ. أهل الكويت مبسوطين");
   if (s.tax >= 80) add("الضريبة عالية والناس تتذمر");
-  if (s.coins < 0) add("صندوق البلدية في عجز. خذ قرضاً من الميزانية");
+  if (s.coins < 0) add("صندوق البلدية في عجز. خذ تمويلاً من الميزانية");
   if (st.capacity >= 60 && st.service < 0.6) add("الخدمات ناقصة والناس متضايقة");
   if (costIndex(s) > 125) add("غلاء المعيشة: السكن والتعليم غالية والناس تشتكي");
   const crisis = crisisOf(s);

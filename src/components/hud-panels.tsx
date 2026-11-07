@@ -518,7 +518,7 @@ export function Companies({
           </button>
         </div>
         <p className="mt-1 text-[11px] opacity-80">
-          {t("تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب القرض.")}
+          {t("تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب تمويل البنك.")}
         </p>
       </Company>
 
@@ -529,7 +529,7 @@ export function Companies({
       >
         {closed("bank")}
         <p className="text-xs">
-          {t("وديعتك {amount} د.ك بفائدة {rate} سنوياً تُضاف شهرياً.", {
+          {t("وديعتك {amount} د.ك بعائد {rate} سنوياً يُضاف شهرياً.", {
             amount: fmt(f.deposit),
             rate: pct(f.depositRate),
           })}
@@ -564,7 +564,7 @@ export function Companies({
             suffix={currency()}
           />
           <NumberField
-            label={t("الفائدة التي تطلبها")}
+            label={t("العائد الذي تطلبه")}
             value={depRate}
             onChange={setDepRate}
             suffix={percentSign()}
@@ -578,11 +578,11 @@ export function Companies({
           onClick={() => onDeposit(depAmount, depRate / 100)}
           className="sc-menu sc-on mt-1 w-full text-xs disabled:opacity-40"
         >
-          {t("أودع {amount} بفائدة {rate}٪", { amount: money(depAmount), rate: depRate })}
+          {t("أودع {amount} بعائد {rate}٪", { amount: money(depAmount), rate: depRate })}
         </button>
         <p className="mt-1 text-[11px] leading-relaxed opacity-80">
           {t(
-            "الفائدة حرة بلا حد. كلما ارتفعت زاد خطر إفلاس البنك، فأمّن أموالك من «شركة الأمان للتأمين» أعلى اللوحة لتُعوَّض بالكامل.",
+            "العائد حر بلا حد. كلما ارتفع زاد خطر إفلاس البنك، فأمّن أموالك من «شركة الأمان للتأمين» أعلى اللوحة لتُعوَّض بالكامل.",
           )}
         </p>
         <p className="mt-2 text-xs font-extrabold">{t("سندات")}</p>
@@ -611,7 +611,7 @@ export function Companies({
         <div className="grid grid-cols-3 gap-1">
           <NumberField label={t("القيمة")} value={bondAmount} onChange={setBondAmount} />
           <NumberField
-            label={t("الفائدة")}
+            label={t("العائد")}
             value={bondRate}
             onChange={setBondRate}
             suffix={percentSign()}

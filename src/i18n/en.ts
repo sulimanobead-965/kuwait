@@ -124,8 +124,7 @@ export const EN: Record<string, string> = {
   "تمويل مرابحة بربح متفق عليه بدل الفائدة، ووديعة مضاربة تشاركك الربح والخسارة، وصكوك مدعومة بأصول.":
     "Murabaha financing at an agreed markup instead of interest, a Mudaraba deposit that shares profit and loss with you, and asset-backed Sukuk.",
   "بنك الديرة": "Al Deera Bank",
-  "ودائع بفائدة ١٠٪ سنوياً، وسندات، وقروض. البنوك تفلس في الأزمات.":
-    "Deposits at 10% a year, bonds and loans. Banks fail in a crisis.",
+  "ودائع بعائد ١٠٪ سنوياً، وسندات، وتمويل. البنوك تفلس في الأزمات.": "Deposits at a 10% yearly return, bonds and financing. Banks fail in a crisis.",
   "شركة المرسى العقارية": "Al Marsa Real Estate",
   "مشاريع سكنية تعيد رأس المال بربح وتسلّمك بيوتاً جاهزة. مخاطرة أعلى.":
     "Housing projects that return your capital with profit and hand over ready homes. Higher risk.",
@@ -140,7 +139,7 @@ export const EN: Record<string, string> = {
   "البنك مغلق بعد إفلاسه": "The bank is closed after going bankrupt",
   "الرصيد ما يكفي للإيداع": "Not enough funds to deposit",
   "نسبة غير صحيحة": "Invalid rate",
-  "أودعت {amount} د.ك في {company} بفائدة {rate}": "Deposited {amount} KD at {company} at {rate}",
+  "أودعت {amount} د.ك في {company} بعائد {rate}": "Deposited {amount} KD with {company} at {rate} return",
   "ما عندك وديعة": "You have no deposit",
   "سحبت {amount} د.ك": "Withdrew {amount} KD",
   "عرض غير موجود": "Offer not found",
@@ -329,10 +328,10 @@ export const EN: Record<string, string> = {
   "البنك يرفض: أقل فائدة يقبلها الآن {rate}٪":
     "The bank refuses: its lowest rate right now is {rate}%",
   "البنك رفض: الديون وصلت الحد": "The bank refused: your debt is at the limit",
-  "قرض {amount} د.ك من البنك": "Bank loan of {amount} KD",
+  "تمويل {amount} د.ك من البنك": "{amount} KD financing from the bank",
   "ما عليك دين": "You have no debt",
   "الرصيد ما يكفي للسداد": "Not enough funds to repay",
-  "سدّدت القرض كاملاً": "Loan fully repaid",
+  "سدّدت التمويل كاملاً": "Financing fully repaid",
   "دين البنك {amount} د.ك": "Bank debt: {amount} KD",
   "عجز: مصروف الشهر أكبر من الصندوق": "Deficit: this month's costs exceed the treasury",
 
@@ -413,7 +412,7 @@ export const EN: Record<string, string> = {
   مستثمر: "Investor",
   "اشترِ سندات": "Buy bonds",
   "بلا ديون": "Debt-Free",
-  "سدّد قرضاً كاملاً": "Repay a loan in full",
+  "سدّد تمويلاً كاملاً": "Repay a financing in full",
   "عاصمة الفعاليات": "Events Capital",
   "نظّم ٣ فعاليات": "Hold 3 events",
   صامد: "Steadfast",
@@ -486,8 +485,7 @@ export const EN: Record<string, string> = {
   "البطالة عالية. افتح محلات وأبراج": "Unemployment is high. Open shops and towers",
   "الرضا عالٍ. أهل الكويت مبسوطين": "Approval is high. Kuwait's people are happy",
   "الضريبة عالية والناس تتذمر": "Taxes are high and people are grumbling",
-  "صندوق البلدية في عجز. خذ قرضاً من الميزانية":
-    "The treasury is in deficit. Take a loan in Budget",
+  "صندوق البلدية في عجز. خذ تمويلاً من الميزانية": "The city fund is in deficit. Take financing from the budget",
   "الخدمات ناقصة والناس متضايقة": "Services are short and people are upset",
   "غلاء المعيشة: السكن والتعليم غالية والناس تشتكي":
     "Cost of living: housing and schooling are pricey and people complain",
@@ -643,19 +641,18 @@ export const EN: Record<string, string> = {
   "أعلى = دخل أكبر من المباني، لكن الرضا ينزل فوق ٨٪.":
     "Higher = more income from buildings, but approval drops above 8%.",
   "نسبة الضريبة": "Tax rate",
-  "قرض البنك": "Bank loan",
+  "تمويل البنك": "Bank financing",
   "اختر المبلغ والفائدة بنفسك. أقل فائدة يقبلها البنك الآن {rate}٪، وأي نسبة أعلى مقبولة. القسط ينخصم كل شهر تلقائياً.":
     "Set the amount and rate yourself. The bank's lowest rate right now is {rate}%; anything higher is accepted. Installments are deducted automatically every month.",
   "القسط الحالي {amount} د.ك.": "Current installment: {amount} KD.",
   "الدين الحالي {debt} د.ك من حد {limit}.": "Debt: {debt} KD of a {limit} limit.",
-  "الرصيد بالسالب: خذ قرضاً لتغطية العجز.": "You're in the red: take a loan to cover the deficit.",
+  "الرصيد بالسالب: خذ تمويلاً لتغطية العجز.": "Your balance is negative: take financing to cover the deficit.",
   المبلغ: "Amount",
   الفائدة: "Interest",
-  "اقترض {amount} د.ك بفائدة {rate}٪": "Borrow {amount} KD at {rate}%",
+  "خذ تمويل {amount} د.ك بعائد {rate}٪": "Take {amount} KD financing at {rate}% return",
   "سدّد ما تقدر عليه": "Repay what you can",
   "تمويل إسلامي (مرابحة)": "Islamic financing (Murabaha)",
-  "بديل القرض: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية، وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف فوائد، فقط تبرع خيري بسيط. تقدر تأخذ التمويل والقرض معاً.":
-    "An alternative to a loan: the Islamic bank buys what the city needs and sells it to you at a markup agreed up front, paid in fixed installments that never grow. Paying late adds no interest, only a small charity fee. You can have this financing and a loan at the same time.",
+  "بديل تمويل البنك: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية، وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف عوائد، فقط تبرع خيري بسيط. تقدر تأخذ المرابحة وتمويل البنك معاً.": "Instead of bank financing: the Islamic bank buys what the city needs and sells it to you at a profit agreed from the start, repaid in fixed instalments that never grow. Late payment adds no return, only a small charity gift. You can take murabaha and bank financing together.",
   "عليك للمصرف {owed} د.ك · القسط {installment} شهرياً":
     "You owe the bank {owed} KD · {installment} a month",
   "ربح المصرف": "Bank markup",
@@ -685,7 +682,7 @@ export const EN: Record<string, string> = {
   "أعلى لقب": "Highest title",
 
   // ------------------------------------------------------------ disasters panel
-  "الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ قرضاً من الميزانية.":
+  "الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ تمويلاً من الميزانية.":
     "Disasters strike on their own and each one costs the treasury: a fire burns a building, storms and floods lower approval, and a blackout stops production. If you go into the red, take a loan in Budget.",
   "جارية لين {date}": "Ongoing until {date}",
   "الخسارة المتوقعة الآن: حريق {fire} · عاصفة {storm} · سيول {flood} د.ك":
@@ -750,16 +747,13 @@ export const EN: Record<string, string> = {
   السنوات: "Years",
   "صكوك المصرف": "Bank Sukuk",
   "صكوك المرسى العقارية": "Al Marsa Sukuk",
-  "تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب القرض.":
-    "Murabaha financing at an agreed markup is in the Budget panel, next to the loan.",
-  "وديعتك {amount} د.ك بفائدة {rate} سنوياً تُضاف شهرياً.":
-    "Your deposit: {amount} KD at {rate} a year, added monthly.",
+  "تمويل المرابحة بربح متفق عليه موجود في لوحة الميزانية بجانب تمويل البنك.": "Murabaha financing at an agreed profit is in the Budget panel next to bank financing.",
+  "وديعتك {amount} د.ك بعائد {rate} سنوياً يُضاف شهرياً.": "Your deposit: {amount} KD at {rate} a year, added monthly.",
   "اسحب الكل": "Withdraw all",
   "مبلغ الإيداع": "Deposit amount",
-  "الفائدة التي تطلبها": "Rate you ask for",
-  "أودع {amount} بفائدة {rate}٪": "Deposit {amount} at {rate}%",
-  "الفائدة حرة بلا حد. كلما ارتفعت زاد خطر إفلاس البنك، فأمّن أموالك من «شركة الأمان للتأمين» أعلى اللوحة لتُعوَّض بالكامل.":
-    "Any rate, no limit. The higher it is, the likelier the bank fails, so insure your money with Al Aman Insurance at the top of this panel to be repaid in full.",
+  "العائد الذي تطلبه": "Return you ask for",
+  "أودع {amount} بعائد {rate}٪": "Deposit {amount} at {rate}% return",
+  "العائد حر بلا حد. كلما ارتفع زاد خطر إفلاس البنك، فأمّن أموالك من «شركة الأمان للتأمين» أعلى اللوحة لتُعوَّض بالكامل.": "Any return, no limit. The higher it is, the likelier the bank fails, so insure your money with «Al-Aman Insurance» at the top of the panel to be fully compensated.",
   سندات: "Bonds",
   "سند {amount} · فائدة {rate}٪ · {years} سنوات": "{amount} bond · {rate}% · {years} years",
   "سند بشروطك": "Bond on your terms",
@@ -904,9 +898,8 @@ export const EN: Record<string, string> = {
   "ألغيت التأمين": "Insurance cancelled",
   "{company} عوّضك عن الخسارة بالكامل: {amount} د.ك": "{company} repaid your loss in full: {amount} KD",
   "شركة الأمان للتأمين عوّضتك {amount} د.ك": "Al Aman Insurance repaid you {amount} KD",
-  "اختر أي مبلغ وأي فائدة، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.":
-    "Choose any amount and any rate, from 0% upward; the bank always agrees, with no ceiling. Installments are taken monthly.",
-  "الدين الحالي {debt} د.ك.": "Current debt: {debt} KD.",
+  "اختر أي مبلغ وأي عائد، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.": "Pick any amount and any return, from 0% up, and the bank always agrees with no limit. The instalment is taken every month automatically.",
+  "المتبقي من التمويل {debt} د.ك.": "Financing left: {debt} KD.",
   "رسوم المعيشة · دخل لك": "Living fees · your income",
   "+{n}/شهر لك": "+{n}/mo to you",
   "دخل الشهر = رسوم المعيشة {fees} + دخل المباني {buildings} د.ك":
@@ -1513,7 +1506,7 @@ export const EN: Record<string, string> = {
   "دفعت اللي عليّ… بس ما توقعتها منك": "I paid what I owed… but I didn't expect this from you",
   "حاسبت {name}: استرددت {amount} د.ك وموقوف عن المناقصات ٥ سنوات": "Held {name} to account: recovered {amount} KD, barred from tenders for 5 years",
   "أرباح الشركات والحصص": "Company and stake profits",
-  "قسط قرض البنك": "Bank loan installment",
+  "قسط تمويل البنك": "Bank financing instalment",
   "مصاريف ومعيشة": "Expenses and living costs",
   "ربح مناقصة: {title}": "Tender profit: {title}",
   "قسط دين المحافظ": "Installment to the governor",
@@ -1563,4 +1556,11 @@ export const EN: Record<string, string> = {
   "المحادثة والقروض": "Chat and loans",
   "الوضع المالي": "Finances",
   "ابدأ": "Start",
+  // Messages already stored in saves, from before «قرض/فائدة» became «تمويل/عائد».
+  "أودعت {amount} د.ك في {company} بفائدة {rate}": "Deposited {amount} KD with {company} at {rate} return",
+  "قرض {amount} د.ك من البنك": "{amount} KD financing from the bank",
+  "سدّدت القرض كاملاً": "Financing fully repaid",
+  "سدّد قرضاً كاملاً": "Repay a financing in full",
+  "صندوق البلدية في عجز. خذ قرضاً من الميزانية": "The city fund is in deficit. Take financing from the budget",
+  "قسط قرض البنك": "Bank financing instalment",
 };

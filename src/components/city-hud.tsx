@@ -1550,18 +1550,18 @@ function Budget({
       <Murabaha snap={snap} onMurabaha={onMurabaha} />
       <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
         <p className="flex items-center gap-1 text-sm font-extrabold">
-          <Bank size={16} /> {t("قرض البنك")}
+          <Bank size={16} /> {t("تمويل البنك")}
         </p>
         <p className="mt-1 text-xs leading-relaxed">
           {t(
-            "اختر أي مبلغ وأي فائدة، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.",
+            "اختر أي مبلغ وأي عائد، من ٠٪ إلى ما تريد، والبنك يوافق دائماً بلا حد أعلى. القسط ينخصم كل شهر تلقائياً.",
           )}{" "}
           {snap.loan > 0 ? t("القسط الحالي {amount} د.ك.", { amount: fmt(due) }) : ""}{" "}
-          {t("الدين الحالي {debt} د.ك.", { debt: fmt(snap.loan) })}
+          {t("المتبقي من التمويل {debt} د.ك.", { debt: fmt(snap.loan) })}
         </p>
         {snap.coins < 0 && (
           <p className="mt-1 text-xs font-extrabold text-coral">
-            {t("الرصيد بالسالب: خذ قرضاً لتغطية العجز.")}
+            {t("الرصيد بالسالب: خذ تمويلاً لتغطية العجز.")}
           </p>
         )}
         <div className="mt-2 grid grid-cols-2 gap-1">
@@ -1573,7 +1573,7 @@ function Budget({
             testid="loan-amount"
           />
           <NumberField
-            label={t("الفائدة")}
+            label={t("العائد")}
             value={loanRate}
             onChange={setLoanRate}
             suffix={percentSign()}
@@ -1586,7 +1586,7 @@ function Budget({
           onClick={() => onLoan(loanAmount, loanRate / 100)}
           className="sc-menu sc-on mt-1 w-full text-xs"
         >
-          {t("اقترض {amount} د.ك بفائدة {rate}٪", { amount: fmt(loanAmount), rate: loanRate })}
+          {t("خذ تمويل {amount} د.ك بعائد {rate}٪", { amount: fmt(loanAmount), rate: loanRate })}
         </button>
       </div>
       <Obligations snap={snap} onPay={onPay} />
@@ -1607,7 +1607,7 @@ function Obligations({
   const [part, setPart] = useState(10_000);
   const label = (o: Obligation) =>
     o.kind === "loan"
-      ? t("قرض البنك")
+      ? t("تمويل البنك")
       : o.kind === "murabaha"
         ? t("تمويل مرابحة")
         : t("دين {name}", { name: t(o.name) });
@@ -1848,7 +1848,7 @@ function Murabaha({
       </p>
       <p className="mt-1 text-xs leading-relaxed">
         {t(
-          "بديل القرض: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية، وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف فوائد، فقط تبرع خيري بسيط. تقدر تأخذ التمويل والقرض معاً.",
+          "بديل تمويل البنك: المصرف الإسلامي يشتري ما تحتاجه المدينة ويبيعه لك بربح متفق عليه من البداية، وتسدّد بأقساط ثابتة لا تزيد. التأخير لا يضيف عوائد، فقط تبرع خيري بسيط. تقدر تأخذ المرابحة وتمويل البنك معاً.",
         )}
       </p>
       {owed > 0 && (
@@ -2067,7 +2067,7 @@ function Disasters({
     <div className="space-y-2" dir={dirOf()}>
       <p className="text-sm leading-relaxed">
         {t(
-          "الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ قرضاً من الميزانية.",
+          "الكوارث تضرب المدينة من نفسها وكل وحدة تكلّف الصندوق: الحريق يحرق مبنى، العاصفة والسيول تنزل الرضا، وانقطاع الكهرباء يوقف الإنتاج. إذا صار رصيدك بالسالب خذ تمويلاً من الميزانية.",
         )}
       </p>
       {active && (

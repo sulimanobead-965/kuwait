@@ -89,7 +89,7 @@ export const COMPANIES: Record<CompanyId, { name: string; blurb: string }> = {
   },
   bank: {
     name: "بنك الديرة",
-    blurb: "ودائع بفائدة ١٠٪ سنوياً، وسندات، وقروض. البنوك تفلس في الأزمات.",
+    blurb: "ودائع بعائد ١٠٪ سنوياً، وسندات، وتمويل. البنوك تفلس في الأزمات.",
   },
   developer: {
     name: "شركة المرسى العقارية",
@@ -262,7 +262,7 @@ export function deposit(s: Sim, amount: number, rate = DEPOSIT_RATE): Act {
   f.deposit += amount;
   return {
     ok: true,
-    msg: t("أودعت {amount} د.ك في {company} بفائدة {rate}", {
+    msg: t("أودعت {amount} د.ك في {company} بعائد {rate}", {
       amount: fmt(amount),
       company: COMPANIES.bank.name,
       rate: pct(rate),

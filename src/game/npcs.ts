@@ -639,7 +639,7 @@ function npcFinanceMonth(s: Sim, n: NpcState, crisis: string | null, random: () 
     const pay = Math.min(n.bankDebt, d.bankDebt / 60);
     n.bankDebt -= pay;
     n.cash -= pay;
-    post(n, s.day, t("قسط قرض البنك"), -pay);
+    post(n, s.day, t("قسط تمويل البنك"), -pay);
   }
   const living = Math.max(500, n.cash * 0.002);
   n.cash -= living;
