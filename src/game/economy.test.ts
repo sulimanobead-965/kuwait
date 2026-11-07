@@ -1,3 +1,4 @@
+import { LITE } from "./edition.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -232,6 +233,13 @@ test("achievements, daily streaks and offline earnings", () => {
   assert.equal(again.daily, 0, "once a day");
   const next = welcomeBack(s, day + 86_400_000);
   assert.equal(next.streak, 2);
+  // A brand-new player is not "welcomed back" on their very first visit.
+  const fresh = town(4);
+  fresh.lastSeen = 0;
+  fresh.dailyDay = "";
+  const firstVisit = welcomeBack(fresh, day);
+  assert.equal(firstVisit.daily + firstVisit.offline, 0);
+  assert.equal(welcomeBack(fresh, day + 86_400_000).streak, 2);
 });
 
 test("big cities save compactly and reload the same roads and buildings", async () => {
@@ -433,7 +441,7 @@ test("donations: any amount as waqf, zakat or sadaqa; building causes build, app
   assert.equal(sim.donate(s, "sadaqa", "aid", s.coins + 1).ok, false, "only what the treasury holds");
 });
 
-test("virtual players have a financial statement, can be audited and held to account", async () => {
+test("virtual players have a financial statement, can be audited and held to account", { skip: LITE && "«عمّرها» has no board or virtual players" }, async () => {
   const npcs = await import("./npcs.ts");
   const s = createInitial();
   s.started = true;

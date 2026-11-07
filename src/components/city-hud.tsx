@@ -1,3 +1,4 @@
+import { GAME_NAME, LITE } from "@/game/edition";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
@@ -143,7 +144,7 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
     title: "الميزانية والمشاريع",
     tabs: [
       { id: "budget", label: "الميزانية" },
-      { id: "laws", label: "القوانين" },
+      ...(LITE ? [] : [{ id: "laws" as Panel, label: "القوانين" }]),
       { id: "projects", label: "المشاريع" },
       { id: "charity", label: "التبرعات" },
     ],
@@ -156,19 +157,24 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
     ],
   },
   {
-    title: "التقارير وآراء الناس",
-    tabs: [
-      { id: "report", label: "التقرير" },
-      { id: "ledger", label: "الاستثمار" },
-      { id: "graphs", label: "الرسوم" },
-      { id: "voices", label: "آراء الناس" },
-      { id: "achievements", label: "الإنجازات" },
-    ],
+    title: LITE ? "التقارير" : "التقارير وآراء الناس",
+    tabs: LITE
+      ? [
+          { id: "report", label: "التقرير" },
+          { id: "achievements", label: "الإنجازات" },
+        ]
+      : [
+          { id: "report", label: "التقرير" },
+          { id: "ledger", label: "الاستثمار" },
+          { id: "graphs", label: "الرسوم" },
+          { id: "voices", label: "آراء الناس" },
+          { id: "achievements", label: "الإنجازات" },
+        ],
   },
   {
     title: "الاستثمار",
     tabs: [
-      { id: "companies", label: "الشركات" },
+      { id: "companies", label: LITE ? "البنك" : "الشركات" },
       { id: "stocks", label: "سوق الأسهم" },
     ],
   },
@@ -657,7 +663,7 @@ export function CityHud({
         )}
         {snap.started && (
           <div className="hud-left pointer-events-auto absolute flex flex-col gap-2">
-            <PeopleButton unread={unreadCount(snap)} onClick={() => togglePanel("people")} />
+            {!LITE && <PeopleButton unread={unreadCount(snap)} onClick={() => togglePanel("people")} />}
             <Round label={t("تقريب")} onClick={() => onZoom(1.28)}>
               <Plus size={18} />
             </Round>
@@ -906,7 +912,7 @@ export function CityHud({
                 <p className="text-sm font-bold text-sc-leaf">
                   {RANKS.map((r) => t(r.title)).join(lang === "ar" ? " ← " : " → ")}
                 </p>
-                <h2 className="mt-1 text-3xl font-extrabold leading-tight">{t("المحافظ")}</h2>
+                <h2 className="mt-1 text-3xl font-extrabold leading-tight">{GAME_NAME[lang]}</h2>
                 <p className="mt-2 text-base leading-relaxed">
                   {t(
                     "ابدأ مساعداً للمختار على خريطة الكويت الحقيقية. أرضِ الناس بالخدمات والأسعار العادلة لتكبر منطقتك وتترقّى.",
@@ -1127,9 +1133,11 @@ export function CityHud({
               <Menu on={inGroup(panel, 3)} testid="menu-companies" onClick={() => togglePanel("companies")}>
                 {t("الاستثمار")}
               </Menu>
-              <Menu on={inGroup(panel, 1)} testid="menu-board" onClick={() => togglePanel("board")}>
-                {t("المجلس")}
-              </Menu>
+              {!LITE && (
+                <Menu on={inGroup(panel, 1)} testid="menu-board" onClick={() => togglePanel("board")}>
+                  {t("المجلس")}
+                </Menu>
+              )}
               {stored > 0 ? (
                 <button
                   type="button"
@@ -1545,9 +1553,13 @@ function Budget({
           testid="tax-value"
         />
       </div>
-      <CostSliders snap={snap} onCost={onCost} onAutoRaise={onAutoRaise} />
-      <HousingAid snap={snap} onHousingAid={onHousingAid} onGiveAid={onGiveAid} />
-      <Murabaha snap={snap} onMurabaha={onMurabaha} />
+      {!LITE && (
+        <>
+          <CostSliders snap={snap} onCost={onCost} onAutoRaise={onAutoRaise} />
+          <HousingAid snap={snap} onHousingAid={onHousingAid} onGiveAid={onGiveAid} />
+          <Murabaha snap={snap} onMurabaha={onMurabaha} />
+        </>
+      )}
       <div className="rounded-md bg-sc-mint p-2 text-sc-ink">
         <p className="flex items-center gap-1 text-sm font-extrabold">
           <Bank size={16} /> {t("قرض البنك")}

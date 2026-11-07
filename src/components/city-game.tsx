@@ -1,3 +1,4 @@
+import { GAME_NAME } from "@/game/edition";
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
@@ -1058,7 +1059,7 @@ export function CityGame() {
 
   return (
     <main className="game-shell relative bg-sc-bar text-sc-mint">
-      <h1 className="sr-only">{t("المحافظ")}</h1>
+      <h1 className="sr-only">{GAME_NAME[getLang()]}</h1>
       <div className="coin-fly-layer" aria-hidden="true" />
       <canvas
         ref={canvasRef}

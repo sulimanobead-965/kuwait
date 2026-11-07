@@ -1,3 +1,4 @@
+import { LITE } from "./edition.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEVELOPMENTS } from "./developments.ts";
@@ -507,7 +508,7 @@ test("residents speak up about real problems every month", async () => {
   assert.ok(s.voices.length <= 80);
 });
 
-test("the board of directors runs projects, and in automatic play runs the city and is paid", async () => {
+test("the board of directors runs projects, and in automatic play runs the city and is paid", { skip: LITE && "«عمّرها» has no board or virtual players" }, async () => {
   const sim = await import("./sim.ts");
   const board = await import("./board.ts");
   const s = town();
@@ -545,7 +546,7 @@ test("the board of directors runs projects, and in automatic play runs the city 
   assert.equal(s.board.paid, paid);
 });
 
-test("directors follow the governor's settings and building orders", async () => {
+test("directors follow the governor's settings and building orders", { skip: LITE && "«عمّرها» has no board or virtual players" }, async () => {
   const sim = await import("./sim.ts");
   const board = await import("./board.ts");
   const s = town();

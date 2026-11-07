@@ -1,3 +1,4 @@
+import { LITE } from "./edition";
 import { BRIDGE_COST, CATALOG, isLandmark, maxLevelOf, ROAD_COST, type Kind } from "./catalog";
 import {
   claim,
@@ -880,6 +881,13 @@ export function welcomeBack(s: Sim, nowMs: number) {
   const out = { daily: 0, streak: s.streak, offline: 0, months: 0 };
   if (!s.started) return out;
   const today = localDay(nowMs);
+  // A brand-new city: today counts as the first day, with nothing to welcome back to.
+  if (s.lastSeen === 0 && !s.dailyDay) {
+    s.dailyDay = today;
+    s.streak = 1;
+    s.lastSeen = nowMs;
+    return { ...out, streak: 1 };
+  }
   if (s.dailyDay !== today) {
     const yesterday = localDay(nowMs - 86400000);
     s.streak = s.dailyDay === yesterday ? Math.min(30, s.streak + 1) : 1;
@@ -2863,7 +2871,8 @@ export function advanceDays(s: Sim, days: number) {
     const worksBefore = s.builder.works;
     const works = builderMonth(s, 3 * (monthlyUpkeep(s) + projectMoney(s).upkeep));
     if (works && s.builder.works > worksBefore) pushLog(s, msg("مستشار البناء: {works}", { works }));
-    for (const line of npcMonth(s)) pushLog(s, line);
+    // «عمّرها» has no virtual players.
+    if (!LITE) for (const line of npcMonth(s)) pushLog(s, line);
     boardMonth(s);
     residentsSpeak(s);
     s.coins = Math.max(-5_000_000, s.coins);

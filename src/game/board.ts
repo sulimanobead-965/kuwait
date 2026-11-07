@@ -11,6 +11,7 @@
  * paid a monthly fee (a share of the month's income) and a yearly bonus (a share of
  * the year's profit), only while it is in charge.
  */
+import { LITE } from "./edition";
 import { msg, t, type Params, bigNum } from "../i18n/index.ts";
 import { CATALOG, type Kind } from "./catalog";
 import { freeLot, runPlans } from "./builder";
@@ -1012,7 +1013,8 @@ export function boardMonth(s: Sim) {
   book(s, "board", money.income - money.upkeep);
   s.ytd.income += money.income;
   s.ytd.spend += money.upkeep;
-  if (!b.auto) return;
+  // «عمّرها» has no board: projects finish and pay, but nobody decides on its own.
+  if (!b.auto || LITE) return;
   decide(s);
   const fee = boardFee(s);
   if (fee > 0) {
@@ -1026,7 +1028,7 @@ export function boardMonth(s: Sim) {
 /** Year end: the yearly bonus, a share of the year's profit, if there was one. */
 export function boardYear(s: Sim, profit: number) {
   const b = s.board;
-  if (b.auto && profit > 0 && b.bonusPct > 0) {
+  if (!LITE && b.auto && profit > 0 && b.bonusPct > 0) {
     const bonus = profit * (b.bonusPct / 100);
     s.coins -= bonus;
     b.paid += bonus;

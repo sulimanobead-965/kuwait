@@ -1563,4 +1563,9 @@ export const EN: Record<string, string> = {
   "المحادثة والقروض": "Chat and loans",
   "الوضع المالي": "Finances",
   "ابدأ": "Start",
+  "البنك": "Bank",
+  "التقارير": "Reports",
+  "الفائدة حرة بلا حد. كلما ارتفعت زاد خطر إفلاس البنك وضياع جزء من الوديعة.": "Any rate, no limit. The higher it is, the likelier the bank fails and part of the deposit is lost.",
+  "ودائع بفائدة ١٠٪ سنوياً. البنوك تفلس في الأزمات.": "Deposits at 10% a year. Banks fail in a crisis.",
+  "عمّرها": "Emmerha",
 };
