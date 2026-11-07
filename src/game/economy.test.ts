@@ -232,6 +232,13 @@ test("achievements, daily streaks and offline earnings", () => {
   assert.equal(again.daily, 0, "once a day");
   const next = welcomeBack(s, day + 86_400_000);
   assert.equal(next.streak, 2);
+  // A brand-new player is not "welcomed back" on their very first visit.
+  const fresh = town(4);
+  fresh.lastSeen = 0;
+  fresh.dailyDay = "";
+  const firstVisit = welcomeBack(fresh, day);
+  assert.equal(firstVisit.daily + firstVisit.offline, 0);
+  assert.equal(welcomeBack(fresh, day + 86_400_000).streak, 2);
 });
 
 test("big cities save compactly and reload the same roads and buildings", async () => {
