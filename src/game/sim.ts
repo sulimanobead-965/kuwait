@@ -2275,8 +2275,8 @@ function noRoom(s: Sim, kind: string) {
   // Still full unless something was demolished, a site finished, or a year passed.
   return Boolean(
     m &&
-      s.buildings.length >= m.b - 4 &&
-      s.roads.length >= m.r - 4 &&
+      s.buildings.length >= m.b - 40 &&
+      s.roads.length >= m.r - 40 &&
       s.sites.length >= m.sites &&
       s.day - m.day < 360,
   );

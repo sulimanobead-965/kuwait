@@ -150,14 +150,23 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
     ],
   },
   {
-    title: "التقارير والإنجازات",
+    title: "التقارير وآراء الناس",
     tabs: [
       { id: "report", label: "التقرير السنوي" },
       { id: "graphs", label: "الرسوم" },
+      { id: "voices", label: "آراء الناس" },
       { id: "achievements", label: "الإنجازات" },
     ],
   },
+  {
+    title: "الاستثمار",
+    tabs: [
+      { id: "companies", label: "الشركات" },
+      { id: "stocks", label: "سوق الأسهم" },
+    ],
+  },
 ];
+const inGroup = (p: Panel | null, i: number) => p !== null && PANEL_GROUPS[i]!.tabs.some((tab) => tab.id === p);
 const groupOf = (p: Panel | null) => (p ? PANEL_GROUPS.find((g) => g.tabs.some((tab) => tab.id === p)) : undefined);
 const BUDGET_GROUP: Panel[] = PANEL_GROUPS[0]!.tabs.map((tab) => tab.id);
 
@@ -706,10 +715,7 @@ export function CityHud({
                 <h2 className="flex-1 text-center text-base">
                   {groupOf(panel) ? t(groupOf(panel)!.title) : null}
                   {panel === "disasters" && t("الكوارث")}
-                  {panel === "companies" && t("الاستثمار")}
                   {panel === "people" && t("اللاعبون والمحادثات")}
-                  {panel === "voices" && t("آراء الناس")}
-                  {panel === "stocks" && t("سوق الأسهم")}
                   {panel === "cloud" && t("الحفظ السحابي")}
                 </h2>
               </div>
@@ -1075,12 +1081,11 @@ export function CityHud({
               >
                 {t("الميزانية")}
               </Menu>
-              <Menu
-                on={panel === "companies"}
-                testid="menu-companies"
-                onClick={() => togglePanel("companies")}
-              >
+              <Menu on={inGroup(panel, 3)} testid="menu-companies" onClick={() => togglePanel("companies")}>
                 {t("الاستثمار")}
+              </Menu>
+              <Menu on={inGroup(panel, 1)} testid="menu-board" onClick={() => togglePanel("board")}>
+                {t("المجلس")}
               </Menu>
               {stored > 0 ? (
                 <button
@@ -1088,13 +1093,16 @@ export function CityHud({
                   data-tut="collect"
                   data-testid="collect-all"
                   onClick={onCollect}
-                  className="sc-menu sc-on shrink-0 px-2 text-sm"
+                  className="sc-menu sc-on min-w-0 flex-1 flex-col px-1 leading-tight"
                 >
-                  {t("اجمع {amount}", { amount: money(stored) })}
+                  <span className="block">{t("اجمع")}</span>
+                  <span className="block truncate" dir="ltr">
+                    {money(stored)}
+                  </span>
                 </button>
               ) : null}
               <Menu on={more} testid="menu-more" onClick={() => setMore((m) => !m)}>
-                ☰ {t("المزيد")}
+                {t("المزيد")}
               </Menu>
             </div>
             <div className="hud-status flex items-center gap-1 overflow-x-auto px-2 pb-2" dir="ltr">
@@ -2081,9 +2089,9 @@ function Menu({
       data-tut={tut}
       aria-pressed={on}
       onClick={onClick}
-      className={`sc-menu shrink-0 text-sm ${on ? "sc-on" : ""}`}
+      className={`sc-menu min-w-0 flex-1 px-1 leading-tight ${on ? "sc-on" : ""}`}
     >
-      {children}
+      <span className="block truncate">{children}</span>
     </button>
   );
 }

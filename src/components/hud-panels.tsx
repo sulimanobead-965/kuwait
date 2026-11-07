@@ -15,9 +15,6 @@ import {
   Languages,
   X,
   ShieldCheck,
-  MessageSquare,
-  Briefcase,
-  LineChart,
   Gauge,
   Cloud,
 } from "lucide-react";
@@ -165,36 +162,30 @@ export function MoreSheet({
         { id: "language", label: lang === "ar" ? "English" : "العربية", icon: <Languages size={20} /> },
         { id: "cloud", label: t("الحفظ السحابي"), icon: <Cloud size={20} /> },
         { id: "districts", label: t("الأحياء"), icon: <MapIcon size={20} /> },
+        {
+          // How detailed the 3D map is drawn: "light" for slower phones.
+          id: "graphics",
+          label:
+            graphics === "auto"
+              ? t("جودة الرسوم: تلقائية")
+              : graphics === "high"
+                ? t("جودة الرسوم: عالية")
+                : t("جودة الرسوم: خفيفة"),
+          icon: <Gauge size={20} />,
+        },
         { id: "reset", label: t("مدينة جديدة"), icon: <RotateCcw size={20} /> },
       ]
     : [
         {
-          id: "board",
-          label: snap.board?.auto ? t("مجلس الإدارة والمستشارون (آلي)") : t("مجلس الإدارة والمستشارون"),
-          icon: <Briefcase size={20} />,
-        },
-        { id: "report", label: t("التقارير والإنجازات"), icon: <Newspaper size={20} /> },
-        { id: "disasters", label: t("الكوارث والأزمات"), icon: <Siren size={20} /> },
-        { id: "stocks", label: t("سوق الأسهم"), icon: <LineChart size={20} /> },
-        {
-          id: "voices",
+          id: "report",
           label:
             unreadVoices(snap) > 0
-              ? t("آراء الناس ({n})", { n: unreadVoices(snap) })
-              : t("آراء الناس"),
-          icon: <MessageSquare size={20} />,
+              ? t("التقارير وآراء الناس ({n})", { n: unreadVoices(snap) })
+              : t("التقارير وآراء الناس"),
+          icon: <Newspaper size={20} />,
         },
+        { id: "disasters", label: t("الكوارث والأزمات"), icon: <Siren size={20} /> },
         { id: "people", label: t("اللاعبون"), icon: <Users size={20} /> },
-        {
-          id: "graphics",
-          label:
-            graphics === "auto"
-              ? t("الرسوم: تلقائية")
-              : graphics === "high"
-                ? t("الرسوم: عالية")
-                : t("الرسوم: خفيفة"),
-          icon: <Gauge size={20} />,
-        },
         { id: "me", label: t("ملفي"), icon: <Award size={20} /> },
       ];
   void music;

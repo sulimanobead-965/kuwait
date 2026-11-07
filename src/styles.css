@@ -421,8 +421,20 @@
 .hud-actions > * {
   flex: 1 1 0;
   min-width: 0;
-  padding-inline: 0.35rem;
+  padding-inline: 0.15rem;
   white-space: nowrap;
+}
+
+/* Five buttons share a phone's width: a smaller label so none is cut off. */
+@media (max-width: 699px) {
+  .hud-actions {
+    gap: 0.25rem;
+  }
+
+  .hud-actions .sc-menu {
+    font-size: 11.5px;
+    letter-spacing: -0.01em;
+  }
 }
 
 .more-sheet {

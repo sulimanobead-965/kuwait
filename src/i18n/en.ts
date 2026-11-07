@@ -1416,4 +1416,12 @@ export const EN: Record<string, string> = {
   "مجلس الإدارة والمستشارون (آلي)": "Board & advisors (auto)",
   "التقارير والإنجازات": "Reports & achievements",
   "تعديل ملفي": "Edit my profile",
+  "التقارير وآراء الناس": "Reports & public opinion",
+  "التقارير وآراء الناس ({n})": "Reports & public opinion ({n})",
+  "المجلس": "Board",
+  "المجلس (آلي)": "Board (auto)",
+  "جودة الرسوم: تلقائية": "Graphics quality: auto",
+  "جودة الرسوم: عالية": "Graphics quality: high",
+  "جودة الرسوم: خفيفة": "Graphics quality: light",
+  "اجمع": "Collect",
 };

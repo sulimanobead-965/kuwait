@@ -113,7 +113,13 @@ function replacePlan(s: Sim, b: Building): Plan {
 const lotCache = new WeakMap<Sim, { sig: string; lots: { c: number; r: number }[] }>();
 
 function lotFinder(s: Sim) {
-  const sig = `${s.buildings.length}:${s.roads.length}:${s.sites.length}`;
+  // Once per game month (and when a site starts or ends): placing buildings only
+  // uses lots up, and every lot is re-checked before use, so a fresh scan after each
+  // building (several full-map scans a month) bought nothing but freezes.
+  const sig =
+    s.buildings.length < 1500
+      ? `${s.buildings.length}:${s.roads.length}:${s.sites.length}`
+      : `${Math.floor(s.day / 30)}:${s.roads.length}:${s.sites.length}:${s.district ?? ""}`;
   const hit = lotCache.get(s);
   const lots = hit && hit.sig === sig ? hit.lots : scanLots(s);
   if (!hit || hit.sig !== sig) lotCache.set(s, { sig, lots });
