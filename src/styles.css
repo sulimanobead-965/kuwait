@@ -1003,3 +1003,51 @@ body {
     left: 50%;
   }
 }
+
+/* Red news ticker: the text slides across its fixed-height strip and repeats. */
+.news-run {
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+.news-run-rtl {
+  animation-name: news-rtl;
+}
+
+.news-run-ltr {
+  animation-name: news-ltr;
+}
+
+@keyframes news-rtl {
+  from {
+    left: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    left: 100%;
+    transform: translateX(0);
+  }
+}
+
+@keyframes news-ltr {
+  from {
+    left: 100%;
+    transform: translateX(0);
+  }
+  to {
+    left: 0;
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .news-run {
+    animation: none;
+    position: static;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-inline: 0.75rem;
+  }
+}

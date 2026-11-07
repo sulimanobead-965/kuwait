@@ -1154,20 +1154,7 @@ export function CityHud({
             >
               <span className="truncate">{line}</span>
             </button>
-            {toasts.length > 0 && (
-              <div
-                className="hud-news flex w-full flex-col bg-[#b8322a] px-3 py-1 text-start text-sm font-bold text-white"
-                dir={dir}
-                role="status"
-                data-testid="news-strip"
-              >
-                {toasts.map((item) => (
-                  <span key={item.id} className="truncate">
-                    {tx(item.text)}
-                  </span>
-                ))}
-              </div>
-            )}
+            <NewsTicker toasts={toasts} dir={dir} />
           </footer>
         )}
         {snap.started && tutorial >= 0 && !panel && (
@@ -1176,6 +1163,46 @@ export function CityHud({
         {celebration && <CelebrationCard item={celebration} onClose={onCelebrationClose} />}
       </div>
     </>
+  );
+}
+
+/**
+ * The red news strip: always one line high (so the bar above never jumps), with the
+ * latest news sliding across it like a TV ticker. Arabic runs left to right, English
+ * right to left.
+ */
+function NewsTicker({ toasts, dir }: { toasts: { id: number; text: string }[]; dir: "rtl" | "ltr" }) {
+  const [news, setNews] = useState<{ id: number; text: string }[]>([]);
+  useEffect(() => {
+    if (!toasts.length) return;
+    setNews((list) => {
+      const seen = new Set(list.map((n) => n.id));
+      const fresh = toasts.filter((n) => !seen.has(n.id));
+      return fresh.length ? [...list, ...fresh].slice(-4) : list;
+    });
+  }, [toasts]);
+  // Newest first: it is the part that comes into view as soon as the strip restarts.
+  const line = [...news].reverse().map((n) => tx(n.text)).join("   ◆   ");
+  const latest = news[news.length - 1]?.id ?? 0;
+  const seconds = Math.max(9, line.length * 0.16);
+  return (
+    <div
+      className="hud-news relative h-7 w-full overflow-hidden bg-[#b8322a] text-sm font-bold leading-7 text-white"
+      dir={dir}
+      role="status"
+      aria-live="polite"
+      data-testid="news-strip"
+    >
+      {line ? (
+        <span
+          key={latest}
+          className={`news-run absolute top-0 whitespace-nowrap ${dir === "rtl" ? "news-run-rtl" : "news-run-ltr"}`}
+          style={{ animationDuration: `${seconds}s` }}
+        >
+          {line}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
