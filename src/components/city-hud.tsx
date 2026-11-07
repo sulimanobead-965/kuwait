@@ -67,6 +67,7 @@ import {
   incomePerSec,
   metrics,
   monthlyIncome,
+  AUTO_COLLECT_STEPS,
   monthlyUpkeep,
   priceOf,
   QUESTS,
@@ -372,6 +373,7 @@ export function CityHud({
   onLuck,
   onUpgrade,
   onCollect,
+  onAutoCollect,
   onMute,
   onAskReset,
   onReset,
@@ -461,6 +463,7 @@ export function CityHud({
   onLuck: () => void;
   onUpgrade: () => void;
   onCollect: () => void;
+  onAutoCollect: (months: number) => void;
   onMute: () => void;
   onAskReset: () => void;
   onReset: () => void;
@@ -761,6 +764,9 @@ export function CityHud({
                     onGiveAid={onGiveAid}
                     onLoan={onLoan}
                     onPay={onPay}
+                    stored={stored}
+                    onCollect={onCollect}
+                    onAutoCollect={onAutoCollect}
                   />
                 )}
                 {panel === "companies" && (
@@ -1358,8 +1364,14 @@ function Budget({
   onGiveAid,
   onLoan,
   onPay,
+  stored,
+  onCollect,
+  onAutoCollect,
 }: {
   snap: Sim;
+  stored: number;
+  onCollect: () => void;
+  onAutoCollect: (months: number) => void;
   onTax: (n: number) => void;
   onCost: (key: CostKey, value: number) => void;
   onAutoRaise: (pct: number) => void;
@@ -1377,8 +1389,48 @@ function Budget({
     monthlyUpkeep(snap) + due + housingAidCost(snap, st) + projects.upkeep + boardFee(snap);
   const [loanAmount, setLoanAmount] = useState(10_000);
   const [loanRate, setLoanRate] = useState(12);
+  const every = snap.autoCollect ?? 0;
+  const step = Math.max(0, AUTO_COLLECT_STEPS.indexOf(every as (typeof AUTO_COLLECT_STEPS)[number]));
+  const everyLabel = [
+    t("يدوي (أنت تجمع)"),
+    t("كل شهر"),
+    t("كل ٣ أشهر"),
+    t("كل ٦ أشهر"),
+    t("كل سنة"),
+    t("كل سنتين"),
+    t("كل ٥ سنوات"),
+  ][step]!;
   return (
     <div className="space-y-3" dir={dirOf()}>
+      <div className="rounded-md bg-sc-mint p-2 text-sc-ink" data-testid="collect-box">
+        <p className="text-sm font-extrabold">{t("جمع دخل المباني")}</p>
+        <button
+          type="button"
+          data-testid="budget-collect"
+          disabled={stored <= 0}
+          onClick={onCollect}
+          className="sc-menu sc-on mt-1 h-10 w-full text-sm disabled:opacity-40"
+        >
+          {t("اجمع الآن ({amount} د.ك)", { amount: fmt(stored) })}
+        </button>
+        <label className="mt-2 block text-xs font-extrabold">
+          {t("الجمع التلقائي: {every}", { every: everyLabel })}
+          <input
+            type="range"
+            min={0}
+            max={AUTO_COLLECT_STEPS.length - 1}
+            step={1}
+            value={step}
+            data-testid="auto-collect"
+            aria-label={t("كل كم يُجمع الدخل تلقائياً")}
+            onChange={(e) => onAutoCollect(AUTO_COLLECT_STEPS[Number(e.target.value)] ?? 0)}
+            className="mt-1 h-9 w-full accent-sc-leaf"
+          />
+        </label>
+        <p className="text-[11px] opacity-80">
+          {t("مع الجمع التلقائي تحتفظ المباني بدخل الفترة كاملاً حتى موعد الجمع، فما يضيع شيء.")}
+        </p>
+      </div>
       <div className="grid grid-cols-3 gap-1 text-center text-xs font-extrabold">
         <div className="sc-lcd h-auto flex-col py-2">
           <span>{t("دخل الشهر")}</span>

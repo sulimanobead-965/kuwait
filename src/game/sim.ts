@@ -88,6 +88,8 @@ export type Sim = {
    * percent (0 = none, 100 = rent-free, above 100 = rent paid plus extra cash help).
    */
   housingAid: number;
+  /** Collect all buildings' income automatically every N game months (0 = by hand). */
+  autoCollect?: number;
   /** A one-off emergency grant: extra happiness until this day. */
   aidUntil: number;
   aidHappy: number;
@@ -1595,6 +1597,9 @@ let stepFx: { commerce: number; landmarks: number; coast: number; all: number } 
 
 export function tick(s: Sim, dt: number) {
   if (!s.started || dt <= 0) return;
+  // With automatic collection, buildings hold a whole period's income (nothing is
+  // lost between collections); collected by hand they fill up as before.
+  holdSeconds = Math.max(48, (s.autoCollect ?? 0) * 5 * 1.1);
   stepFx = { commerce: lawEffect(s, "commerce"), landmarks: lawEffect(s, "landmarks"), coast: lawEffect(s, "coast"), all: lawEffect(s, "all") };
   try {
     tickInner(s, dt);
@@ -1643,9 +1648,19 @@ function tickInner(s: Sim, dt: number) {
   s.incomeRate = total;
 }
 
+/** How many seconds of income a building holds before it stops filling. */
+let holdSeconds = 48;
+
 function accrue(b: Building, rate: number, dt: number) {
   if (rate <= 0) return;
-  b.stored = Math.min(rate * 48, b.stored + rate * dt);
+  b.stored = Math.min(rate * holdSeconds, b.stored + rate * dt);
+}
+
+/** The choices on the automatic-collection slider, in game months. */
+export const AUTO_COLLECT_STEPS = [0, 1, 3, 6, 12, 24, 60] as const;
+
+export function setAutoCollect(s: Sim, months: number) {
+  s.autoCollect = AUTO_COLLECT_STEPS.includes(months as (typeof AUTO_COLLECT_STEPS)[number]) ? months : 0;
 }
 
 export function totalStored(s: Sim) {
@@ -2774,6 +2789,11 @@ export function advanceDays(s: Sim, days: number) {
   const brokeBefore = s.coins < 0;
   let rolled = false;
   for (let m = before + 1; m <= after; m += 1) {
+    const every = s.autoCollect ?? 0;
+    if (every > 0 && m % every === 0) {
+      const got = collectAll(s);
+      if (got > 0) pushLog(s, msg("جُمع دخل المباني تلقائياً: {amount} د.ك", { amount: Math.round(got) }));
+    }
     const st = stats(s);
     const fees = feeRevenue(s, st);
     const upkeep = monthlyUpkeep(s) + housingAidCost(s, st);
@@ -3195,6 +3215,7 @@ export function loadSim(district?: DistrictId | null): Sim {
       s.costs[k] = clamp(Number(rawCosts[k] ?? legacyFees ?? 100), 0, COST_MAX);
     s.autoRaise = clamp(Number(p.autoRaise) || 0, 0, COST_MAX);
     s.housingAid = clamp(Number(p.housingAid) || 0, 0, COST_MAX);
+    setAutoCollect(s, Number((p as { autoCollect?: number }).autoCollect) || 0);
     s.aidUntil = Math.max(0, Number(p.aidUntil) || 0);
     s.aidHappy = clamp(Number(p.aidHappy) || 0, 0, 30);
     if (Array.isArray(p.years)) s.years = p.years.filter((y) => y && typeof y === "object").slice(-60);
@@ -3391,6 +3412,7 @@ export function saveSim(s: Sim) {
     costs: s.costs,
     autoRaise: s.autoRaise,
     housingAid: s.housingAid,
+    autoCollect: s.autoCollect ?? 0,
     aidUntil: s.aidUntil,
     aidHappy: s.aidHappy,
     years: s.years,

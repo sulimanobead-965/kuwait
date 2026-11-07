@@ -345,3 +345,34 @@ test("disaster and crisis insurance pays disaster bills and lost crisis income",
   assert.ok(s.finance.disasterClaims > claims, "lost income paid back");
   assert.ok(s.finance.disasterPremiums > 0, "premium charged");
 });
+
+test("automatic collection gathers building income on the chosen schedule without losing any", async () => {
+  const sim = await import("./sim.ts");
+  const s = createInitial();
+  s.started = true;
+  s.randomDisasters = false;
+  s.coins = 1_000_000;
+  const r = 28 + FINE_ROW0, c = 21 + OLD_COL0;
+  for (let i = 0; i < 6; i += 1) placeRoad(s, c + i, r);
+  for (let i = 0; i < 6; i += 1) placeBuilding(s, "shop", c + i, r + 1, 0);
+  assert.ok(s.buildings.length > 0);
+  sim.setAutoCollect(s, 12);
+  assert.equal(s.autoCollect, 12);
+  sim.setAutoCollect(s, 7);
+  assert.equal(s.autoCollect, 0, "only the slider's steps");
+  sim.setAutoCollect(s, 12);
+  const collected = s.collected ?? 0;
+  // Eleven months of income pile up (5 income-seconds per month) and nothing is collected yet.
+  for (let m = 0; m < 11; m += 1) {
+    sim.tick(s, 5);
+    advanceDays(s, 30);
+  }
+  const held = sim.totalStored(s);
+  assert.ok(held > 0);
+  // Holding more than the old 48-second cap: eleven months (55 s) of income are kept.
+  const perSecond = s.buildings.reduce((n, b) => n + sim.incomePerSec(b, s), 0);
+  assert.ok(held > perSecond * 50, "more than 48 seconds of income held");
+  sim.tick(s, 5);
+  advanceDays(s, 31);
+  assert.ok((s.collected ?? 0) > collected, "collected at the year mark");
+});

@@ -73,6 +73,7 @@ import {
   isLand,
   saveSim,
   setDisasterInsurance,
+  setAutoCollect,
   stats,
   tick,
   totalStored,
@@ -1183,6 +1184,10 @@ export function CityGame() {
         onLuck={onLuck}
         onUpgrade={onUpgrade}
         onCollect={onCollectAll}
+        onAutoCollect={(months) => {
+          setAutoCollect(simRef.current, months);
+          sync();
+        }}
         onMute={() => {
           simRef.current.mute = !simRef.current.mute;
           sync();
