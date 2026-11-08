@@ -471,6 +471,8 @@ export class CityFx {
       else n += 1;
     };
     for (const key of roads) {
+      // Both meshes full: the rest of a big city's roads would draw nothing.
+      if (n >= WATER_CAPACITY && p >= WATER_CAPACITY / 2) break;
       const comma = key.indexOf(",");
       const c = Number(key.slice(0, comma));
       const r = Number(key.slice(comma + 1));

@@ -489,10 +489,13 @@ export function loanInstallment(s: Sim) {
 /** How well each service covers the people living here (1 = fully covered). */
 export function serviceCoverage(s: Sim, capacity?: number) {
   const pop = capacity ?? housingCapacity(s);
-  const count = (kind: Kind) =>
-    s.buildings.filter((b) => b.kind === kind).reduce((n, b) => n + b.level, 0);
+  // One pass over the city for all five services.
+  const levels: Partial<Record<Kind, number>> = {};
+  for (const b of s.buildings)
+    if (b.kind === "school" || b.kind === "clinic" || b.kind === "police" || b.kind === "fire" || b.kind === "park")
+      levels[b.kind] = (levels[b.kind] ?? 0) + b.level;
   const cover = (kind: Kind, per: number) =>
-    pop <= 0 ? 1 : clamp((count(kind) * per) / pop, 0, 1);
+    pop <= 0 ? 1 : clamp(((levels[kind] ?? 0) * per) / pop, 0, 1);
   return {
     school: cover("school", 260),
     clinic: cover("clinic", 300),
@@ -801,8 +804,10 @@ export function eraOf(s: Sim) {
 function cityEra(s: Sim) {
   if (!s.started) return 0;
   const year = 1961 + Math.floor(s.day / 365);
+  // Past 2000 every era is open: no need to count the people (a full pass each time).
+  if (year >= 2000) return 3;
   const residents = stats(s).residents;
-  if (residents >= 500_000 || year >= 2000) return 3;
+  if (residents >= 500_000) return 3;
   if (residents >= 100_000 || year >= 1985) return 2;
   if (residents >= 15_000 || year >= 1972) return 1;
   return 0;
@@ -1262,11 +1267,23 @@ const countMemo = new WeakMap<Sim, Map<Kind, number>>();
 const valueMemo = new WeakMap<Sim, Map<string, number>>();
 /** A number worked out once per interface snapshot (always fresh for the live city). */
 const liveMemo = new WeakMap<Sim, Map<string, { sig: string; v: number }>>();
+/**
+ * The city's size for the live caches: exact for towns, in steps of 0.5% for big
+ * cities (the builder adds a building at a time, and each one meant a full recount).
+ */
+function sizeSig(s: Sim) {
+  const n = s.buildings.length,
+    r = s.roads.length;
+  if (n < 5000) return `${n}:${r}`;
+  const step = Math.ceil(n / 200);
+  return `${Math.round(n / step)}*${step}:${Math.round(r / step)}`;
+}
+
 function memo(s: Sim, key: string, fn: () => number) {
   if (!snapshots.has(s)) {
     // The live city: reuse within the same game day and layout (big cities only).
     if (s.buildings.length < 1500) return fn();
-    const sig = `${Math.floor(s.day / 7)}:${s.buildings.length}:${s.roads.length}`;
+    const sig = `${Math.floor(s.day / 7)}:${sizeSig(s)}`;
     let lm = liveMemo.get(s);
     if (!lm) liveMemo.set(s, (lm = new Map()));
     const hit = lm.get(key);
@@ -1290,7 +1307,7 @@ export function stats(s: Sim): CityStats {
     // for a full pass over every building dozens of times).
     if (s.buildings.length < 1500) return computeStats(s);
     // A game week: at top speed a day passes every frame, so per-day meant every frame.
-    const sig = `${Math.floor(s.day / 7)}|${s.buildings.length}|${s.roads.length}|${s.tax}|${s.occupancy}|${s.coins < 0}`;
+    const sig = `${Math.floor(s.day / 7)}|${sizeSig(s)}|${s.tax}|${s.occupancy}|${s.coins < 0}`;
     const hit = liveStats.get(s);
     if (hit && hit.sig === sig) return hit.st;
     const st = computeStats(s);
@@ -2342,6 +2359,70 @@ function blockTables(s: Sim, fresh: boolean) {
   blockMemo.set(s, { year, area });
   return area;
 }
+/**
+ * Many w×h block sites at once, closest to the city first: one scan of the map and
+ * a greedy pick of non-touching rectangles (big land grants open hundreds of blocks).
+ */
+export function findBlockSites(s: Sim, w: number, h: number, k: number) {
+  const area = blockTables(s, true);
+  const mid = cityCenter(s);
+  const cands: number[] = [];
+  const dist: number[] = [];
+  for (let r = 0; r + h <= ROWS; r += 1)
+    for (let c = 0; c + w <= COLS; c += 1)
+      if (area.free(c, r, w, h)) {
+        cands.push(r * COLS + c);
+        dist.push(Math.abs(c + w / 2 - mid.c) + Math.abs(r + h / 2 - mid.r));
+      }
+  const order = cands.map((_, i) => i).sort((a, b) => dist[a]! - dist[b]!);
+  const taken = new Uint8Array(COLS * ROWS);
+  const out: { c: number; r: number }[] = [];
+  for (const i of order) {
+    if (out.length >= k) break;
+    const c = cands[i]! % COLS,
+      r = Math.floor(cands[i]! / COLS);
+    let ok = true;
+    for (let y = r; y < r + h && ok; y += 1)
+      for (let x = c; x < c + w && ok; x += 1)
+        if (taken[y * COLS + x] || cellTaken(s, x, y) || siteAt(s.sites, x, y)) ok = false;
+    if (!ok) continue;
+    // Keep a one-cell gap between blocks.
+    for (let y = Math.max(0, r - 1); y < Math.min(ROWS, r + h + 1); y += 1)
+      for (let x = Math.max(0, c - 1); x < Math.min(COLS, c + w + 1); x += 1) taken[y * COLS + x] = 1;
+    out.push({ c, r });
+  }
+  return out;
+}
+
+/** Up to `max` distinct open land cells beside roads, in one pass over the roads. */
+export function roadsideLots(s: Sim, max: number) {
+  const out: { c: number; r: number }[] = [];
+  const seen = new Set<string>();
+  for (const key of s.roads) {
+    if (out.length >= max) break;
+    const comma = key.indexOf(",");
+    const c = +key.slice(0, comma),
+      r = +key.slice(comma + 1);
+    for (const [dc, dr] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const x = c + dc,
+        y = r + dr;
+      const k = cellKey(x, y);
+      if (seen.has(k)) continue;
+      if (isLand(x, y) && !isForeign(x, y) && !cellTaken(s, x, y) && !siteAt(s.sites, x, y) && islandOpen(s, x, y)) {
+        seen.add(k);
+        out.push({ c: x, r: y });
+        if (out.length >= max) break;
+      }
+    }
+  }
+  return out;
+}
+
 export function findBlockSite(s: Sim, w: number, h: number) {
   for (const fresh of [false, true]) {
     const area = blockTables(s, fresh);

@@ -16,8 +16,10 @@
 import { CATALOG, maxLevelOf, type Kind } from "./catalog";
 import { NPCS, type NpcId } from "./npcs";
 import { msg, t } from "@/i18n";
+import { freeLot } from "./builder";
 import {
-  findBlockSite,
+  findBlockSites,
+  roadsideLots,
   findModelSite,
   MODEL_AREAS,
   placePackage,
@@ -25,7 +27,7 @@ import {
   pushLog,
   stats,
   priceOf,
-  openLot,
+
   type Building,
   type Sim,
 } from "./sim";
@@ -400,38 +402,49 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: G
   if (to === "state") return { ok: false, msg: t("اختر من تمنحه") };
   if (isPerson(to) && to.length < 3) return { ok: false, msg: t("اكتب اسم الشخص") };
   let done = 0;
-  for (let i = 0; i < count; i += 1) {
-    const lot = openLot(s);
-    if (!lot) break;
-    const price = priceOf(CATALOG[kind].cost, s);
-    // The grantee builds the home: the state gives the land only.
+  const price = priceOf(CATALOG[kind].cost, s);
+  // The grantee builds on the land: the state gives the land only.
+  const put = (c: number, r: number) => {
     s.coins += price;
     const before = s.buildings.length;
-    if (!placeBuilding(s, kind, lot.c, lot.r, 0).ok) {
+    if (!placeBuilding(s, kind, c, r, 0).ok) {
       s.coins -= price;
-      break;
+      return false;
     }
-    const b = s.buildings[before]!;
-    setOwner(s, b, to);
+    setOwner(s, s.buildings[before]!, to);
     done += 1;
+    return true;
+  };
+  // Land beside the city first, then any roadside land (collected in one pass).
+  for (let i = 0; i < Math.min(count, 50); i += 1) {
+    const lot = freeLot(s);
+    if (!lot || !put(lot.c, lot.r)) break;
   }
-  // No roadside land left: open new residential blocks in empty state land, with
-  // their own streets, one home per plot for the grantee.
+  if (done < count) for (const lot of roadsideLots(s, count - done)) put(lot.c, lot.r);
+  // No roadside land left: open new blocks in empty state land, with their own
+  // streets, one building per plot for the grantee (all sites found in one scan).
+  const def = MODEL_AREAS.homes;
+  const perBlock = def.w * def.h;
   while (done < count) {
-    const def = MODEL_AREAS.homes;
-    const site = findBlockSite(s, def.w, def.h);
-    if (!site) break;
-    const before = s.buildings.length;
-    placePackage(s, "homes", s.day, site, Array.from({ length: def.w * def.h }, () => kind));
-    const added = s.buildings.slice(before);
-    if (!added.length) break;
-    // Keep only as many homes as plots granted; the rest of the block stays empty land.
-    const keep = added.filter((b) => b.kind === kind).slice(0, count - done);
-    const drop = new Set(added.filter((b) => !keep.includes(b)));
-    if (drop.size) s.buildings = s.buildings.filter((b) => !drop.has(b));
-    for (const b of keep) setOwner(s, b, to);
-    done += keep.length;
-    if (!keep.length) break;
+    const need = Math.ceil(((count - done) / perBlock) * 2) + 1;
+    const sites = findBlockSites(s, def.w, def.h, Math.min(need, 400));
+    if (!sites.length) break;
+    const start = done;
+    for (const site of sites) {
+      if (done >= count) break;
+      const before = s.buildings.length;
+      placePackage(s, "homes", s.day, site, Array.from({ length: perBlock }, () => kind));
+      const added = s.buildings.slice(before);
+      // Keep only as many buildings as plots granted; the rest stays empty land.
+      const keep = added.filter((b) => b.kind === kind).slice(0, count - done);
+      if (keep.length < added.length) {
+        const drop = new Set(added.filter((b) => !keep.includes(b)));
+        s.buildings = s.buildings.filter((b) => !drop.has(b));
+      }
+      for (const b of keep) setOwner(s, b, to);
+      done += keep.length;
+    }
+    if (done === start) break;
   }
   if (!done) return { ok: false, msg: t("ما في أرض فاضية بجانب الطرق") };
   const last = s.buildings[s.buildings.length - 1]!;
@@ -447,8 +460,18 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: G
 }
 
 /** Everyone the state has granted land to by name, with how many lots they hold now. */
+const granteeMemo = new WeakMap<Estate, { sig: string; list: { id: OwnerId; name: string; lots: number }[] }>();
 export function grantees(s: Sim) {
   const e = estateOf(s);
+  const sig = `${e.trades.length}:${e.trades[0]?.day}:${e.trades.at(-1)?.day}:${e.trades.at(-1)?.id}:${e.count}:${Math.floor(s.day / 30)}`;
+  const hit = granteeMemo.get(e);
+  if (hit && hit.sig === sig) return hit.list;
+  const list = granteesOf(e);
+  granteeMemo.set(e, { sig, list });
+  return list;
+}
+
+function granteesOf(e: Estate) {
   const count = new Map<string, number>();
   for (const o of Object.values(e.owners)) if (isPerson(o)) count.set(o, (count.get(o) ?? 0) + 1);
   for (const tr of e.trades) if (isPerson(tr.to) && !count.has(tr.to)) count.set(tr.to, 0);

@@ -191,6 +191,7 @@ export class CityWorld {
   private celebrateCached = false;
   private puffed = new Set<string>();
   private landmarkSignature = "";
+  private waterAt = -1e9;
   private waterSignature = "";
   private sky = new THREE.Color();
   private carColor = new THREE.Color();
@@ -1212,8 +1213,10 @@ export class CityWorld {
     }
     if (this.fxInput.disaster === "flood" || this.fx.mood.flood > 0) {
       const waterSignature = `${this.roadVersion}|${this.buildingVersion}`;
-      if (waterSignature !== this.waterSignature) {
+      // Redrawn at most every 2 s: at top speed the city changes nearly every frame.
+      if (waterSignature !== this.waterSignature && performance.now() - this.waterAt > 2000) {
         this.waterSignature = waterSignature;
+        this.waterAt = performance.now();
         this.fx.setWater(sim.roads, new Set(this.cellRecords.keys()));
       }
     }
@@ -1568,9 +1571,11 @@ export class CityWorld {
   private animateRising(now: number) {
     // A developer finishing a whole block raises hundreds at once: dust for a few.
     let puffs = 0;
+    // A land grant can raise tens of thousands at once: those just appear.
+    const instant = this.rising.size > 600;
     for (const rec of this.rising) {
       const age = Math.max(0, now - rec.born);
-      if (age >= BUILD_RISE) {
+      if (age >= BUILD_RISE || instant) {
         rec.spread = 1;
         rec.rise = 1;
         this.rising.delete(rec);
