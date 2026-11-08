@@ -1035,6 +1035,39 @@ export class CityWorld {
    * The ownership map: a coloured plinth under every building, by who holds the
    * land (public, state, individuals, merchants, allocation). null hides it.
    */
+  private regionLines: THREE.LineSegments | null = null;
+
+  /** Outlines of the administrative regions (grid rectangles), or null to hide them. */
+  setRegionBorders(rects: { c0: number; c1: number; r0: number; r1: number }[] | null) {
+    if (this.regionLines) {
+      this.scene.remove(this.regionLines);
+      this.regionLines.geometry.dispose();
+      (this.regionLines.material as THREE.Material).dispose();
+      this.regionLines = null;
+    }
+    if (!rects?.length) return;
+    const pts: number[] = [];
+    const y = LAND_HEIGHT + 0.08;
+    const h = CELL_SIZE / 2;
+    for (const g of rects) {
+      const a = cellWorld(g.c0, g.r0);
+      const b = cellWorld(g.c1, g.r1);
+      const x0 = Math.min(a.x, b.x) - h;
+      const x1 = Math.max(a.x, b.x) + h;
+      const z0 = Math.min(a.z, b.z) - h;
+      const z1 = Math.max(a.z, b.z) + h;
+      pts.push(x0, y, z0, x1, y, z0, x1, y, z0, x1, y, z1, x1, y, z1, x0, y, z1, x0, y, z1, x0, y, z0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.85, depthTest: false }));
+    lines.renderOrder = 11;
+    lines.frustumCulled = false;
+    lines.name = "regions";
+    this.scene.add(lines);
+    this.regionLines = lines;
+  }
+
   setOwnership(colors: Map<string, string> | null) {
     if (this.ownershipMesh) {
       this.scene.remove(this.ownershipMesh);

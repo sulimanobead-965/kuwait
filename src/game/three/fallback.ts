@@ -123,6 +123,8 @@ export class FallbackCityWorld {
 
   setOwnership(_colors: Map<string, string> | null) {}
 
+  setRegionBorders(_rects: { c0: number; c1: number; r0: number; r1: number }[] | null) {}
+
   frameDistrict() {
     if (!this.district || this.width < 2) return;
     const box = districtBounds(this.district);

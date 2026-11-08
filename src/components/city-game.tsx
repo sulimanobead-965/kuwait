@@ -1,4 +1,8 @@
 import { ownershipColors, type OwnershipMode } from "@/game/realestate";
+import { regionColors, regions } from "@/game/regions";
+
+/** The map's colours for a mode: by owner, merchant, price, or region. */
+const mapColors = (s: Sim, mode: OwnershipMode) => (mode === "region" ? regionColors(s) : ownershipColors(s, mode));
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
@@ -189,7 +193,7 @@ export function CityGame() {
   // Keep the ownership map current as the city grows and deals go through.
   const ownershipKey = `${snap.buildings.length}:${Math.floor(snap.day / 30)}`;
   useEffect(() => {
-    if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current, ownership));
+    if (ownership) worldRef.current?.setOwnership(mapColors(simRef.current, ownership));
   }, [ownership, ownershipKey]);
   const toastSeq = useRef(0);
   const setToolRef = useRef(setTool);
@@ -1168,7 +1172,8 @@ export function CityGame() {
         ownership={ownership}
         onOwnership={(mode) => {
           setOwnership(mode);
-          worldRef.current?.setOwnership(mode ? ownershipColors(simRef.current, mode) : null);
+          worldRef.current?.setOwnership(mode ? mapColors(simRef.current, mode) : null);
+          worldRef.current?.setRegionBorders(mode === "region" ? regions() : null);
         }}
         onEstate={(deal) => {
           const act = deal(simRef.current);
@@ -1176,7 +1181,7 @@ export function CityGame() {
           // A setting (the fee slider) answers with an empty message: no redraw, no toast.
           else if (act.msg !== "") {
             worldRef.current?.sync(simRef.current, timeRef.current, true);
-            if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current, ownership));
+            if (ownership) worldRef.current?.setOwnership(mapColors(simRef.current, ownership));
             pushToast(act.msg ?? simRef.current.log[0] ?? "");
           }
           sync();

@@ -716,3 +716,40 @@ test("bulk deals on an owner's holdings: buy all, then sell part", async () => {
   assert.equal(re.holdingsOfOwner(s, "state").ids.length, mine.length - part.length);
   assert.equal(re.runMany(s, [], (id) => re.buyProperty(s, id), "شراء").ok, false);
 });
+
+test("administrative regions: 100 of them, counted, and valued, expropriated or evacuated whole", async () => {
+  const rg = await import("./regions.ts");
+  const re = await import("./realestate.ts");
+  const rs = rg.regions();
+  assert.equal(rs.length, 100);
+  const lands = rs.map((r) => r.land);
+  assert.ok(Math.max(...lands) / Math.min(...lands) < 1.3, "about equal land each");
+  assert.ok(rs.every((r) => r.name.length > 0));
+  const s = town(30);
+  s.coins = 1e12;
+  const st = rg.regionStats(s);
+  const home = st.filter((r) => r.buildings > 0).sort((a, b) => b.buildings - a.buildings)[0]!;
+  assert.ok(home.residents > 0 && home.value > 0);
+  assert.equal(st.reduce((n, r) => n + r.buildings, 0), s.buildings.length, "every building in one region");
+  for (const b of s.buildings) assert.equal(rg.regionAt(b.c, b.r) >= 1 && rg.regionAt(b.c, b.r) <= 100, true);
+  // Value-buy the region: every private property becomes the state's, no anger.
+  const cost = rg.regionCost(s, [home.id], 110);
+  const coins = s.coins;
+  assert.ok(rg.valueBuyRegions(s, [home.id], 110).ok);
+  assert.ok(Math.abs(coins - s.coins - cost) < 2);
+  assert.equal(s.buildings.filter((b) => rg.regionAt(b.c, b.r) === home.id && re.ownerOf(s, b) && re.ownerOf(s, b) !== "state").length, 0);
+  assert.equal(re.estateOf(s).grievance.mood, 0);
+  // Evacuate it: private buildings cleared, public ones stay.
+  const publicBefore = s.buildings.filter((b) => rg.regionAt(b.c, b.r) === home.id && re.isPublic(b.kind)).length;
+  assert.ok(rg.evacuateRegions(s, [home.id]).ok);
+  const after = s.buildings.filter((b) => rg.regionAt(b.c, b.r) === home.id);
+  assert.ok(after.every((b) => re.isPublic(b.kind)));
+  assert.equal(after.length, publicBefore);
+  // Expropriating a populated region below value makes people angry.
+  const t2 = town(30);
+  t2.coins = 1e12;
+  const r2 = rg.regionStats(t2).filter((r) => r.privateCount > 0)[0]!;
+  assert.ok(rg.expropriateRegions(t2, [r2.id], 50).ok);
+  assert.ok(re.estateOf(t2).grievance.mood > 0);
+  assert.equal(rg.valueBuyRegions(t2, [], 110).ok, false);
+});

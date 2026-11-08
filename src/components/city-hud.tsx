@@ -1,4 +1,5 @@
 import { EstatePanel, OwnershipLegend } from "@/components/hud-estate";
+import { expropriateRegions, regionAt, regionCost, regionStats, valueBuyRegions } from "@/game/regions";
 import { buyListing, buyProperty, listingAt, ownerName, ownerOf, propertyValue, type EstateAct, type OwnershipMode } from "@/game/realestate";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -1018,6 +1019,7 @@ export function CityHud({
                     <p className="text-xs text-coral">{blockReason(selected, snap)}</p>
                   )}
                   <OwnerLine snap={snap} b={selected} onEstate={onEstate} />
+                  <RegionLine snap={snap} b={selected} onEstate={onEstate} />
                 </div>
                 <button
                   type="button"
@@ -2271,6 +2273,40 @@ function OwnerLine({ snap, b, onEstate }: { snap: Sim; b: Building; onEstate: (d
         >
           {t("اشترِ للدولة")}
         </button>
+      )}
+    </p>
+  );
+}
+
+/** The tapped building's region, with value-buying or expropriating the whole of it. */
+function RegionLine({ snap, b, onEstate }: { snap: Sim; b: Building; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const id = regionAt(b.c, b.r);
+  const r = regionStats(snap)[id - 1]!;
+  const [sure, setSure] = useState<"" | "value" | "exp">("");
+  return (
+    <p className="flex flex-wrap items-center gap-1 text-xs" data-testid="region-line">
+      <span>
+        {t("المنطقة {id} · {name} · {n} ساكن", { id, name: r.name, n: fmt(r.residents) })}
+      </span>
+      {r.privateCount > 0 && (
+        <>
+          <button
+            type="button"
+            className={`underline ${sure === "value" ? "font-extrabold text-coral" : ""}`}
+            data-testid="region-value"
+            onClick={() => (sure === "value" ? (setSure(""), onEstate((s) => valueBuyRegions(s, [id], 110))) : setSure("value"))}
+          >
+            {sure === "value" ? t("تأكيد التثمين بـ {amount}؟", { amount: fmt(regionCost(snap, [id], 110)) }) : t("ثمّن المنطقة")}
+          </button>
+          <button
+            type="button"
+            className={`underline ${sure === "exp" ? "font-extrabold text-coral" : ""}`}
+            data-testid="region-exp"
+            onClick={() => (sure === "exp" ? (setSure(""), onEstate((s) => expropriateRegions(s, [id], 100))) : setSure("exp"))}
+          >
+            {sure === "exp" ? t("تأكيد نزع الملكية بـ {amount}؟", { amount: fmt(regionCost(snap, [id], 100)) }) : t("انزع ملكيتها")}
+          </button>
+        </>
       )}
     </p>
   );

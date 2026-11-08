@@ -587,7 +587,7 @@ export function landSplit(s: Sim) {
 }
 
 /** The ownership map: one colour per building lot (allocation plots stand out). */
-export type OwnershipMode = "owner" | "merchant" | "price";
+export type OwnershipMode = "owner" | "merchant" | "price" | "region";
 
 /** Each merchant's own colour on the map (by-merchant mode). */
 export const MERCHANT_COLORS: Record<NpcId, string> = {

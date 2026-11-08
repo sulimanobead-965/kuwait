@@ -49,11 +49,12 @@ import {
 } from "@/game/realestate";
 import { formatCityDate, type Sim } from "@/game/sim";
 import { NumberField } from "@/components/hud-social";
+import { RegionsPanel } from "@/components/hud-regions";
 import { bigNum, dirOf, getLang, t } from "@/i18n";
 
 const fmt = (n: number) => (Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.round(n).toLocaleString("en-US"));
 
-type View = "trades" | "platform" | "market" | "allocate" | "grants" | "laws";
+type View = "trades" | "platform" | "market" | "allocate" | "grants" | "laws" | "regions";
 
 const TYPE_NAMES: Record<Trade["type"], string> = {
   sale: "بيع",
@@ -66,7 +67,14 @@ const TYPE_NAMES: Record<Trade["type"], string> = {
 /** The colours of the ownership map, as a legend for the chosen mode. */
 export function OwnershipLegend({ mode = "owner" }: { mode?: OwnershipMode | null }) {
   const rows: [string, string][] =
-    mode === "price"
+    mode === "region"
+      ? [
+          ...NPCS.map((n) => [MERCHANT_COLORS[n.id], n.name] as [string, string]),
+          [OWNER_COLORS.people!, "الأفراد"],
+          [OWNER_COLORS.state!, "أملاك الدولة"],
+          ["#ffffff", "حدود المناطق"],
+        ]
+      : mode === "price"
       ? [
           [OWNER_COLORS.public!, "أرض عامة (لا تُتداول)"],
           ["#3cc846", "أرخص"],
@@ -88,7 +96,7 @@ export function OwnershipLegend({ mode = "owner" }: { mode?: OwnershipMode | nul
             [OWNER_COLORS.merchant!, "ملك التجار"],
             [OWNER_COLORS.allocation!, "تخصيص مؤقت"],
           ];
-  rows.push(["#facc15", "معروض للبيع أو في مزاد"]);
+  if (mode !== "region") rows.push(["#facc15", "معروض للبيع أو في مزاد"]);
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]" data-testid="ownership-legend">
       {rows.map(([c, label]) => (
@@ -143,13 +151,14 @@ export function EstatePanel({
           })}
         </p>
         <p className="mt-2 text-[11px] font-bold">{t("الملكية على الخريطة")}</p>
-        <div className="mt-1 grid grid-cols-4 gap-1">
+        <div className="mt-1 grid grid-cols-5 gap-1">
           {(
             [
               [null, "إخفاء"],
               ["owner", "حسب المالك"],
               ["merchant", "حسب التاجر"],
               ["price", "حسب السعر"],
+              ["region", "حسب المنطقة"],
             ] as const
           ).map(([m, label]) => (
             <button
@@ -177,6 +186,7 @@ export function EstatePanel({
             ["allocate", "التخصيص", <FileSignature key="a" size={14} />],
             ["grants", "المنح", <Gift key="g" size={14} />],
             ["laws", "القوانين", <Scale key="l" size={14} />],
+            ["regions", "المناطق", <MapPinned key="r" size={14} />],
           ] as const
         ).map(([id, label, icon]) => (
           <button
@@ -198,6 +208,7 @@ export function EstatePanel({
       {view === "allocate" && <Allocations snap={snap} onEstate={onEstate} />}
       {view === "grants" && <Grants onEstate={onEstate} />}
       {view === "laws" && <Laws snap={snap} onEstate={onEstate} />}
+      {view === "regions" && <RegionsPanel snap={snap} onEstate={onEstate} onShowMap={() => onOwnership("region")} />}
     </div>
   );
 }
