@@ -1,5 +1,5 @@
 import { EstatePanel, OwnershipLegend } from "@/components/hud-estate";
-import { buyProperty, ownerName, ownerOf, propertyValue, type EstateAct } from "@/game/realestate";
+import { buyListing, buyProperty, listingAt, ownerName, ownerOf, propertyValue, type EstateAct, type OwnershipMode } from "@/game/realestate";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
@@ -456,8 +456,8 @@ export function CityHud({
   onNpcAudit: (id: NpcId) => void;
   onNpcAccount: (id: NpcId) => void;
   onDonate: (kind: CharityKind, cause: CharityCause, amount: number) => void;
-  ownership: boolean;
-  onOwnership: (on: boolean) => void;
+  ownership: OwnershipMode | null;
+  onOwnership: (mode: OwnershipMode | null) => void;
   onEstate: (deal: (s: Sim) => EstateAct) => void;
   onConsult: () => void;
   onMudaraba: (amount: number, expected: number) => void;
@@ -581,11 +581,11 @@ export function CityHud({
           >
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-xs font-extrabold">{t("خريطة الملكية")}</span>
-              <button type="button" className="text-xs underline" onClick={() => onOwnership(false)}>
+              <button type="button" className="text-xs underline" onClick={() => onOwnership(null)}>
                 {t("إخفاء")}
               </button>
             </div>
-            <OwnershipLegend />
+            <OwnershipLegend mode={ownership} />
           </div>
         )}
         {snap.started && (
@@ -2255,8 +2255,20 @@ function OwnerLine({ snap, b, onEstate }: { snap: Sim; b: Building; onEstate: (d
   return (
     <p className="flex flex-wrap items-center gap-1 text-xs" data-testid="owner-line">
       <span>{t("المالك: {owner} · القيمة {amount} د.ك", { owner: t(ownerName(owner)), amount: fmt(value) })}</span>
+      {listingAt(snap, b) && (
+        <span className="rounded bg-yellow-300 px-1 font-bold text-sc-ink" data-testid="for-sale">
+          {t("معروض بـ {amount}", { amount: fmt(listingAt(snap, b)!.ask) })}
+        </span>
+      )}
       {owner !== "state" && (
-        <button type="button" className="underline" onClick={() => onEstate((s) => buyProperty(s, b.id))}>
+        <button
+          type="button"
+          className="underline"
+          onClick={() => {
+            const l = listingAt(snap, b);
+            onEstate((s) => (l ? buyListing(s, l.id) : buyProperty(s, b.id)));
+          }}
+        >
           {t("اشترِ للدولة")}
         </button>
       )}

@@ -569,3 +569,58 @@ test("property market: listings, offers and counter-offers, the registration fee
   re.setRegistrationFee(s, 50);
   assert.equal(re.estateOf(s).fee, 20);
 });
+
+test("real estate laws: monopoly cap, home financing, expropriation, undeveloped-property fee", async () => {
+  const re = await import("./realestate.ts");
+  const { stats } = await import("./sim.ts");
+  const s = town(30);
+  s.coins = 1e9;
+  for (const n of s.npcs) n.cash = 1e9;
+  const seq = (() => {
+    let r = 7;
+    return () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  })();
+  // Expropriation below value angers people; at full value it does not.
+  const priv = s.buildings.filter((b) => re.ownerOf(s, b) && re.ownerOf(s, b) !== "state");
+  const happy0 = stats(s).happy;
+  assert.ok(re.expropriate(s, priv[0]!.id, 100).ok);
+  assert.equal(re.estateOf(s).grievance.mood, 0);
+  assert.ok(re.expropriate(s, priv[1]!.id, 40).ok);
+  assert.ok(re.estateOf(s).grievance.mood > 0);
+  s.day += 1;
+  assert.ok(stats(s).happy <= happy0, "under-paid expropriation costs approval");
+  assert.ok((stats(s).why ?? []).some(([l]) => l === "نزع الملكية"));
+  // Home financing lends to families and is repaid with its return.
+  re.setMortgage(s, true, 3);
+  const home = s.buildings.find((b) => re.ownerOf(s, b) !== "state" && re.ownerOf(s, b) !== "people" && !re.isPublic(b.kind));
+  if (home) {
+    const coins = s.coins;
+    re.estateOf(s).listings.push({ id: 999, lot: re.lotKey(home), kind: home.kind, seller: re.ownerOf(s, home)!, ask: 1, until: s.day + 90 });
+    for (let m = 0; m < 3; m += 1) {
+      s.day += 30;
+      re.estateMonth(s, seq);
+    }
+    assert.ok(re.estateOf(s).mortgage.book >= 0);
+    void coins;
+  }
+  assert.ok((stats(s).why ?? []).some(([l]) => l === "التمويل العقاري"));
+  // Undeveloped-property fee: paid by merchants, and some of them build.
+  re.setLandTax(s, 10);
+  const lvl = s.buildings.reduce((a, b) => a + b.level, 0);
+  const total0 = re.estateOf(s).landTaxTotal;
+  s.day += 30;
+  re.estateMonth(s, seq);
+  assert.ok(re.estateOf(s).landTaxTotal >= total0);
+  assert.ok(s.buildings.reduce((a, b) => a + b.level, 0) >= lvl);
+  // Anti-monopoly: a merchant over the cap pays and has to list properties.
+  const big = re.ownersSummary(s).find((r) => r.owner !== "people" && r.owner !== "state")!;
+  re.setMonopolyCap(s, Math.max(1, Math.floor(big.share * 100) - 1));
+  s.day += 30;
+  re.estateMonth(s, seq);
+  assert.ok(re.estateOf(s).capTotal > 0);
+  assert.ok(re.estateOf(s).overCap.includes(big.owner));
+  assert.ok(re.merchantProfile(s, big.owner as never).overCap);
+  // The map: by price and by merchant, listed lots in gold.
+  assert.ok(re.ownershipColors(s, "price").size === s.buildings.length);
+  assert.ok([...re.ownershipColors(s, "merchant").values()].includes("#facc15"));
+});

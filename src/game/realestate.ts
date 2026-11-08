@@ -87,6 +87,18 @@ export type Estate = {
   /** This month so far (moved into history at the month's end). */
   volume: number;
   count: number;
+  /** Anti-monopoly law: most a merchant may hold, % of private property (0 = off). */
+  cap: number;
+  /** Merchants already told they are over the cap. */
+  overCap: string[];
+  capTotal: number;
+  /** Home financing for citizens: on, its yearly return %, money lent and lost. */
+  mortgage: { on: boolean; rate: number; book: number; lost: number; paid: number };
+  /** Yearly fee on merchants' undeveloped (level-1) property, % of value (0 = off). */
+  landTax: number;
+  landTaxTotal: number;
+  /** Anger at under-compensated expropriations: approval points, until a game day. */
+  grievance: { mood: number; until: number };
 };
 
 export const emptyEstate = (): Estate => ({
@@ -103,6 +115,13 @@ export const emptyEstate = (): Estate => ({
   history: [],
   volume: 0,
   count: 0,
+  cap: 0,
+  overCap: [],
+  capTotal: 0,
+  mortgage: { on: false, rate: 4, book: 0, lost: 0, paid: 0 },
+  landTax: 0,
+  landTaxTotal: 0,
+  grievance: { mood: 0, until: 0 },
 });
 
 /** Kinds that are always public land: services, utilities, state landmarks, transport. */
@@ -148,7 +167,7 @@ export const OWNER_COLORS: Record<string, string> = {
   state: "#14b8a6",
   people: "#f59e0b",
   merchant: "#a855f7",
-  allocation: "#ec4899",
+  allocation: "#84cc16",
 };
 
 export function estateOf(s: Sim): Estate {
@@ -459,6 +478,7 @@ export function estateMonth(s: Sim, random = Math.random) {
     s.ytd.income += due;
   }
   marketMonth(s, random);
+  lawsMonth(s, random);
   // Forget owners of demolished buildings now and then.
   if (random() < 0.03 && Object.keys(e.owners).length > 0) {
     const owners: Record<string, OwnerId> = {};
@@ -520,24 +540,51 @@ export function landSplit(s: Sim) {
 }
 
 /** The ownership map: one colour per building lot (allocation plots stand out). */
-export function ownershipColors(s: Sim): Map<string, string> {
+export type OwnershipMode = "owner" | "merchant" | "price";
+
+/** Each merchant's own colour on the map (by-merchant mode). */
+export const MERCHANT_COLORS: Record<NpcId, string> = {
+  abufahad: "#8b5cf6",
+  umsalem: "#ef4444",
+  bukhalid: "#a16207",
+  sara: "#f472b6",
+  meshal: "#1e3a8a",
+};
+const LISTED_COLOR = "#facc15";
+
+function heat(t: number) {
+  // Cheap (green) → dear (red), through yellow.
+  const x = Math.max(0, Math.min(1, t));
+  const r = Math.round(x < 0.5 ? 60 + x * 2 * 190 : 250);
+  const g = Math.round(x < 0.5 ? 200 : 200 - (x - 0.5) * 2 * 170);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | 70).toString(16).slice(1)}`;
+}
+
+/**
+ * The ownership map: one colour per building lot. By owner (public, state,
+ * individuals, merchants, allocations), by merchant (each merchant his colour), or
+ * by price (cheap green to dear red). Lots for sale stand out in gold.
+ */
+export function ownershipColors(s: Sim, mode: OwnershipMode = "owner"): Map<string, string> {
   const e = estateOf(s);
   const allotted = new Set(e.allocations.flatMap((a) => a.buildings));
+  const listed = new Set([...e.listings.map((l) => l.lot), ...e.auctions.map((a) => a.lot)]);
   const out = new Map<string, string>();
+  let maxV = 1;
+  if (mode === "price")
+    for (const b of s.buildings) if (!isPublic(b.kind)) maxV = Math.max(maxV, Math.log1p(CATALOG[b.kind].cost * (1 + (b.level - 1) * 0.8)));
   for (const b of s.buildings) {
     const o = ownerOf(s, b);
-    out.set(
-      b.id,
-      !o
-        ? OWNER_COLORS.public!
-        : allotted.has(lotKey(b))
-          ? OWNER_COLORS.allocation!
-          : o === "state"
-            ? OWNER_COLORS.state!
-            : o === "people"
-              ? OWNER_COLORS.people!
-              : OWNER_COLORS.merchant!,
-    );
+    const k = lotKey(b);
+    let c: string;
+    if (!o) c = OWNER_COLORS.public!;
+    else if (listed.has(k)) c = LISTED_COLOR;
+    else if (mode === "price") c = heat(Math.log1p(CATALOG[b.kind].cost * (1 + (b.level - 1) * 0.8)) / maxV);
+    else if (allotted.has(k)) c = OWNER_COLORS.allocation!;
+    else if (o === "state") c = OWNER_COLORS.state!;
+    else if (o === "people") c = OWNER_COLORS.people!;
+    else c = mode === "merchant" ? MERCHANT_COLORS[o] : OWNER_COLORS.merchant!;
+    out.set(b.id, c);
   }
   return out;
 }
@@ -581,6 +628,21 @@ export function loadEstate(raw: unknown): Estate {
       .filter((x) => x && Number.isFinite(Number(x.day)))
       .map((x) => ({ day: num(x.day), index: num(x.index, 1), volume: Math.max(0, num(x.volume)), count: Math.max(0, num(x.count)) }))
       .slice(-120);
+  e.cap = Math.min(100, Math.max(0, num(p.cap)));
+  e.overCap = Array.isArray(p.overCap) ? p.overCap.map(String) : [];
+  e.capTotal = Math.max(0, num(p.capTotal));
+  const mg = (p.mortgage ?? {}) as Partial<Estate["mortgage"]>;
+  e.mortgage = {
+    on: !!mg.on,
+    rate: Math.min(30, Math.max(0, num(mg.rate, 4))),
+    book: Math.max(0, num(mg.book)),
+    lost: Math.max(0, num(mg.lost)),
+    paid: Math.max(0, num(mg.paid)),
+  };
+  e.landTax = Math.min(20, Math.max(0, num(p.landTax)));
+  e.landTaxTotal = Math.max(0, num(p.landTaxTotal));
+  const gv = (p.grievance ?? {}) as Partial<Estate["grievance"]>;
+  e.grievance = { mood: Math.min(20, Math.max(0, num(gv.mood))), until: num(gv.until) };
   e.volume = Math.max(0, num(p.volume));
   e.count = Math.max(0, num(p.count));
   e.nextId = Math.max(
@@ -603,6 +665,9 @@ export const cloneEstate = (e: Estate | undefined): Estate | undefined =>
         listings: (e.listings ?? []).map((l) => ({ ...l })),
         auctions: (e.auctions ?? []).map((l) => ({ ...l })),
         history: [...(e.history ?? [])],
+        overCap: [...(e.overCap ?? [])],
+        mortgage: { ...mortgageOf(e) },
+        grievance: { ...(e.grievance ?? { mood: 0, until: 0 }) },
       }
     : undefined;
 
@@ -629,6 +694,14 @@ const activity = (e: Estate) => Math.max(0.15, 1 - e.fee / 15);
 function executeSale(s: Sim, b: Building, from: OwnerId, to: OwnerId, price: number, type: Trade["type"] = "sale") {
   const e = estateOf(s);
   pay(s, to, from, price);
+  // Home financing: the state lends a family 70% of the price, repaid over 20 years.
+  const m = mortgageOf(e);
+  if (m.on && to === "people" && from !== "state" && s.coins > price) {
+    const lent = Math.round(price * 0.7);
+    s.coins -= lent;
+    s.ytd.spend += lent;
+    m.book += lent;
+  }
   if (from !== "state" && to !== "state" && e.fee > 0) {
     const fee = Math.round((price * e.fee) / 100);
     pay(s, to, "state", fee);
@@ -682,6 +755,8 @@ function marketMonth(s: Sim, random: () => number) {
     const odds = 0.35 * act * Math.min(2, (value / l.ask) ** 3);
     if (random() < odds) {
       const buyers = BIDDERS().filter((x) => x !== l.seller && canPay(s, x, l.ask * (1 + e.fee / 100)));
+      // With home financing, families can afford more: they turn up more often.
+      if (mortgageOf(e).on && l.seller !== "people") buyers.push("people", "people");
       if (buyers.length) {
         const to = buyers[Math.floor(random() * buyers.length)]!;
         executeSale(s, b, l.seller, to, l.ask);
@@ -833,4 +908,198 @@ export function typicalPrices(s: Sim) {
   const e = estateOf(s);
   const mood = 0.8 + stats(s).happy / 250;
   return (["villa", "apartments", "shop", "tower"] as Kind[]).map((k) => ({ kind: k, price: Math.round(CATALOG[k].cost * 40 * mood * e.index) }));
+}
+
+// ---------------------------------------------------------------- real estate laws
+
+/** Older cities saved before these laws: fill in the defaults. */
+function mortgageOf(e: Estate) {
+  if (!e.mortgage) e.mortgage = { on: false, rate: 4, book: 0, lost: 0, paid: 0 };
+  return e.mortgage;
+}
+
+export function setMonopolyCap(s: Sim, pct: number) {
+  const e = estateOf(s);
+  e.cap = Math.min(100, Math.max(0, Math.round(pct)));
+  e.overCap = [];
+}
+
+export function setLandTax(s: Sim, pct: number) {
+  estateOf(s).landTax = Math.min(20, Math.max(0, Math.round(pct * 10) / 10));
+}
+
+export function setMortgage(s: Sim, on: boolean, rate?: number) {
+  const m = mortgageOf(estateOf(s));
+  m.on = on;
+  if (rate !== undefined) m.rate = Math.min(30, Math.max(0, Math.round(rate * 10) / 10));
+}
+
+/**
+ * Expropriation for the public good: the state takes a private property and pays
+ * the owner a share of its market value. Anything under the full value angers
+ * people for a year, the more so the less was paid.
+ */
+export function expropriate(s: Sim, buildingId: string, pct: number): EstateAct {
+  const b = findBuilding(s, buildingId);
+  if (!b) return { ok: false, msg: t("العقار غير موجود") };
+  const owner = ownerOf(s, b);
+  if (!owner) return { ok: false, msg: t("هذه أرض عامة أصلاً") };
+  if (owner === "state") return { ok: false, msg: t("العقار من أملاك الدولة أصلاً") };
+  pct = Math.max(0, Math.min(150, Math.round(pct)));
+  const pay2 = Math.round((propertyValue(s, b) * pct) / 100);
+  if (s.coins < pay2) return { ok: false, msg: t("الرصيد ما يكفي") };
+  pay(s, "state", owner, pay2);
+  setOwner(s, b, "state");
+  record(s, { id: lotKey(b), kind: b.kind, from: owner, to: "state", price: pay2, type: "sale" });
+  const e = estateOf(s);
+  if (pct < 100) {
+    const hurt = Math.min(8, Math.ceil((100 - pct) / 12));
+    const g = e.grievance ?? (e.grievance = { mood: 0, until: 0 });
+    g.mood = Math.min(20, (g.until > s.day ? g.mood : 0) + hurt);
+    g.until = s.day + 360;
+    const n = npcState(s, owner);
+    if (n) n.trust = Math.max(0, n.trust - hurt * 3);
+  }
+  const entry = msg("نزع ملكية {kind} من {owner} للمنفعة العامة بتعويض {amount} د.ك ({pct}٪)", {
+    kind: CATALOG[b.kind].name,
+    owner: ownerName(owner),
+    amount: pay2,
+    pct,
+  });
+  pushLog(s, entry);
+  return { ok: true, msg: entry };
+}
+
+/** What the real estate laws do to approval (shown in the approval breakdown). */
+export function estateMood(s: Sim): [string, number][] {
+  const e = (s as Sim & { estate?: Estate }).estate;
+  if (!e) return [];
+  const out: [string, number][] = [];
+  const m = e.mortgage;
+  // Affordable home financing pleases families; dear financing barely helps.
+  if (m?.on) out.push(["التمويل العقاري", Math.max(0, Math.round(4 - m.rate / 3))]);
+  if (e.grievance && e.grievance.until > s.day) out.push(["نزع الملكية", -e.grievance.mood]);
+  return out;
+}
+
+function lawsMonth(s: Sim, random: () => number) {
+  const e = estateOf(s);
+  const crisis = s.crisis && s.day < s.crisis.until ? s.crisis.kind : null;
+  // Home financing: repayments come in; in an economic crisis some families default.
+  const m = mortgageOf(e);
+  if (m.book > 0) {
+    const due = Math.round(m.book / 240 + (m.book * m.rate) / 1200);
+    const principal = Math.round(m.book / 240);
+    s.coins += due;
+    s.ytd.income += due;
+    m.paid += due;
+    m.book = Math.max(0, m.book - principal);
+    if (crisis === "economic") {
+      const lost = Math.round(m.book * 0.015);
+      m.book -= lost;
+      m.lost += lost;
+    }
+  }
+  // Undeveloped-property fee: merchants pay it on level-1 holdings, and some build.
+  if (e.landTax > 0) {
+    let fee = 0;
+    const idle: Building[] = [];
+    for (const b of s.buildings) {
+      if (b.level !== 1 || isPublic(b.kind)) continue;
+      const o = ownerOf(s, b);
+      if (!o || o === "state" || o === "people") continue;
+      const f = (propertyValue(s, b) * e.landTax) / 1200;
+      fee += f;
+      const n = npcState(s, o);
+      if (n) n.cash -= f;
+      idle.push(b);
+    }
+    fee = Math.round(fee);
+    if (fee > 0) {
+      s.coins += fee;
+      s.ytd.income += fee;
+      e.landTaxTotal += fee;
+    }
+    // The higher the fee, the more of them develop their land this month.
+    const builds = Math.min(idle.length, Math.round(e.landTax / 2));
+    for (let i = 0; i < builds; i += 1) {
+      const b = idle[Math.floor(random() * idle.length)]!;
+      if (b.level === 1) b.level = 2;
+    }
+  }
+  // Anti-monopoly: merchants above the cap pay a fee on the excess and must sell.
+  if (e.cap > 0) {
+    const rows = ownersSummary(s);
+    const total = rows.reduce((a, r) => a + r.value, 0);
+    for (const r of rows) {
+      if (r.owner === "state" || r.owner === "people") continue;
+      const over = r.share * 100 - e.cap;
+      if (over <= 0) {
+        e.overCap = (e.overCap ?? []).filter((x) => x !== r.owner);
+        continue;
+      }
+      const excess = (total * over) / 100;
+      const fee = Math.round(excess * 0.005);
+      const n = npcState(s, r.owner);
+      if (n) n.cash -= fee;
+      s.coins += fee;
+      s.ytd.income += fee;
+      e.capTotal = (e.capTotal ?? 0) + fee;
+      if (!(e.overCap ?? []).includes(r.owner)) {
+        e.overCap = [...(e.overCap ?? []), r.owner];
+        pushLog(s, msg("قانون منع الاحتكار: {name} يملك {pct}٪ فوق الحد، ويبيع الزيادة", { name: ownerName(r.owner), pct: Math.round(r.share * 100) }));
+      }
+      // Forced sales: a few of his properties go on the market below value.
+      const listed = new Set(e.listings.map((l) => l.lot));
+      let put = 0;
+      for (const b of s.buildings) {
+        if (put >= 3) break;
+        if (ownerOf(s, b) !== r.owner || listed.has(lotKey(b))) continue;
+        e.listings.push({ id: e.nextId++, lot: lotKey(b), kind: b.kind, seller: r.owner, ask: Math.round(propertyValue(s, b) * 0.95), until: s.day + 90 });
+        put += 1;
+      }
+    }
+  }
+}
+
+/** A merchant's record on the platform: holdings, deals and standing. */
+export function merchantProfile(s: Sim, id: NpcId) {
+  const e = estateOf(s);
+  const row = ownersSummary(s).find((r) => r.owner === id);
+  let bought = 0;
+  let sold = 0;
+  let spent = 0;
+  let earned = 0;
+  for (const x of e.trades) {
+    if (x.type !== "sale") continue;
+    if (x.to === id) {
+      bought += 1;
+      spent += x.price;
+    }
+    if (x.from === id) {
+      sold += 1;
+      earned += x.price;
+    }
+  }
+  const n = s.npcs.find((x) => x.id === id);
+  return {
+    count: row?.count ?? 0,
+    value: row?.value ?? 0,
+    share: row?.share ?? 0,
+    rent: row?.rent ?? 0,
+    bought,
+    sold,
+    spent,
+    earned,
+    cash: n?.cash ?? 0,
+    listed: e.listings.filter((l) => l.seller === id).length,
+    allocations: e.allocations.filter((a) => a.holder === id).length,
+    overCap: e.cap > 0 && (row?.share ?? 0) * 100 > e.cap,
+  };
+}
+
+/** The listing on a lot, if it is for sale. */
+export function listingAt(s: Sim, b: Building) {
+  const k = lotKey(b);
+  return estateOf(s).listings.find((l) => l.lot === k) ?? null;
 }

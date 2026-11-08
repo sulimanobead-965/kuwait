@@ -1,4 +1,4 @@
-import { ownershipColors } from "@/game/realestate";
+import { ownershipColors, type OwnershipMode } from "@/game/realestate";
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
@@ -185,11 +185,11 @@ export function CityGame() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [districtChooser, setDistrictChooser] = useState(false);
   /** The ownership map: public and private land in their colours. */
-  const [ownership, setOwnership] = useState(false);
+  const [ownership, setOwnership] = useState<OwnershipMode | null>(null);
   // Keep the ownership map current as the city grows and deals go through.
   const ownershipKey = `${snap.buildings.length}:${Math.floor(snap.day / 30)}`;
   useEffect(() => {
-    if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current));
+    if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current, ownership));
   }, [ownership, ownershipKey]);
   const toastSeq = useRef(0);
   const setToolRef = useRef(setTool);
@@ -1166,9 +1166,9 @@ export function CityGame() {
         onNpcAudit={(id) => finance(auditNpc(simRef.current, id))}
         onNpcAccount={(id) => finance(holdToAccount(simRef.current, id))}
         ownership={ownership}
-        onOwnership={(on) => {
-          setOwnership(on);
-          worldRef.current?.setOwnership(on ? ownershipColors(simRef.current) : null);
+        onOwnership={(mode) => {
+          setOwnership(mode);
+          worldRef.current?.setOwnership(mode ? ownershipColors(simRef.current, mode) : null);
         }}
         onEstate={(deal) => {
           const act = deal(simRef.current);
@@ -1176,7 +1176,7 @@ export function CityGame() {
           // A setting (the fee slider) answers with an empty message: no redraw, no toast.
           else if (act.msg !== "") {
             worldRef.current?.sync(simRef.current, timeRef.current, true);
-            if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current));
+            if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current, ownership));
             pushToast(act.msg ?? simRef.current.log[0] ?? "");
           }
           sync();

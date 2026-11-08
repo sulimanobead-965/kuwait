@@ -7,7 +7,7 @@ import {
   loadFinance,
   type FinanceState,
 } from "./finance";
-import { cloneEstate, emptyEstate, estateMonth, loadEstate, type Estate } from "./realestate";
+import { cloneEstate, emptyEstate, estateMonth, estateMood, loadEstate, type Estate } from "./realestate";
 import { builderMonth, emptyBuilder, freeLot, loadBuilder, type BuilderState } from "./builder";
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
@@ -1383,6 +1383,7 @@ function computeStats(s: Sim): CityStats {
   if (ev) add("الفعاليات", ev.happy);
   add("الشهرة", Math.min(12, s.fame ?? 0));
   add("التبرعات", charityMood(s));
+  for (const [label, n] of estateMood(s)) add(label, n);
   const rawHappy = Math.round(happy);
   happy = clamp(rawHappy, 6, 100);
   const utilP = powerUse === 0 || grace ? 1 : Math.min(1, powerGive / powerUse);
