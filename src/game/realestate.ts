@@ -723,7 +723,7 @@ export const cloneEstate = (e: Estate | undefined): Estate | undefined =>
 
 /** Building on a lot; the index is rebuilt only when the city has changed. */
 const lotIndex = new WeakMap<Sim, { n: number; first: Building | undefined; map: Map<string, Building> }>();
-function lotOf(s: Sim, lot: string) {
+export function lotOf(s: Sim, lot: string) {
   let ix = lotIndex.get(s);
   if (!ix || ix.n !== s.buildings.length || ix.first !== s.buildings[0]) {
     ix = { n: s.buildings.length, first: s.buildings[0], map: new Map(s.buildings.map((b) => [lotKey(b), b])) };
@@ -1272,3 +1272,21 @@ export function cancelRequest(s: Sim, id: number): EstateAct {
 
 /** Private kinds a request can ask for. */
 export const REQUEST_KINDS: Kind[] = (Object.keys(CATALOG) as Kind[]).filter((k) => !isPublic(k) && CATALOG[k].cost > 0);
+
+/**
+ * A demolished building's lot goes back to its default owner, and its listing, lease
+ * or auction ends: whoever builds there next starts afresh.
+ */
+export function forgetLots(s: Sim, gone: Building[]) {
+  const e = (s as Sim & { estate?: Estate }).estate;
+  if (!e || !gone.length) return;
+  const keys = new Set(gone.map(lotKey));
+  if (Object.keys(e.owners).some((k) => keys.has(k))) {
+    const owners: Record<string, OwnerId> = {};
+    for (const [k, o] of Object.entries(e.owners)) if (!keys.has(k)) owners[k] = o;
+    e.owners = owners;
+  }
+  e.listings = e.listings.filter((l) => !keys.has(l.lot));
+  e.leases = e.leases.filter((l) => !keys.has(l.id));
+  e.auctions = e.auctions.filter((a) => !keys.has(a.lot));
+}

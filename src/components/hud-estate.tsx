@@ -15,6 +15,7 @@ import {
   allocate,
   allocationFee,
   REQUEST_KINDS,
+  lotOf,
   buyListing,
   buyMany,
   buyProperty,
@@ -507,7 +508,7 @@ function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
           <p className="mt-1 opacity-70">{t("ما في عروض الحين. الملاك يعرضون كل شهر.")}</p>
         ) : (
           listings.map((l) => {
-            const b = snap.buildings.find((x) => `${x.c},${x.r}` === l.lot);
+            const b = lotOf(snap, l.lot);
             const value = b ? propertyValue(snap, b) : 0;
             return (
               <div

@@ -7,7 +7,7 @@ import {
   loadFinance,
   type FinanceState,
 } from "./finance";
-import { cloneEstate, emptyEstate, estateMonth, estateMood, loadEstate, type Estate } from "./realestate";
+import { cloneEstate, emptyEstate, estateMonth, estateMood, forgetLots, loadEstate, type Estate } from "./realestate";
 import { builderMonth, emptyBuilder, freeLot, loadBuilder, type BuilderState } from "./builder";
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
@@ -2325,6 +2325,54 @@ export function findDevelopmentSite(
  * asks for a site every month. Big cities keep the tables for a quarter (the spot
  * found is checked against the live city before use); small ones rebuild on change.
  */
+/**
+ * Room for a new w×h block when the city has no free lots left beside its roads:
+ * the nearest open rectangle, found on the kept tables (a quarter old at most), with
+ * blocks already placed this quarter ruled out, and checked against the live map.
+ */
+const blockUsed = new WeakMap<object, { c: number; r: number; w: number; h: number }[]>();
+const blockQueue = new WeakMap<object, { c: number; r: number }[]>();
+/** Land tables for new blocks, kept for a game year (each spot is re-checked live). */
+const blockMemo = new WeakMap<Sim, { year: number; area: ReturnType<typeof areaTables> }>();
+function blockTables(s: Sim, fresh: boolean) {
+  const year = Math.floor(s.day / 360);
+  const hit = blockMemo.get(s);
+  if (!fresh && hit && hit.year === year) return hit.area;
+  const area = areaTables(s, true, false);
+  blockMemo.set(s, { year, area });
+  return area;
+}
+export function findBlockSite(s: Sim, w: number, h: number) {
+  for (const fresh of [false, true]) {
+    const area = blockTables(s, fresh);
+    let used = blockUsed.get(area);
+    if (!used) blockUsed.set(area, (used = []));
+    const clear = (c: number, r: number) =>
+      !used!.some((u) => c < u.c + u.w + 1 && c + w + 1 > u.c && r < u.r + u.h + 1 && r + h + 1 > u.r);
+    // A year's worth of spots is found in one go (each search scans the whole map);
+    // a spot the city has built over since is skipped, and the map rebuilt last.
+    let queue = blockQueue.get(area);
+    if (!queue) blockQueue.set(area, (queue = []));
+    for (let tries = 0; tries < (fresh ? 2 : 14); tries += 1) {
+      if (!queue.length)
+        for (let k = 0; k < 12; k += 1) {
+          const spot = nearestRect(w, h, cityCenter(s), (c, r) => area.free(c, r, w, h) && clear(c, r));
+          if (!spot) break;
+          used.push({ ...spot, w, h });
+          queue.push(spot);
+        }
+      const spot = queue.shift();
+      if (!spot) return null;
+      let ok = true;
+      for (let y = spot.r; y < spot.r + h && ok; y += 1)
+        for (let x = spot.c; x < spot.c + w && ok; x += 1)
+          if (!isLand(x, y) || cellTaken(s, x, y) || siteAt(s.sites, x, y)) ok = false;
+      if (ok) return spot;
+    }
+  }
+  return null;
+}
+
 const devTableMemo = new WeakMap<Sim, { sig: string; area: ReturnType<typeof areaTables> }>();
 function devTables(s: Sim, fresh: boolean) {
   const sig =
@@ -2511,6 +2559,7 @@ export function bulldoze(s: Sim, c: number, r: number): Act {
     const b = s.buildings[i]!;
     s.coins += Math.round(priceOf(spent(b), s) * 0.5);
     s.buildings.splice(i, 1);
+    forgetLots(s, [b]);
     return { ok: true };
   }
   const k = cellKey(c, r);
@@ -2567,7 +2616,9 @@ export function bulldozeArea(s: Sim, c0: number, r0: number, c1: number, r1: num
   if (p.buildings + p.roads === 0)
     return { ok: false, msg: t(p.kept ? "كل ما في المنطقة محمي" : "ما في شيء تهدّه هنا") };
   const inside = (c: number, r: number) => c >= p.c0 && c <= p.c1 && r >= p.r0 && r <= p.r1;
+  const removed = s.buildings.filter((b) => inside(b.c, b.r) && !fenced(s, b.c, b.r));
   s.buildings = s.buildings.filter((b) => !inside(b.c, b.r) || Boolean(fenced(s, b.c, b.r)));
+  forgetLots(s, removed);
   const gone = new Set(p.roadKeys);
   s.roads = s.roads.filter((k) => !gone.has(k));
   s.coins += p.refund;

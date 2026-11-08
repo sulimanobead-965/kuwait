@@ -665,3 +665,20 @@ test("bulk buying, one offer to many listings, and requests for offers", async (
   if (left.length) assert.equal(re.buyMany(s, left).ok, false);
   assert.ok(re.cancelRequest(s, 1).ok);
 });
+
+test("demolishing a property clears its owner record, listing and lease", async () => {
+  const re = await import("./realestate.ts");
+  const { bulldoze } = await import("./sim.ts");
+  const s = town(10);
+  s.coins = 1e9;
+  const b = s.buildings.find((x) => !re.isPublic(x.kind))!;
+  assert.ok(re.buyProperty(s, b.id).ok);
+  assert.ok(re.leaseProperty(s, b.id, "people", 12).ok);
+  assert.equal(re.ownerOf(s, b), "state");
+  const k = re.lotKey(b);
+  assert.ok(bulldoze(s, b.c, b.r).ok);
+  const e = re.estateOf(s);
+  assert.equal(e.owners[k], undefined, "the lot is no longer the state's");
+  assert.equal(e.leases.length, 0);
+  assert.equal(e.listings.filter((l) => l.lot === k).length, 0);
+});

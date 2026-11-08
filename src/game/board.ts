@@ -805,23 +805,45 @@ function placeNear(s: Sim, kind: Kind) {
     const lot = freeLot(s);
     return lot ? placeBuilding(s, kind, lot.c, lot.r, 0).ok : false;
   }
-  // Coastal kinds: a shore lot beside a road.
-  const roads = roadSet(s);
-  for (const key of roads) {
-    const [c, r] = key.split(",").map(Number) as [number, number];
+  // Coastal kinds: a shore lot beside a road, from a list made once a month.
+  for (const lot of coastLots(s)) {
+    if (!cellTaken(s, lot.c, lot.r)) return placeBuilding(s, kind, lot.c, lot.r, 0).ok;
+  }
+  return false;
+}
+
+/**
+ * Shore lots beside a road, kept for the month: scanning every road (tens of
+ * thousands) for each coastal building ordered was most of a busy month's work.
+ */
+const coastMemo = new WeakMap<Sim, { sig: string; lots: { c: number; r: number }[] }>();
+function coastLots(s: Sim) {
+  // A quarter's list: taken lots are skipped on use, and new shore roads are rare.
+  const sig = `${Math.floor(s.day / 90)}`;
+  const hit = coastMemo.get(s);
+  if (hit && hit.sig === sig) return hit.lots;
+  const lots: { c: number; r: number }[] = [];
+  const seen = new Set<string>();
+  for (const key of roadSet(s)) {
+    const comma = key.indexOf(",");
+    const c = Number(key.slice(0, comma));
+    const r = Number(key.slice(comma + 1));
     for (const [dc, dr] of [
       [1, 0],
       [-1, 0],
       [0, 1],
       [0, -1],
     ] as const) {
-      const x = c + dc,
-        y = r + dr;
-      if (isLand(x, y) && coastal(x, y) && !cellTaken(s, x, y))
-        return placeBuilding(s, kind, x, y, 0).ok;
+      const x = c + dc;
+      const y = r + dr;
+      const k = `${x},${y}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (isLand(x, y) && coastal(x, y) && !cellTaken(s, x, y)) lots.push({ c: x, r: y });
     }
   }
-  return false;
+  coastMemo.set(s, { sig, lots });
+  return lots;
 }
 
 /** Finished projects place their buildings once (free: already paid for). */

@@ -12,6 +12,9 @@
 import { CATALOG, maxLevelOf, type Kind } from "./catalog";
 import { siteAt } from "./developments";
 import {
+  findBlockSite,
+  MODEL_AREAS,
+  placePackage,
   cellKey,
   cellTaken,
   roadSet,
@@ -110,7 +113,7 @@ function replacePlan(s: Sim, b: Building): Plan {
  * their neighbours for every building the board or builder places took seconds.
  * The list is reused while the layout is unchanged; each lot is re-checked on use.
  */
-const lotCache = new WeakMap<Sim, { sig: string; lots: { c: number; r: number }[] }>();
+const lotCache = new WeakMap<Sim, { sig: string; lots: { c: number; r: number }[]; next: number }>();
 
 function lotFinder(s: Sim) {
   // Once per game month (a quarter on very big cities, where the scan alone costs
@@ -124,21 +127,24 @@ function lotFinder(s: Sim) {
       : big
         ? `${Math.floor(s.day / 90)}:${s.sites.length}:${s.district ?? ""}`
         : `${Math.floor(s.day / 30)}:${s.roads.length}:${s.sites.length}:${s.district ?? ""}`;
-  const hit = lotCache.get(s);
-  const lots = hit && hit.sig === sig ? hit.lots : scanLots(s);
-  if (!hit || hit.sig !== sig) lotCache.set(s, { sig, lots });
+  let entry = lotCache.get(s);
+  if (!entry || entry.sig !== sig) lotCache.set(s, (entry = { sig, lots: scanLots(s), next: 0 }));
+  const { lots } = entry;
+  const kept = entry;
   const roads = roadSet(s);
   const onRoad = (c: number, r: number) =>
     roads.has(cellKey(c + 1, r)) ||
     roads.has(cellKey(c - 1, r)) ||
     roads.has(cellKey(c, r + 1)) ||
     roads.has(cellKey(c, r - 1));
-  let next = 0;
+  // Lots found taken stay taken until the list is made again, so every finder picks
+  // up where the last one stopped instead of re-checking the used ones from the top
+  // (with many buildings placed a month, that rescanning was most of the month's work).
   return () => {
-    while (next < lots.length) {
-      const lot = lots[next++]!;
-      if (cellTaken(s, lot.c, lot.r) || siteAt(s.sites, lot.c, lot.r)) continue;
-      if (big && !onRoad(lot.c, lot.r)) continue;
+    while (kept.next < lots.length) {
+      const lot = lots[kept.next]!;
+      kept.next += 1;
+      if (cellTaken(s, lot.c, lot.r) || siteAt(s.sites, lot.c, lot.r) || (big && !onRoad(lot.c, lot.r))) continue;
       return lot;
     }
     return null;
@@ -311,6 +317,28 @@ export function builderMonth(s: Sim, reserve = 0) {
     spent += plan.cost;
     done.set(plan.label, (done.get(plan.label) ?? 0) + 1);
   }
+  // No free lots left beside the roads: open new blocks in empty land (with their own
+  // streets), filled with whatever the city lacks most.
+  if (done.size === 0) {
+    // One block a month: enough to close the gaps over the years without the city
+    // (and every frame drawing it) ballooning.
+    for (let i = 0; i < 1; i += 1) {
+      const plan = blockPlan(s);
+      const cost = plan.reduce((n, k) => n + priceOf(CATALOG[k].cost, s), 0) + 40 * priceOf(20, s);
+      if (cost > left) break;
+      const def = MODEL_AREAS.services;
+      const site = findBlockSite(s, def.w, def.h);
+      if (!site) break;
+      const before = s.buildings.length;
+      placePackage(s, "services", s.day, site, plan);
+      if (s.buildings.length === before) break;
+      s.coins -= cost;
+      s.ytd.spend += cost;
+      left -= cost;
+      spent += cost;
+      done.set("حي جديد", (done.get("حي جديد") ?? 0) + 1);
+    }
+  }
   const fee = builderFee(s, spent);
   s.coins -= fee;
   s.ytd.spend += fee;
@@ -351,4 +379,32 @@ export function hireBuilder(s: Sim): { ok: boolean; msg: string } {
 export function fireBuilder(s: Sim) {
   s.builder.hired = false;
   return { ok: true, msg: t("أنهيت عقد مستشار البناء") };
+}
+
+/**
+ * The 15 buildings of a new block, in proportion to what the city lacks most: power,
+ * water and every missing service; homes when nothing is short.
+ */
+function blockPlan(s: Sim): Kind[] {
+  const st = stats(s);
+  const cover = serviceCoverage(s, st.capacity);
+  const need: [Kind, number][] = [
+    // Power and water cuts hurt everyone at once: they weigh three times a service.
+    ["power", st.powerUse > st.powerGive ? (3 * (st.powerUse - st.powerGive)) / Math.max(1, st.powerUse) : 0],
+    ["water", st.waterUse > st.waterGive ? (3 * (st.waterUse - st.waterGive)) / Math.max(1, st.waterUse) : 0],
+    ["school", 1 - cover.school],
+    ["clinic", 1 - cover.clinic],
+    ["police", 1 - cover.police],
+    ["fire", 1 - cover.fire],
+    ["park", (1 - cover.park) * 0.6],
+  ];
+  const total = need.reduce((n, [, v]) => n + v, 0);
+  if (total < 0.05) return ["apartments", "apartments", "modern", "modern", "shop", "park", "villa", "villa", "apartments", "modern", "shop", "school", "clinic", "park", "villa"];
+  const out: Kind[] = [];
+  // Largest-remainder share of 15 lots.
+  const shares = need.map(([k, v]) => ({ k, exact: (v / total) * 15 }));
+  for (const x of shares) for (let i = 0; i < Math.floor(x.exact); i += 1) out.push(x.k);
+  shares.sort((a, b) => (b.exact % 1) - (a.exact % 1));
+  for (const x of shares) if (out.length < 15) out.push(x.k);
+  return out;
 }

@@ -1785,4 +1785,5 @@ export const EN: Record<string, string> = {
   "اعرض {pct}٪ على المحدد": "Offer {pct}% on selected",
   "اشترِ كل المعروض ({n}) بـ {amount}": "Buy everything listed ({n}) for {amount}",
   "رد على طلبك": "reply to your request",
+  "حي جديد": "new block",
 };
