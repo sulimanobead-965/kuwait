@@ -1786,4 +1786,6 @@ export const EN: Record<string, string> = {
   "اشترِ كل المعروض ({n}) بـ {amount}": "Buy everything listed ({n}) for {amount}",
   "رد على طلبك": "reply to your request",
   "حي جديد": "new block",
+  "سحب تلقائي {amount} د.ك من الوديعة لتغطية العجز": "Automatically drew {amount} KD from the deposit to cover the deficit",
+  "الخزينة بالسالب: ما تقدر تشتري الحين. اسحب من وديعتك في البنك أو خذ تمويلاً من الميزانية.": "The treasury is in the red: you can't buy now. Withdraw from your bank deposit or take financing in the Budget.",
 };

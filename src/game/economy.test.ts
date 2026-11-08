@@ -682,3 +682,19 @@ test("demolishing a property clears its owner record, listing and lease", async 
   assert.equal(e.leases.length, 0);
   assert.equal(e.listings.filter((l) => l.lot === k).length, 0);
 });
+
+test("a huge insured deposit pays its premium itself, and a deficit is covered from the deposit", async () => {
+  const { setInsurance, monthlyPremium } = await import("./finance.ts");
+  const s = town(10);
+  s.finance.deposit = 1e15;
+  s.coins = 1000;
+  setInsurance(s, true);
+  assert.ok(monthlyPremium(s) > 1e9, "the premium dwarfs the treasury");
+  advanceDays(s, 31);
+  assert.ok(s.coins > 0, "the treasury is not swallowed by the premium");
+  assert.ok(s.finance.deposit < 1e15 * 1.02, "the premium came out of the deposit");
+  // A deficit with money in the bank: covered automatically.
+  s.coins = -1e9;
+  advanceDays(s, 31);
+  assert.ok(s.coins > 0);
+});

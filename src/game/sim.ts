@@ -2946,6 +2946,14 @@ export function advanceDays(s: Sim, days: number) {
     for (const line of npcMonth(s)) pushLog(s, line);
     boardMonth(s);
     residentsSpeak(s);
+    // A deficit is covered from the bank deposit first (enough for three more months
+    // of running costs), before the treasury is left in the red.
+    if (s.coins < 0 && s.finance.deposit > 0) {
+      const take = Math.min(s.finance.deposit, -s.coins + 3 * monthlyUpkeep(s));
+      s.finance.deposit -= take;
+      s.coins += take;
+      pushLog(s, msg("سحب تلقائي {amount} د.ك من الوديعة لتغطية العجز", { amount: Math.round(take) }));
+    }
     s.coins = Math.max(-5_000_000, s.coins);
     // People move in when they are happy and served, and leave when they are not.
     const ev = activeEvent(s);

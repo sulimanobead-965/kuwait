@@ -119,6 +119,11 @@ export function EstatePanel({
   const split = landSplit(snap);
   return (
     <div className="space-y-3 text-sc-ink" dir={dirOf()} data-testid="estate">
+      {snap.coins <= 0 && (
+        <p className="rounded-md bg-coral px-2 py-1 text-xs font-extrabold text-sc-ink" data-testid="estate-broke">
+          {t("الخزينة بالسالب: ما تقدر تشتري الحين. اسحب من وديعتك في البنك أو خذ تمويلاً من الميزانية.")}
+        </p>
+      )}
       <div className="rounded-md bg-sc-mint p-2 text-xs">
         <p className="flex items-center gap-1 text-sm font-extrabold">
           <MapPinned size={16} /> {t("الأراضي والعقار")}
@@ -541,10 +546,11 @@ function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
                     <button
                       type="button"
                       data-testid="listing-buy"
-                      className="sc-menu sc-on h-8 text-[11px]"
+                      disabled={snap.coins < l.ask}
+                      className="sc-menu sc-on h-8 text-[11px] disabled:opacity-40"
                       onClick={() => onEstate((s) => buyListing(s, l.id))}
                     >
-                      {t("اشترِ بـ {amount}", { amount: fmt(l.ask) })}
+                      {snap.coins < l.ask ? t("الرصيد ما يكفي") : t("اشترِ بـ {amount}", { amount: fmt(l.ask) })}
                     </button>
                     <button
                       type="button"
@@ -665,18 +671,20 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
                       <button
                         type="button"
                         data-testid="estate-buy"
-                        className="sc-menu sc-on h-8 text-[11px]"
+                        disabled={snap.coins < value * 1.05}
+                        className="sc-menu sc-on h-8 text-[11px] disabled:opacity-40"
                         onClick={() => onEstate((s) => buyProperty(s, b.id))}
                       >
-                        {t("اشترِ للدولة بـ {amount}", { amount: fmt(value * 1.05) })}
+                        {snap.coins < value * 1.05 ? t("الرصيد ما يكفي") : t("اشترِ للدولة بـ {amount}", { amount: fmt(value * 1.05) })}
                       </button>
                       <button
                         type="button"
                         data-testid="estate-expropriate"
-                        className="sc-menu h-8 text-[11px]"
+                        disabled={snap.coins < (value * comp) / 100}
+                        className="sc-menu h-8 text-[11px] disabled:opacity-40"
                         onClick={() => onEstate((s) => expropriate(s, b.id, comp))}
                       >
-                        {t("نزع ملكية ({pct}٪)", { pct: comp })}
+                        {snap.coins < (value * comp) / 100 ? t("الرصيد ما يكفي") : t("نزع ملكية ({pct}٪)", { pct: comp })}
                       </button>
                     </div>
                   )}

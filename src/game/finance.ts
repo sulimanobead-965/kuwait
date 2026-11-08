@@ -576,7 +576,13 @@ export function financeMonth(s: Sim, ctx: FinanceContext) {
   const f = s.finance;
   if (f.insured) {
     const premium = monthlyPremium(s);
-    s.coins -= premium;
+    // Paid out of the deposit first (the insured money itself, and what makes the
+    // premium big), the rest from the treasury: on a huge deposit the premium alone
+    // used to swallow the treasury every month and leave it stuck in the red.
+    const fromDeposit = Math.min(premium, f.deposit);
+    f.deposit -= fromDeposit;
+    s.coins -= premium - fromDeposit;
+    s.ytd.spend += premium;
     f.premiums += premium;
     book(s, "insurance", -premium);
   }
