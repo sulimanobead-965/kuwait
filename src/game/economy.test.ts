@@ -753,3 +753,34 @@ test("administrative regions: 100 of them, counted, and valued, expropriated or 
   assert.ok(re.estateOf(t2).grievance.mood > 0);
   assert.equal(rg.valueBuyRegions(t2, [], 110).ok, false);
 });
+
+test("land grants have no limit and can go to a named person or a merchant", async () => {
+  const re = await import("./realestate.ts");
+  const { saveSim, loadSim, freezeSaves } = await import("./sim.ts");
+  const s = town(10);
+  const who = re.personId("عبدالله الكندري");
+  assert.ok(re.grantPlots(s, 3, "bukhalid").ok, "a merchant can be granted land too");
+  const r = re.grantPlots(s, 60, who);
+  assert.ok(r.ok);
+  const mine = s.buildings.filter((b) => re.ownerOf(s, b) === who).length;
+  assert.ok(mine > 0);
+  // No cap: it stops only when the roadside land runs out, and says so.
+  if (mine < 60) assert.ok(r.ok && /ما بقى أرض/.test(r.msg ?? ""), "only the land limits a grant");
+  assert.equal(re.ownerName(who), "عبدالله الكندري");
+  assert.equal(re.grantees(s)[0]!.name, "عبدالله الكندري");
+  assert.ok(re.ownersSummary(s).some((o) => o.owner === who), "a grantee is an owner on the platform");
+  assert.equal(re.grantPlots(s, 3, re.personId(" ")).ok, false);
+  // The named owner survives a reload.
+  const store = new Map<string, string>();
+  const original = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k), key: () => null, clear: () => store.clear(), length: 0 } as Storage;
+  try {
+    freezeSaves(false);
+    saveSim(s);
+    const back = loadSim();
+    assert.equal(back.buildings.filter((b) => re.ownerOf(back, b) === who).length, mine);
+  } finally {
+    if (original === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+    else globalThis.localStorage = original;
+  }
+});

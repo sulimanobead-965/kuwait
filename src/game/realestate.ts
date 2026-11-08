@@ -17,7 +17,9 @@ import { CATALOG, maxLevelOf, type Kind } from "./catalog";
 import { NPCS, type NpcId } from "./npcs";
 import { msg, t } from "@/i18n";
 import {
+  findBlockSite,
   findModelSite,
+  MODEL_AREAS,
   placePackage,
   placeBuilding,
   pushLog,
@@ -28,7 +30,13 @@ import {
   type Sim,
 } from "./sim";
 
-export type OwnerId = NpcId | "state" | "people";
+/** A merchant, the state, individuals at large, or a named person («p:name»). */
+export type OwnerId = NpcId | "state" | "people" | `p:${string}`;
+
+/** A named person the state granted land to (typed by the governor). */
+export const personId = (name: string): OwnerId => `p:${name.trim().slice(0, 40)}`;
+export const isPerson = (o: OwnerId): o is `p:${string}` => o.startsWith("p:");
+export const isMerchant = (o: OwnerId | null): o is NpcId => !!o && NPCS.some((n) => n.id === o);
 
 export type Trade = {
   day: number;
@@ -173,6 +181,7 @@ export const OWNER_NAMES: Record<"state" | "people", string> = {
 
 export function ownerName(o: OwnerId) {
   if (o === "state" || o === "people") return OWNER_NAMES[o];
+  if (isPerson(o)) return o.slice(2);
   return NPCS.find((n) => n.id === o)?.name ?? o;
 }
 
@@ -371,15 +380,20 @@ export function leaseProperty(s: Sim, id: string, tenant: OwnerId, months: numbe
   return { ok: true, msg: entry };
 }
 
-/** Land grants: individuals receive plots from state land and build homes on them. */
-export function grantPlots(s: Sim, count: number): EstateAct {
-  count = Math.max(1, Math.min(50, Math.round(count)));
+/**
+ * Land grants: plots of state land beside the roads, to citizens at large, a named
+ * person, or a merchant; the grantee builds a home on each. No limit but the land.
+ */
+export function grantPlots(s: Sim, count: number, to: OwnerId = "people"): EstateAct {
+  count = Math.max(1, Math.round(count));
+  if (to === "state") return { ok: false, msg: t("اختر من تمنحه") };
+  if (isPerson(to) && to.length < 3) return { ok: false, msg: t("اكتب اسم الشخص") };
   let done = 0;
   for (let i = 0; i < count; i += 1) {
     const lot = openLot(s);
     if (!lot) break;
     const price = priceOf(CATALOG.villa.cost, s);
-    // The family builds its own home: the state gives the land only.
+    // The grantee builds the home: the state gives the land only.
     s.coins += price;
     const before = s.buildings.length;
     if (!placeBuilding(s, "villa", lot.c, lot.r, 0).ok) {
@@ -387,15 +401,47 @@ export function grantPlots(s: Sim, count: number): EstateAct {
       break;
     }
     const b = s.buildings[before]!;
-    setOwner(s, b, "people");
-    record(s, { id: lotKey(b), kind: b.kind, from: "state", to: "people", price: 0, type: "grant" });
+    setOwner(s, b, to);
     done += 1;
   }
+  // No roadside land left: open new residential blocks in empty state land, with
+  // their own streets, one home per plot for the grantee.
+  while (done < count) {
+    const def = MODEL_AREAS.homes;
+    const site = findBlockSite(s, def.w, def.h);
+    if (!site) break;
+    const before = s.buildings.length;
+    placePackage(s, "homes", s.day, site, Array.from({ length: def.w * def.h }, () => "villa" as Kind));
+    const added = s.buildings.slice(before);
+    if (!added.length) break;
+    // Keep only as many homes as plots granted; the rest of the block stays empty land.
+    const keep = added.filter((b) => b.kind === "villa").slice(0, count - done);
+    const drop = new Set(added.filter((b) => !keep.includes(b)));
+    if (drop.size) s.buildings = s.buildings.filter((b) => !drop.has(b));
+    for (const b of keep) setOwner(s, b, to);
+    done += keep.length;
+    if (!keep.length) break;
+  }
   if (!done) return { ok: false, msg: t("ما في أرض فاضية بجانب الطرق") };
-  s.fame = Math.min(12, (s.fame ?? 0) + done * 0.05);
-  const entry = msg("منح {n} قسيمة سكنية للمواطنين من أراضي الدولة", { n: done });
+  const last = s.buildings[s.buildings.length - 1]!;
+  record(s, { id: lotKey(last), kind: last.kind, from: "state", to, price: 0, type: "grant" });
+  // Grants to citizens please people; to a merchant they do not.
+  if (!isMerchant(to)) s.fame = Math.min(12, (s.fame ?? 0) + Math.min(2, done * 0.05));
+  const entry =
+    to === "people"
+      ? msg("منح {n} قسيمة سكنية للمواطنين من أراضي الدولة", { n: done })
+      : msg("منح {n} قسيمة سكنية لـ {owner} من أراضي الدولة", { n: done, owner: ownerName(to) });
   pushLog(s, entry);
-  return { ok: true, msg: entry };
+  return { ok: true, msg: done < count ? msg("{text} · ما بقى أرض فاضية بجانب الطرق للباقي", { text: entry }) : entry };
+}
+
+/** Everyone the state has granted land to by name, with how many lots they hold now. */
+export function grantees(s: Sim) {
+  const e = estateOf(s);
+  const count = new Map<string, number>();
+  for (const o of Object.values(e.owners)) if (isPerson(o)) count.set(o, (count.get(o) ?? 0) + 1);
+  for (const tr of e.trades) if (isPerson(tr.to) && !count.has(tr.to)) count.set(tr.to, 0);
+  return [...count].map(([id, n]) => ({ id: id as OwnerId, name: id.slice(2), lots: n })).sort((a, b) => b.lots - a.lots);
 }
 
 export const ALLOCATION_USES: { id: AllocationUse; name: string; blurb: string; w: number; h: number; pkg: "market" | "homes" | "services" }[] = [
@@ -639,7 +685,7 @@ export function ownershipColors(s: Sim, mode: OwnershipMode = "owner"): Map<stri
     else if (mode === "price") c = heat(Math.log1p(CATALOG[b.kind].cost * (1 + (b.level - 1) * 0.8)) / maxV);
     else if (allotted.has(k)) c = OWNER_COLORS.allocation!;
     else if (o === "state") c = OWNER_COLORS.state!;
-    else if (o === "people") c = OWNER_COLORS.people!;
+    else if (o === "people" || isPerson(o)) c = OWNER_COLORS.people!;
     else c = mode === "merchant" ? MERCHANT_COLORS[o] : OWNER_COLORS.merchant!;
     out.set(b.id, c);
   }
@@ -651,7 +697,7 @@ export function loadEstate(raw: unknown): Estate {
   if (!raw || typeof raw !== "object") return e;
   const p = raw as Partial<Estate>;
   const valid = (o: unknown): o is OwnerId =>
-    o === "state" || o === "people" || NPCS.some((n) => n.id === o);
+    o === "state" || o === "people" || NPCS.some((n) => n.id === o) || (typeof o === "string" && /^p:.{1,40}$/.test(o));
   if (p.owners && typeof p.owners === "object")
     for (const [id, o] of Object.entries(p.owners)) if (valid(o)) e.owners[id] = o;
   const idx = Number(p.index);
@@ -1088,7 +1134,7 @@ function lawsMonth(s: Sim, random: () => number) {
       // Undeveloped: still below the highest level its kind can reach.
       if (isPublic(b.kind) || b.level >= maxLevelOf(b.kind)) continue;
       const o = ownerOf(s, b);
-      if (!o || o === "state" || o === "people") continue;
+      if (!isMerchant(o)) continue;
       const f = (propertyValue(s, b) * e.landTax) / 1200;
       fee += f;
       const n = npcState(s, o);
@@ -1113,7 +1159,7 @@ function lawsMonth(s: Sim, random: () => number) {
     const rows = ownersSummary(s);
     const total = rows.reduce((a, r) => a + r.value, 0);
     for (const r of rows) {
-      if (r.owner === "state" || r.owner === "people") continue;
+      if (!isMerchant(r.owner)) continue;
       const over = r.share * 100 - e.cap;
       if (over <= 0) {
         e.overCap = (e.overCap ?? []).filter((x) => x !== r.owner);

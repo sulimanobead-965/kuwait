@@ -20,6 +20,8 @@ import { msg, t } from "@/i18n";
 import {
   estateOf,
   forgetLots,
+  isMerchant,
+  isPerson,
   isPublic,
   MERCHANT_COLORS,
   OWNER_COLORS,
@@ -193,13 +195,15 @@ export function regionStats(s: Sim): RegionStats[] {
     // holds the most (individuals or the state).
     let best: OwnerId | null = null;
     for (const [o, v] of row.by) {
-      if (o === "people" || o === "state") continue;
+      if (!isMerchant(o)) continue;
       if (!best || v > (row.by.get(best) ?? 0)) best = o;
     }
     if (!best) for (const [o, v] of row.by) if (!best || v > (row.by.get(best) ?? 0)) best = o;
     row.top = best;
     row.topShare = best && row.value > 0 ? (row.by.get(best) ?? 0) / row.value : 0;
-    row.peopleShare = row.value > 0 ? (row.by.get("people") ?? 0) / row.value : 0;
+    let people = 0;
+    for (const [o, v] of row.by) if (o === "people" || isPerson(o)) people += v;
+    row.peopleShare = row.value > 0 ? people / row.value : 0;
     row.stateShare = row.value > 0 ? (row.by.get("state") ?? 0) / row.value : 0;
   }
   statsMemo.set(e, { key, out });
@@ -210,7 +214,7 @@ export function regionStats(s: Sim): RegionStats[] {
 export function ownerColor(o: OwnerId | null) {
   if (!o) return "#9ca3af";
   if (o === "state") return OWNER_COLORS.state!;
-  if (o === "people") return OWNER_COLORS.people!;
+  if (o === "people" || isPerson(o)) return OWNER_COLORS.people!;
   return MERCHANT_COLORS[o];
 }
 

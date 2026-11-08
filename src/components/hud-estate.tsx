@@ -34,6 +34,9 @@ import {
   estateOf,
   grantPlots,
   grantProperty,
+  grantees,
+  isMerchant,
+  personId,
   holdingsOfOwner,
   runMany,
   landSplit,
@@ -206,7 +209,7 @@ export function EstatePanel({
       {view === "market" && <Market snap={snap} onEstate={onEstate} />}
       {view === "trades" && <Trades snap={snap} />}
       {view === "allocate" && <Allocations snap={snap} onEstate={onEstate} />}
-      {view === "grants" && <Grants onEstate={onEstate} />}
+      {view === "grants" && <Grants snap={snap} onEstate={onEstate} />}
       {view === "laws" && <Laws snap={snap} onEstate={onEstate} />}
       {view === "regions" && <RegionsPanel snap={snap} onEstate={onEstate} onShowMap={() => onOwnership("region")} />}
     </div>
@@ -635,7 +638,7 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
           </div>
           {open === r.owner && (
             <div className="mt-2 space-y-1 border-t border-sc-ink/20 pt-2">
-              {r.owner !== "state" && r.owner !== "people" && <Profile snap={snap} id={r.owner} />}
+              {isMerchant(r.owner) && <Profile snap={snap} id={r.owner} />}
               {r.owner !== "state" && (
                 <div className="w-48">
                   <NumberField label={t("تعويض نزع الملكية (٪ من القيمة)")} value={comp} onChange={setComp} />
@@ -831,25 +834,122 @@ function Allocations({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) 
   );
 }
 
-function Grants({ onEstate }: { onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
   const [n, setN] = useState(5);
+  const [mode, setMode] = useState<"people" | "person" | "past" | "merchant">("people");
+  const [name, setName] = useState("");
+  const past = grantees(snap);
+  const [pastId, setPastId] = useState<string>("");
+  const [merchant, setMerchant] = useState<NpcId>(NPCS[0]!.id);
+  const count = Math.max(1, Math.round(n || 1));
+  const to: OwnerId | null =
+    mode === "people"
+      ? "people"
+      : mode === "person"
+        ? name.trim()
+          ? personId(name)
+          : null
+        : mode === "past"
+          ? (((pastId || past[0]?.id) as OwnerId | undefined) ?? null)
+          : merchant;
   return (
-    <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-grants">
-      <p className="text-sm font-extrabold">{t("منح القسائم السكنية")}</p>
-      <p className="mt-1 leading-relaxed">
-        {t("تمنح المواطنين قسائم من أراضي الدولة بجانب الطرق، ويبنون عليها بيوتهم على حسابهم. ترفع شهرتك ورضا الناس، والأرض تصير ملكاً خاصاً لهم.")}
-      </p>
-      <div className="mt-2">
-        <NumberField label={t("عدد القسائم (حتى ٥٠)")} value={n} onChange={setN} />
+    <div className="space-y-2 text-xs" data-testid="estate-grants">
+      <div className="rounded-md bg-sc-mint p-2">
+        <p className="text-sm font-extrabold">{t("منح القسائم السكنية")}</p>
+        <p className="mt-1 leading-relaxed">
+          {t("تمنح قسائم من أراضي الدولة بجانب الطرق، والممنوح يبني عليها بيته على حسابه. بلا حد للعدد إلا الأرض الفاضية. المنح للمواطنين يرفع شهرتك ورضا الناس.")}
+        </p>
+        <p className="mt-2 font-bold">{t("لمن المنحة؟")}</p>
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          {(
+            [
+              ["people", "المواطنين"],
+              ["person", "شخص تكتب اسمه"],
+              ["past", "أصحاب المنح السابقين"],
+              ["merchant", "تاجر من أصحاب النفوذ"],
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              data-testid={`grant-to-${m}`}
+              aria-pressed={mode === m}
+              disabled={m === "past" && past.length === 0}
+              onClick={() => setMode(m)}
+              className={`sc-menu h-auto min-h-9 py-1 text-[11px] leading-tight disabled:opacity-40 ${mode === m ? "sc-on" : ""}`}
+            >
+              {t(label)}
+            </button>
+          ))}
+        </div>
+        {mode === "person" && (
+          <label className="mt-2 block font-bold">
+            {t("اسم الشخص")}
+            <input
+              type="text"
+              value={name}
+              maxLength={40}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("مثلاً: عبدالله الكندري")}
+              data-testid="grant-name"
+              className="mt-0.5 h-10 w-full rounded border-2 border-sc-ink/30 bg-white px-2 text-sm"
+            />
+          </label>
+        )}
+        {mode === "past" && past.length > 0 && (
+          <select
+            value={pastId || past[0]!.id}
+            onChange={(e) => setPastId(e.target.value)}
+            className="mt-2 h-10 w-full rounded border-2 border-sc-ink/30 bg-white px-1 text-sm"
+            data-testid="grant-past"
+            aria-label={t("أصحاب المنح السابقين")}
+          >
+            {past.map((g) => (
+              <option key={g.id} value={g.id}>
+                {t("{name} · {n} قسيمة", { name: g.name, n: g.lots })}
+              </option>
+            ))}
+          </select>
+        )}
+        {mode === "merchant" && (
+          <select
+            value={merchant}
+            onChange={(e) => setMerchant(e.target.value as NpcId)}
+            className="mt-2 h-10 w-full rounded border-2 border-sc-ink/30 bg-white px-1 text-sm"
+            data-testid="grant-merchant"
+            aria-label={t("التاجر")}
+          >
+            {NPCS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {t(m.name)} · {t(m.role)}
+              </option>
+            ))}
+          </select>
+        )}
+        <div className="mt-2">
+          <NumberField label={t("عدد القسائم (بلا حد)")} value={n} onChange={setN} testid="grant-count" />
+        </div>
+        <button
+          type="button"
+          data-testid="estate-grant-go"
+          disabled={!to}
+          onClick={() => to && onEstate((s) => grantPlots(s, count, to))}
+          className="sc-menu sc-on mt-2 h-auto min-h-10 w-full py-1 text-sm disabled:opacity-40"
+        >
+          {to ? t("امنح {n} قسيمة لـ {who}", { n: count, who: t(ownerName(to)) }) : t("اكتب اسم الشخص")}
+        </button>
       </div>
-      <button
-        type="button"
-        data-testid="estate-grant-go"
-        onClick={() => onEstate((s) => grantPlots(s, n))}
-        className="sc-menu sc-on mt-2 h-10 w-full text-sm"
-      >
-        {t("امنح {n} قسيمة", { n: Math.max(1, Math.min(50, Math.round(n))) })}
-      </button>
+      {past.length > 0 && (
+        <div className="rounded-md bg-sc-mint p-2" data-testid="grantees">
+          <p className="font-extrabold">{t("أصحاب المنح ({n})", { n: past.length })}</p>
+          {past.slice(0, 30).map((g) => (
+            <div key={g.id} className="flex justify-between border-t border-sc-ink/10 py-0.5">
+              <span>{g.name}</span>
+              <span>{t("{n} قسيمة", { n: g.lots })}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
