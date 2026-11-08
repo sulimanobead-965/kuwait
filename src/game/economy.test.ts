@@ -698,3 +698,21 @@ test("a huge insured deposit pays its premium itself, and a deficit is covered f
   advanceDays(s, 31);
   assert.ok(s.coins > 0);
 });
+
+test("bulk deals on an owner's holdings: buy all, then sell part", async () => {
+  const re = await import("./realestate.ts");
+  const s = town(20);
+  s.coins = 1e12;
+  for (const n of s.npcs) n.cash = 1e12;
+  const owner = re.ownersSummary(s).find((r) => r.owner !== "state")!.owner;
+  const all = re.holdingsOfOwner(s, owner);
+  assert.ok(all.ids.length > 0 && all.value > 0);
+  const r = re.runMany(s, all.ids, (id) => re.buyProperty(s, id), "شراء");
+  assert.ok(r.ok);
+  assert.equal(re.holdingsOfOwner(s, owner).ids.length, 0, "everything bought");
+  const mine = re.holdingsOfOwner(s, "state").ids;
+  const part = mine.slice(0, Math.max(1, Math.floor(mine.length / 2)));
+  assert.ok(re.runMany(s, part, (id) => re.sellProperty(s, id, "people"), "بيع").ok);
+  assert.equal(re.holdingsOfOwner(s, "state").ids.length, mine.length - part.length);
+  assert.equal(re.runMany(s, [], (id) => re.buyProperty(s, id), "شراء").ok, false);
+});

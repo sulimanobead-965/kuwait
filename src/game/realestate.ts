@@ -283,11 +283,23 @@ function pay(s: Sim, from: OwnerId, to: OwnerId, amount: number) {
 function setOwner(s: Sim, b: Building, to: OwnerId) {
   const e = estateOf(s);
   const k = lotKey(b);
-  e.owners = { ...e.owners, [k]: to };
-  e.leases = e.leases.filter((l) => l.id !== k);
+  // In place: copying the whole record for each of thousands of bulk deals was slow.
+  e.owners[k] = to;
+  if (e.leases.length) e.leases = e.leases.filter((l) => l.id !== k);
 }
 
-const findBuilding = (s: Sim, id: string) => s.buildings.find((b) => b.id === id || lotKey(b) === id) ?? null;
+/** A building by its id (or lot), through an index rebuilt when the city changes. */
+const idIndex = new WeakMap<Sim, { n: number; first: Building | undefined; map: Map<string, Building> }>();
+function findBuilding(s: Sim, id: string) {
+  let ix = idIndex.get(s);
+  if (!ix || ix.n !== s.buildings.length || ix.first !== s.buildings[0]) {
+    ix = { n: s.buildings.length, first: s.buildings[0], map: new Map(s.buildings.map((b) => [b.id, b])) };
+    idIndex.set(s, ix);
+  }
+  const b = ix.map.get(id);
+  if (b && b.id === id) return b;
+  return lotOf(s, id) ?? s.buildings.find((x) => x.id === id) ?? null;
+}
 
 export type EstateAct = { ok: true; msg?: string } | { ok: false; msg: string };
 
@@ -556,6 +568,7 @@ export function ownersSummary(s: Sim): OwnerSummary[] {
 
 /** An owner's properties, most valuable first (for the platform's detail view). */
 export function propertiesOf(s: Sim, owner: OwnerId, limit = 40) {
+  // (the list is sorted by worth before the limit, so "show more" extends it in order)
   const out: { b: Building; value: number; leased: boolean }[] = [];
   const e = estateOf(s);
   const leased = new Set(e.leases.map((l) => l.id));
@@ -1289,4 +1302,31 @@ export function forgetLots(s: Sim, gone: Building[]) {
   e.listings = e.listings.filter((l) => !keys.has(l.lot));
   e.leases = e.leases.filter((l) => !keys.has(l.id));
   e.auctions = e.auctions.filter((a) => !keys.has(a.lot));
+}
+
+/**
+ * One deal applied to many properties: runs it on each, and sums up how many went
+ * through (with the first reason one did not).
+ */
+export function runMany(s: Sim, ids: string[], deal: (id: string) => EstateAct, label: string): EstateAct {
+  let done = 0;
+  let why = "";
+  for (const id of ids) {
+    const r = deal(id);
+    if (r.ok) done += 1;
+    else if (!why) why = r.msg;
+  }
+  if (!done) return { ok: false, msg: why || t("ما في عقار محدد") };
+  const entry = msg("{label}: تمّ {n} من {all}", { label, n: done, all: ids.length });
+  pushLog(s, entry);
+  return { ok: true, msg: why && done < ids.length ? msg("{text} · {why}", { text: entry, why }) : entry };
+}
+
+/** Every property an owner holds (ids), most valuable first, with their total value. */
+export function holdingsOfOwner(s: Sim, owner: OwnerId) {
+  const list = s.buildings.filter((b) => ownerOf(s, b) === owner);
+  list.sort((a, b) => CATALOG[b.kind].cost * b.level - CATALOG[a.kind].cost * a.level);
+  let value = 0;
+  for (const b of list) value += propertyValue(s, b);
+  return { ids: list.map((b) => b.id), value };
 }

@@ -34,6 +34,8 @@ import {
   estateOf,
   grantPlots,
   grantProperty,
+  holdingsOfOwner,
+  runMany,
   landSplit,
   leaseProperty,
   ownerName,
@@ -579,6 +581,19 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
   const [to, setTo] = useState<OwnerId>("people");
   const [months, setMonths] = useState(12);
   const [comp, setComp] = useState(100);
+  const [shown, setShown] = useState(25);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const reset = () => {
+    setPicked(new Set());
+    setShown(25);
+  };
   return (
     <div className="space-y-2" data-testid="estate-platform">
       <p className="text-xs leading-relaxed">
@@ -589,7 +604,10 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
           <button
             type="button"
             data-testid={`owner-${r.owner}`}
-            onClick={() => setOpen(open === r.owner ? null : r.owner)}
+            onClick={() => {
+              setOpen(open === r.owner ? null : r.owner);
+              reset();
+            }}
             className="flex w-full items-center justify-between gap-2 text-start"
           >
             <span className="font-extrabold">
@@ -634,13 +652,26 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
                   </div>
                 </div>
               )}
-              {propertiesOf(snap, r.owner, 25).map(({ b, value, leased }) => (
-                <div key={b.id} className="rounded bg-white/60 p-1.5">
+              <BulkBar
+                snap={snap}
+                owner={r.owner}
+                count={r.count}
+                visible={propertiesOf(snap, r.owner, shown).map((x) => x.b.id)}
+                picked={picked}
+                setPicked={setPicked}
+                to={to}
+                months={months}
+                comp={comp}
+                onEstate={onEstate}
+              />
+              {propertiesOf(snap, r.owner, shown).map(({ b, value, leased }) => (
+                <div key={b.id} className={`rounded p-1.5 ${picked.has(b.id) ? "bg-sc-gold/40" : "bg-white/60"}`}>
                   <div className="flex justify-between gap-2">
-                    <span className="font-bold">
+                    <label className="flex items-center gap-1 font-bold">
+                      <input type="checkbox" checked={picked.has(b.id)} onChange={() => toggle(b.id)} data-testid="prop-pick" />
                       {t(CATALOG[b.kind].name)} · {t("مستوى {level}", { level: b.level })}
                       {leased ? ` · ${t("مؤجَّر")}` : ""}
-                    </span>
+                    </label>
                     <span dir="ltr">{fmt(value)}</span>
                   </div>
                   {r.owner === "state" ? (
@@ -690,7 +721,11 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
                   )}
                 </div>
               ))}
-              {r.count > 25 && <p className="opacity-70">{t("تظهر أغلى ٢٥ عقاراً.")}</p>}
+              {r.count > shown && (
+                <button type="button" className="sc-menu h-8 w-full text-[11px]" data-testid="show-more" onClick={() => setShown(shown + 25)}>
+                  {t("اعرض ٢٥ عقاراً أكثر (يظهر {n} من {all})", { n: shown, all: r.count })}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -933,6 +968,120 @@ function Laws({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Esta
         />
         <p>{t("جُمع منها {amount} د.ك", { amount: fmt(e.landTaxTotal) })}</p>
       </div>
+    </div>
+  );
+}
+
+/** Select all, some, or every property an owner holds, and deal with them at once. */
+function BulkBar({
+  snap,
+  owner,
+  count,
+  visible,
+  picked,
+  setPicked,
+  to,
+  months,
+  comp,
+  onEstate,
+}: {
+  snap: Sim;
+  owner: OwnerId;
+  count: number;
+  visible: string[];
+  picked: Set<string>;
+  setPicked: (p: Set<string>) => void;
+  to: OwnerId;
+  months: number;
+  comp: number;
+  onEstate: (deal: (s: Sim) => EstateAct) => void;
+}) {
+  const ids = [...picked];
+  const allVisible = visible.length > 0 && visible.every((id) => picked.has(id));
+  let value = 0;
+  if (ids.length) {
+    const byId = new Map(snap.buildings.map((b) => [b.id, b]));
+    for (const id of ids) {
+      const b = byId.get(id);
+      if (b) value += propertyValue(snap, b);
+    }
+  }
+  const go = (label: string, deal: (s: Sim, id: string) => EstateAct) => {
+    const list = [...ids];
+    onEstate((s) => runMany(s, list, (id) => deal(s, id), label));
+    setPicked(new Set());
+  };
+  const btn = "sc-menu h-9 text-[11px] disabled:opacity-40";
+  return (
+    <div className="space-y-1 rounded border-2 border-sc-ink/20 p-1.5" data-testid="prop-bulk">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-bold">
+          {t("محدد {n} · قيمته {amount}", { n: ids.length, amount: fmt(value) })}
+        </span>
+        <span className="flex gap-2">
+          <button type="button" className="underline" data-testid="prop-pick-visible" onClick={() => setPicked(allVisible ? new Set() : new Set(visible))}>
+            {allVisible ? t("إلغاء التحديد") : t("حدد الظاهر ({n})", { n: visible.length })}
+          </button>
+          <button
+            type="button"
+            className="underline"
+            data-testid="prop-pick-all"
+            onClick={() => setPicked(new Set(holdingsOfOwner(snap, owner).ids))}
+          >
+            {t("حدد كل أملاكه ({n})", { n: count })}
+          </button>
+        </span>
+      </div>
+      {owner === "state" ? (
+        <div className="grid grid-cols-3 gap-1">
+          <button type="button" disabled={!ids.length} className={btn} onClick={() => go("بيع", (s, id) => sellProperty(s, id, to))}>
+            {t("بيع المحدد")}
+          </button>
+          <button type="button" disabled={!ids.length} className={btn} onClick={() => go("منح", (s, id) => grantProperty(s, id, to))}>
+            {t("منح المحدد")}
+          </button>
+          <button type="button" disabled={!ids.length} className={btn} onClick={() => go("تأجير", (s, id) => leaseProperty(s, id, to, months))}>
+            {t("تأجير المحدد")}
+          </button>
+          <button
+            type="button"
+            disabled={!ids.length}
+            className={btn}
+            onClick={() => go("عرض للبيع", (s, id) => listForSale(s, id, propertyValue(s, s.buildings.find((b) => b.id === id)!)))}
+          >
+            {t("اعرض المحدد للبيع")}
+          </button>
+          <button
+            type="button"
+            disabled={!ids.length}
+            className={btn}
+            onClick={() => go("مزاد", (s, id) => startAuction(s, id, propertyValue(s, s.buildings.find((b) => b.id === id)!) * 0.8))}
+          >
+            {t("مزاد على المحدد")}
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            data-testid="prop-buy-picked"
+            disabled={!ids.length || snap.coins < value * 1.05}
+            className={`${btn} sc-on`}
+            onClick={() => go("شراء", (s, id) => buyProperty(s, id))}
+          >
+            {ids.length && snap.coins < value * 1.05 ? t("الرصيد ما يكفي") : t("اشترِ المحدد بـ {amount}", { amount: fmt(value * 1.05) })}
+          </button>
+          <button
+            type="button"
+            data-testid="prop-expropriate-picked"
+            disabled={!ids.length || snap.coins < (value * comp) / 100}
+            className={btn}
+            onClick={() => go("نزع ملكية", (s, id) => expropriate(s, id, comp))}
+          >
+            {ids.length && snap.coins < (value * comp) / 100 ? t("الرصيد ما يكفي") : t("نزع ملكية المحدد ({pct}٪)", { pct: comp })}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
