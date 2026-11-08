@@ -1,3 +1,4 @@
+import { ownershipColors } from "@/game/realestate";
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
@@ -183,6 +184,13 @@ export function CityGame() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
   const [districtChooser, setDistrictChooser] = useState(false);
+  /** The ownership map: public and private land in their colours. */
+  const [ownership, setOwnership] = useState(false);
+  // Keep the ownership map current as the city grows and deals go through.
+  const ownershipKey = `${snap.buildings.length}:${Math.floor(snap.day / 30)}`;
+  useEffect(() => {
+    if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current));
+  }, [ownership, ownershipKey]);
   const toastSeq = useRef(0);
   const setToolRef = useRef(setTool);
   setToolRef.current = setTool;
@@ -1157,6 +1165,21 @@ export function CityGame() {
         onNpcRepay={(id) => finance(repayNpc(simRef.current, id))}
         onNpcAudit={(id) => finance(auditNpc(simRef.current, id))}
         onNpcAccount={(id) => finance(holdToAccount(simRef.current, id))}
+        ownership={ownership}
+        onOwnership={(on) => {
+          setOwnership(on);
+          worldRef.current?.setOwnership(on ? ownershipColors(simRef.current) : null);
+        }}
+        onEstate={(deal) => {
+          const act = deal(simRef.current);
+          if (!act.ok) pushToast(act.msg);
+          else {
+            worldRef.current?.sync(simRef.current, timeRef.current, true);
+            if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current));
+            pushToast(act.msg ?? simRef.current.log[0] ?? "");
+          }
+          sync();
+        }}
         onDonate={(kind, cause, amount) => {
           const act = donate(simRef.current, kind, cause, amount);
           if (!act.ok) pushToast(act.msg);

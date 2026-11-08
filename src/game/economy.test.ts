@@ -461,3 +461,68 @@ test("virtual players have a financial statement, can be audited and held to acc
   assert.ok(n.bannedUntil > s.day, "barred from tenders");
   assert.equal(npcs.holdToAccount(s, "meshal").ok, false, "nothing left to settle");
 });
+
+test("real estate: public land stays public, private property trades for real", async () => {
+  const re = await import("./realestate.ts");
+  const { saveSim, loadSim, cloneSim, freezeSaves } = await import("./sim.ts");
+  const s = town(10);
+  s.coins = 1e9;
+  const home = s.buildings.find((b) => b.kind === "apartments")!;
+  const { openLot } = await import("./sim.ts");
+  const lot = openLot(s)!;
+  assert.ok(placeBuilding(s, "school", lot.c, lot.r, 0).ok);
+  const school = s.buildings.find((b) => b.kind === "school")!;
+  assert.equal(re.ownerOf(s, school), null, "a school is public land");
+  assert.equal(re.buyProperty(s, school.id).ok, false, "public land is not for sale");
+  const owner = re.ownerOf(s, home)!;
+  assert.ok(owner && owner !== "state");
+  // The state buys it, leases it, sells it to a merchant.
+  const coins = s.coins;
+  assert.ok(re.buyProperty(s, home.id).ok);
+  assert.equal(re.ownerOf(s, home), "state");
+  assert.ok(s.coins < coins);
+  assert.ok(re.leaseProperty(s, home.id, "people", 12).ok);
+  const before = s.coins;
+  re.estateMonth(s, () => 0.5);
+  assert.ok(s.coins > before, "rent comes in");
+  const buyer = s.npcs[0]!;
+  buyer.cash = 1e9;
+  assert.ok(re.sellProperty(s, home.id, buyer.id).ok);
+  assert.equal(re.ownerOf(s, home), buyer.id);
+  assert.ok(re.estateOf(s).trades.length >= 3);
+  // Land grants put new homes in the city, owned by individuals.
+  const n = s.buildings.length;
+  assert.ok(re.grantPlots(s, 3).ok);
+  assert.ok(s.buildings.length > n);
+  assert.equal(re.ownerOf(s, s.buildings[s.buildings.length - 1]!), "people");
+  // A temporary allocation: the merchant builds, pays, and the land comes back.
+  buyer.cash = 1e9;
+  const fee = re.allocationFee(s, "commercial");
+  const r = re.allocate(s, buyer.id, "commercial", 2, fee);
+  assert.ok(r.ok, r.ok ? "" : r.msg);
+  const a = re.estateOf(s).allocations[0]!;
+  assert.ok(a.buildings.length > 0);
+  const built = s.buildings.find((b) => a.buildings.includes(re.lotKey(b)) && !re.isPublic(b.kind))!;
+  assert.equal(re.ownerOf(s, built), buyer.id);
+  s.day = a.until;
+  re.estateMonth(s, () => 0.5);
+  assert.equal(re.ownerOf(s, built), "state", "the plot returns to the state");
+  assert.equal(re.estateOf(s).allocations.length, 0);
+  // The platform adds up to 100% of private property, and everything survives a reload.
+  const sum = re.ownersSummary(s).reduce((x, o) => x + o.share, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-6);
+  assert.equal(cloneSim(s).estate!.trades.length, re.estateOf(s).trades.length);
+  const store = new Map<string, string>();
+  const original = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k), key: () => null, clear: () => store.clear(), length: 0 } as Storage;
+  try {
+    freezeSaves(false);
+    saveSim(s);
+    const back = loadSim();
+    assert.equal(re.ownerOf(back, back.buildings.find((b) => re.lotKey(b) === re.lotKey(home))!), buyer.id);
+    assert.equal(re.estateOf(back).trades.length, re.estateOf(s).trades.length);
+  } finally {
+    if (original === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+    else globalThis.localStorage = original;
+  }
+});

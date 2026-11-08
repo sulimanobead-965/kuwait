@@ -7,6 +7,7 @@ import {
   loadFinance,
   type FinanceState,
 } from "./finance";
+import { cloneEstate, emptyEstate, estateMonth, loadEstate, type Estate } from "./realestate";
 import { builderMonth, emptyBuilder, freeLot, loadBuilder, type BuilderState } from "./builder";
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
 import { emptyNpcs, loadNpcs, npcMonth, type NpcState } from "./npcs";
@@ -92,6 +93,8 @@ export type Sim = {
   housingAid: number;
   /** Waqf, zakat and sadaqa given, and their effect (see charity.ts). */
   charity: CharityState;
+  /** Who owns which property, the property market and its contracts (realestate.ts). */
+  estate?: Estate;
   /** Collect all buildings' income automatically every N game months (0 = by hand). */
   autoCollect?: number;
   /** A one-off emergency grant: extra happiness until this day. */
@@ -1001,6 +1004,7 @@ export function createInitial(): Sim {
     autoRaise: 0,
     housingAid: 0,
     charity: emptyCharity(),
+    estate: emptyEstate(),
     aidUntil: 0,
     aidHappy: 0,
     years: [],
@@ -1057,6 +1061,7 @@ function cloneParts(s: Sim): Sim {
     achievements: [...s.achievements],
     builder: { ...s.builder },
     sites: s.sites.map((x) => ({ ...x })),
+    estate: cloneEstate(s.estate),
     voices: [...(s.voices ?? [])],
     stocks: {
       ...s.stocks,
@@ -2820,7 +2825,7 @@ export function monthlyIncome(s: Sim) {
   });
 }
 
-function pushLog(s: Sim, text: string) {
+export function pushLog(s: Sim, text: string) {
   if (s.log[0] === text) return;
   s.log.unshift(text);
   s.log = s.log.slice(0, 8);
@@ -2880,6 +2885,7 @@ export function advanceDays(s: Sim, days: number) {
     });
     stockMonth(s, { economic: crisis === "economic", war: crisis === "war", pandemic: crisis === "pandemic" });
     developmentMonth(s);
+    estateMonth(s);
     // News only when the construction advisor actually built something (not the
     // monthly "the budget did not cover any work" note).
     const worksBefore = s.builder.works;
@@ -3094,6 +3100,9 @@ export function donate(s: Sim, kind: CharityKind, cause: CharityCause, amount: n
   pushLog(s, entry);
   return { ok: true };
 }
+
+/** A free lot for a new building: beside the city first, else any roadside land. */
+export const openLot = (s: Sim) => freeLot(s) ?? roadsideLot(s);
 
 /** Any open land cell beside a road (for gifts when the built-up blocks are full). */
 function roadsideLot(s: Sim) {
@@ -3381,6 +3390,7 @@ export function loadSim(district?: DistrictId | null): Sim {
     s.housingAid = clamp(Number(p.housingAid) || 0, 0, COST_MAX);
     setAutoCollect(s, Number((p as { autoCollect?: number }).autoCollect) || 0);
     s.charity = loadCharity((p as { charity?: unknown }).charity);
+    s.estate = loadEstate((p as { estate?: unknown }).estate);
     s.aidUntil = Math.max(0, Number(p.aidUntil) || 0);
     s.aidHappy = clamp(Number(p.aidHappy) || 0, 0, 30);
     if (Array.isArray(p.years)) s.years = p.years.filter((y) => y && typeof y === "object").slice(-60);
@@ -3582,6 +3592,7 @@ export function saveSim(s: Sim) {
     housingAid: s.housingAid,
     autoCollect: s.autoCollect ?? 0,
     charity: s.charity,
+    estate: s.estate,
     aidUntil: s.aidUntil,
     aidHappy: s.aidHappy,
     years: s.years,

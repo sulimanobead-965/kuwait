@@ -1,3 +1,5 @@
+import { EstatePanel, OwnershipLegend } from "@/components/hud-estate";
+import { buyProperty, ownerName, ownerOf, propertyValue, type EstateAct } from "@/game/realestate";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
@@ -106,6 +108,7 @@ import {
   lawMonthly,
   type Sample,
   type Sim,
+  type Building,
   type ZonePick,
   demolishPreview,
 } from "@/game/sim";
@@ -171,6 +174,7 @@ const PANEL_GROUPS: { title: string; tabs: { id: Panel; label: string }[] }[] = 
     tabs: [
       { id: "companies", label: "الشركات" },
       { id: "stocks", label: "سوق الأسهم" },
+      { id: "estate", label: "العقار" },
     ],
   },
 ];
@@ -194,7 +198,8 @@ type Panel =
   | "stocks"
   | "cloud"
   | "ledger"
-  | "charity";
+  | "charity"
+  | "estate";
 
 const SERIES: { key: GraphKey; label: string; token: string }[] = [
   { key: "water", label: "ماء %", token: "--color-sc-sky" },
@@ -375,6 +380,9 @@ export function CityHud({
   onNpcAudit,
   onNpcAccount,
   onDonate,
+  ownership,
+  onOwnership,
+  onEstate,
   onPay,
   onEvent,
   onModel,
@@ -448,6 +456,9 @@ export function CityHud({
   onNpcAudit: (id: NpcId) => void;
   onNpcAccount: (id: NpcId) => void;
   onDonate: (kind: CharityKind, cause: CharityCause, amount: number) => void;
+  ownership: boolean;
+  onOwnership: (on: boolean) => void;
+  onEstate: (deal: (s: Sim) => EstateAct) => void;
   onConsult: () => void;
   onMudaraba: (amount: number, expected: number) => void;
   onMudarabaWithdraw: () => void;
@@ -562,6 +573,21 @@ export function CityHud({
     <>
       <div className="pointer-events-none absolute inset-0 z-10">
         {snap.started && <WeatherOverlay snap={snap} />}
+        {snap.started && ownership && (
+          <div
+            className="pointer-events-auto absolute left-1/2 top-2 z-10 w-[min(22rem,70vw)] -translate-x-1/2 rounded-md bg-sc-mint/95 p-2 text-sc-ink shadow"
+            dir={dir}
+            data-testid="ownership-key"
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-xs font-extrabold">{t("خريطة الملكية")}</span>
+              <button type="button" className="text-xs underline" onClick={() => onOwnership(false)}>
+                {t("إخفاء")}
+              </button>
+            </div>
+            <OwnershipLegend />
+          </div>
+        )}
         {snap.started && (
           <div className="hud-tools safe-top pointer-events-auto absolute right-1 top-0 flex flex-col items-center gap-1 pt-2">
             <Round
@@ -828,6 +854,9 @@ export function CityHud({
                 {panel === "report" && <YearReport snap={snap} />}
                 {panel === "ledger" && <LedgerReport snap={snap} />}
                 {panel === "charity" && <CharityPanel snap={snap} onDonate={onDonate} />}
+                {panel === "estate" && (
+                  <EstatePanel snap={snap} ownership={ownership} onOwnership={onOwnership} onEstate={onEstate} />
+                )}
                 {panel === "voices" && <Voices snap={snap} />}
                 {panel === "stocks" && <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} />}
                 {panel === "cloud" && <CloudPanel snap={snap} />}
@@ -988,6 +1017,7 @@ export function CityHud({
                   {blockReason(selected, snap) && (
                     <p className="text-xs text-coral">{blockReason(selected, snap)}</p>
                   )}
+                  <OwnerLine snap={snap} b={selected} onEstate={onEstate} />
                 </div>
                 <button
                   type="button"
@@ -2214,5 +2244,22 @@ function Menu({
     >
       <span className="block truncate">{children}</span>
     </button>
+  );
+}
+
+/** Who owns the tapped building and what it is worth; private property can be bought. */
+function OwnerLine({ snap, b, onEstate }: { snap: Sim; b: Building; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const owner = ownerOf(snap, b);
+  if (!owner) return <p className="text-xs" data-testid="owner-line">{t("أرض عامة · لا تُباع ولا تُتداول")}</p>;
+  const value = propertyValue(snap, b);
+  return (
+    <p className="flex flex-wrap items-center gap-1 text-xs" data-testid="owner-line">
+      <span>{t("المالك: {owner} · القيمة {amount} د.ك", { owner: t(ownerName(owner)), amount: fmt(value) })}</span>
+      {owner !== "state" && (
+        <button type="button" className="underline" onClick={() => onEstate((s) => buyProperty(s, b.id))}>
+          {t("اشترِ للدولة")}
+        </button>
+      )}
+    </p>
   );
 }

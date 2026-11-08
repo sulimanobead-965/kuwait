@@ -1029,6 +1029,45 @@ export class CityWorld {
     this.dirtyShadows = true;
   }
 
+  private ownershipMesh: THREE.InstancedMesh | null = null;
+
+  /**
+   * The ownership map: a coloured plinth under every building, by who holds the
+   * land (public, state, individuals, merchants, allocation). null hides it.
+   */
+  setOwnership(colors: Map<string, string> | null) {
+    if (this.ownershipMesh) {
+      this.scene.remove(this.ownershipMesh);
+      this.ownershipMesh.geometry.dispose();
+      (this.ownershipMesh.material as THREE.Material).dispose();
+      this.ownershipMesh = null;
+    }
+    if (!colors || colors.size === 0) return;
+    // Drawn over the buildings (no depth test), like a coloured land-registry map.
+    const geo = new THREE.BoxGeometry(CELL_SIZE * 0.92, 0.05, CELL_SIZE * 0.92);
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false, depthTest: false });
+    const mesh = new THREE.InstancedMesh(geo, mat, colors.size);
+    const m = new THREE.Matrix4();
+    const col = new THREE.Color();
+    let i = 0;
+    for (const [id, hex] of colors) {
+      const rec = this.records.get(id);
+      if (!rec) continue;
+      m.makeTranslation(rec.x, LAND_HEIGHT + 0.05, rec.z);
+      mesh.setMatrixAt(i, m);
+      mesh.setColorAt(i, col.set(hex));
+      i += 1;
+    }
+    mesh.count = i;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 9;
+    mesh.name = "ownership";
+    this.scene.add(mesh);
+    this.ownershipMesh = mesh;
+  }
+
   frameDistrict() {
     if (!this.districtId || this.width < 2) return;
     const box = districtBounds(this.districtId);

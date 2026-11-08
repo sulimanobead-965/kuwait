@@ -121,6 +121,8 @@ export class FallbackCityWorld {
     this.viewHeightGoal = Math.max(15, Math.min(150, this.viewHeightGoal / factor));
   }
 
+  setOwnership(_colors: Map<string, string> | null) {}
+
   frameDistrict() {
     if (!this.district || this.width < 2) return;
     const box = districtBounds(this.district);
