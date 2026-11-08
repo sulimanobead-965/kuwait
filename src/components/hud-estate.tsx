@@ -33,6 +33,7 @@ import {
   endAllocation,
   estateOf,
   grantPlots,
+  GRANT_USES,
   grantProperty,
   grantees,
   isMerchant,
@@ -47,6 +48,7 @@ import {
   sellProperty,
   type AllocationUse,
   type EstateAct,
+  type GrantUse,
   type OwnerId,
   type Trade,
 } from "@/game/realestate";
@@ -837,6 +839,7 @@ function Allocations({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) 
 function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
   const [n, setN] = useState(5);
   const [mode, setMode] = useState<"people" | "person" | "past" | "merchant">("people");
+  const [use, setUse] = useState<GrantUse>("homes");
   const [name, setName] = useState("");
   const past = grantees(snap);
   const [pastId, setPastId] = useState<string>("");
@@ -855,10 +858,25 @@ function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
   return (
     <div className="space-y-2 text-xs" data-testid="estate-grants">
       <div className="rounded-md bg-sc-mint p-2">
-        <p className="text-sm font-extrabold">{t("منح القسائم السكنية")}</p>
+        <p className="text-sm font-extrabold">{t("منح الأراضي")}</p>
         <p className="mt-1 leading-relaxed">
-          {t("تمنح قسائم من أراضي الدولة بجانب الطرق، والممنوح يبني عليها بيته على حسابه. بلا حد للعدد إلا الأرض الفاضية. المنح للمواطنين يرفع شهرتك ورضا الناس.")}
+          {t("تمنح أراضي من أملاك الدولة: سكنية أو استثمارية أو تجارية أو صناعية، والممنوح يبني عليها على حسابه. بلا حد للعدد، وإذا خلصت الأرض بجانب الطرق تنفتح بلوكات جديدة. المنح للمواطنين يرفع شهرتك ورضا الناس.")}
         </p>
+        <p className="mt-2 font-bold">{t("نوع الأرض")}</p>
+        <div className="mt-1 grid grid-cols-4 gap-1">
+          {GRANT_USES.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              data-testid={`grant-use-${u.id}`}
+              aria-pressed={use === u.id}
+              onClick={() => setUse(u.id)}
+              className={`sc-menu h-auto min-h-9 py-1 text-[11px] leading-tight ${use === u.id ? "sc-on" : ""}`}
+            >
+              {t(u.name)}
+            </button>
+          ))}
+        </div>
         <p className="mt-2 font-bold">{t("لمن المنحة؟")}</p>
         <div className="mt-1 grid grid-cols-2 gap-1">
           {(
@@ -933,10 +951,16 @@ function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
           type="button"
           data-testid="estate-grant-go"
           disabled={!to}
-          onClick={() => to && onEstate((s) => grantPlots(s, count, to))}
+          onClick={() => to && onEstate((s) => grantPlots(s, count, to, use))}
           className="sc-menu sc-on mt-2 h-auto min-h-10 w-full py-1 text-sm disabled:opacity-40"
         >
-          {to ? t("امنح {n} قسيمة لـ {who}", { n: count, who: t(ownerName(to)) }) : t("اكتب اسم الشخص")}
+          {to
+            ? t("امنح {n} قسيمة {use} لـ {who}", {
+                n: count,
+                use: t(GRANT_USES.find((u) => u.id === use)!.name),
+                who: t(ownerName(to)),
+              })
+            : t("اكتب اسم الشخص")}
         </button>
       </div>
       {past.length > 0 && (

@@ -384,19 +384,30 @@ export function leaseProperty(s: Sim, id: string, tenant: OwnerId, months: numbe
  * Land grants: plots of state land beside the roads, to citizens at large, a named
  * person, or a merchant; the grantee builds a home on each. No limit but the land.
  */
-export function grantPlots(s: Sim, count: number, to: OwnerId = "people"): EstateAct {
+/** What a granted plot is for: the grantee builds that kind of building on it. */
+export const GRANT_USES: { id: GrantUse; name: string; kind: Kind }[] = [
+  { id: "homes", name: "سكنية", kind: "villa" },
+  { id: "investment", name: "استثمارية", kind: "apartments" },
+  { id: "commercial", name: "تجارية", kind: "shop" },
+  { id: "industrial", name: "صناعية", kind: "factory" },
+];
+export type GrantUse = "homes" | "investment" | "commercial" | "industrial";
+
+export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: GrantUse = "homes"): EstateAct {
   count = Math.max(1, Math.round(count));
+  const kind = (GRANT_USES.find((u) => u.id === use) ?? GRANT_USES[0]!).kind;
+  const useName = (GRANT_USES.find((u) => u.id === use) ?? GRANT_USES[0]!).name;
   if (to === "state") return { ok: false, msg: t("اختر من تمنحه") };
   if (isPerson(to) && to.length < 3) return { ok: false, msg: t("اكتب اسم الشخص") };
   let done = 0;
   for (let i = 0; i < count; i += 1) {
     const lot = openLot(s);
     if (!lot) break;
-    const price = priceOf(CATALOG.villa.cost, s);
+    const price = priceOf(CATALOG[kind].cost, s);
     // The grantee builds the home: the state gives the land only.
     s.coins += price;
     const before = s.buildings.length;
-    if (!placeBuilding(s, "villa", lot.c, lot.r, 0).ok) {
+    if (!placeBuilding(s, kind, lot.c, lot.r, 0).ok) {
       s.coins -= price;
       break;
     }
@@ -411,11 +422,11 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people"): Estat
     const site = findBlockSite(s, def.w, def.h);
     if (!site) break;
     const before = s.buildings.length;
-    placePackage(s, "homes", s.day, site, Array.from({ length: def.w * def.h }, () => "villa" as Kind));
+    placePackage(s, "homes", s.day, site, Array.from({ length: def.w * def.h }, () => kind));
     const added = s.buildings.slice(before);
     if (!added.length) break;
     // Keep only as many homes as plots granted; the rest of the block stays empty land.
-    const keep = added.filter((b) => b.kind === "villa").slice(0, count - done);
+    const keep = added.filter((b) => b.kind === kind).slice(0, count - done);
     const drop = new Set(added.filter((b) => !keep.includes(b)));
     if (drop.size) s.buildings = s.buildings.filter((b) => !drop.has(b));
     for (const b of keep) setOwner(s, b, to);
@@ -429,8 +440,8 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people"): Estat
   if (!isMerchant(to)) s.fame = Math.min(12, (s.fame ?? 0) + Math.min(2, done * 0.05));
   const entry =
     to === "people"
-      ? msg("منح {n} قسيمة سكنية للمواطنين من أراضي الدولة", { n: done })
-      : msg("منح {n} قسيمة سكنية لـ {owner} من أراضي الدولة", { n: done, owner: ownerName(to) });
+      ? msg("منح {n} قسيمة {use} للمواطنين من أراضي الدولة", { n: done, use: useName })
+      : msg("منح {n} قسيمة {use} لـ {owner} من أراضي الدولة", { n: done, use: useName, owner: ownerName(to) });
   pushLog(s, entry);
   return { ok: true, msg: done < count ? msg("{text} · ما بقى أرض فاضية بجانب الطرق للباقي", { text: entry }) : entry };
 }

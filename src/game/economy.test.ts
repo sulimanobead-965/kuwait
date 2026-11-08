@@ -754,6 +754,19 @@ test("administrative regions: 100 of them, counted, and valued, expropriated or 
   assert.equal(rg.valueBuyRegions(t2, [], 110).ok, false);
 });
 
+test("land grants can be residential, investment, commercial or industrial", async () => {
+  const re = await import("./realestate.ts");
+  const s = town(10);
+  const who = re.personId("سالم");
+  for (const u of re.GRANT_USES) {
+    const before = s.buildings.filter((b) => b.kind === u.kind && re.ownerOf(s, b) === who).length;
+    const r = re.grantPlots(s, 2, who, u.id);
+    assert.ok(r.ok, `${u.id}: ${r.ok ? "" : r.msg}`);
+    const after = s.buildings.filter((b) => b.kind === u.kind && re.ownerOf(s, b) === who).length;
+    assert.ok(after > before, `${u.id} plots carry a ${u.kind}`);
+  }
+});
+
 test("land grants have no limit and can go to a named person or a merchant", async () => {
   const re = await import("./realestate.ts");
   const { saveSim, loadSim, freezeSaves } = await import("./sim.ts");
