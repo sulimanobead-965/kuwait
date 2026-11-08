@@ -1,0 +1,40 @@
+# Cloud build for the App Store, for anyone without a Mac (https://codemagic.io).
+# One-time setup in Codemagic: connect this repository, add an App Store Connect API
+# key under Team integrations (name it "codemagic"), and set APP_STORE_APPLE_ID to the
+# app's Apple ID (a number shown in App Store Connect → App Information).
+# Every run builds the game, packs the iOS app, signs it and sends it to TestFlight.
+workflows:
+  ios-app-store:
+    name: Al-Muhafiz iOS (App Store)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.sulimanobead.almohafez
+      vars:
+        APP_STORE_APPLE_ID: "0000000000"
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Install packages
+        script: npm ci
+      - name: Build the game and copy it into the iOS project
+        script: npm run app:build && npx cap sync ios
+      - name: Code signing
+        script: xcode-project use-profiles
+      - name: Next build number
+        script: |
+          cd ios/App
+          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" || echo 0)
+          agvtool new-version -all $((LATEST + 1))
+      - name: Build the app (.ipa)
+        script: xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

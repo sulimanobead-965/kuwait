@@ -18,10 +18,24 @@
     "check:auth": "node scripts/check-auth-invariant.mjs",
     "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:game": "node --import tsx --test src/game/sim.integration.test.ts src/game/economy.test.ts src/game/advisors.test.ts src/game/verify-layouts.test.ts src/game/three/day-night.test.ts src/game/three/raycasting.test.ts src/i18n/i18n.test.ts",
+    "app:build": "vite build -c vite.app.config.ts",
+    "app:sync": "npm run app:build && cap sync ios",
+    "app:open": "cap open ios"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.6.0",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
+    "@capgo/capacitor-updater": "^8.54.2",
     "@electric-sql/pglite": "^0.5.4",
+    "@fontsource/noto-kufi-arabic": "^5.3.0",
     "@hookform/resolvers": "^5.7.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -50,6 +64,7 @@
     "@tanstack/react-start": "^1.168.60",
     "@tanstack/react-table": "^8.21.0",
     "@tanstack/router-plugin": "^1.168.0",
+    "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^5.2.0",
     "better-auth": "~1.6.30",
     "class-variance-authority": "^0.7.1",
@@ -71,6 +86,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.3.0",
+    "three": "^0.187.0",
     "tw-animate-css": "^1.3.4",
     "typescript": "^5.7.0",
     "vaul": "^1.1.2",
@@ -92,6 +108,7 @@
     "globals": "^15.15.0",
     "playwright": "^1.62.0",
     "prettier": "^3.4.0",
+    "tsx": "^4.23.15",
     "typescript-eslint": "^8.56.1"
   }
 }

@@ -22,6 +22,13 @@
   --font-sans: "Noto Kufi Arabic", "Noto Naskh Arabic", "Noto Sans Arabic", sans-serif;
 }
 
+/* English: a Latin UI face first, the Arabic face as a fallback for names. */
+:root[lang="en"] {
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Kufi Arabic",
+    sans-serif;
+}
+
 @layer base {
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -88,7 +95,12 @@
 
 .sc-round,
 .sc-menu {
-  background: linear-gradient(180deg, var(--color-sc-lime), var(--color-sc-green) 42%, var(--color-sc-leaf));
+  background: linear-gradient(
+    180deg,
+    var(--color-sc-lime),
+    var(--color-sc-green) 42%,
+    var(--color-sc-leaf)
+  );
   box-shadow: inset 0 1px 0 var(--color-sc-mint);
 }
 
@@ -113,14 +125,24 @@
   width: 100%;
   border-radius: 0.75rem;
   border: 2px solid var(--color-sc-ink);
-  background: linear-gradient(180deg, var(--color-sc-lime), var(--color-sc-green) 42%, var(--color-sc-leaf));
+  background: linear-gradient(
+    180deg,
+    var(--color-sc-lime),
+    var(--color-sc-green) 42%,
+    var(--color-sc-leaf)
+  );
   color: var(--color-sc-mint);
   font-weight: 800;
   box-shadow: inset 0 1px 0 var(--color-sc-mint);
 }
 
 .sc-on {
-  background: linear-gradient(180deg, var(--color-sc-gold), var(--color-sc-orange) 55%, var(--color-coral));
+  background: linear-gradient(
+    180deg,
+    var(--color-sc-gold),
+    var(--color-sc-orange) 55%,
+    var(--color-coral)
+  );
   color: var(--color-sc-ink);
   text-shadow: none;
 }
@@ -211,28 +233,861 @@
   }
 }
 
-html[data-orient="right"] .game-shell {
-  position: fixed;
-  top: 0;
-  left: 100vw;
-  z-index: 30;
-  width: 100dvh;
-  height: 100dvw;
-  transform: rotate(90deg);
-  transform-origin: top left;
-}
-
-html[data-orient="left"] .game-shell {
-  position: fixed;
-  top: 100vh;
-  left: 0;
-  z-index: 30;
-  width: 100dvh;
-  height: 100dvw;
-  transform: rotate(-90deg);
-  transform-origin: top left;
-}
+/* No legacy viewport rotations: pointer coordinates and canvas CSS share one orientation. */
 
 .city-wide .sc-ticker {
   height: 1.75rem;
+}
+
+.view-3d-badge,
+.graphics-note {
+  border: 1px solid color-mix(in srgb, var(--color-sc-mint) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-gulf-ink) 78%, transparent);
+  color: var(--color-sc-mint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.5;
+  padding: 0.3rem 0.65rem;
+  pointer-events: none;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.view-3d-badge {
+  margin-top: 0.5rem;
+}
+
+.graphics-note {
+  position: absolute;
+  inset-inline: 1rem;
+  bottom: 12rem;
+  z-index: 15;
+  text-align: center;
+}
+
+.district-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  background: rgb(8 31 34 / 72%);
+}
+.district-dialog {
+  pointer-events: auto;
+  width: min(100%, 620px);
+  max-height: 94dvh;
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  padding: max(17px, env(safe-area-inset-top)) clamp(13px, 4vw, 24px)
+    max(14px, env(safe-area-inset-bottom));
+}
+.district-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.district-header h2 {
+  font-size: clamp(19px, 5vw, 29px);
+  font-weight: 800;
+}
+.district-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.district-intro {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 10px 0;
+  color: #153f41;
+}
+.district-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.district-option {
+  padding: 5px;
+  border: 2px solid #568076;
+  background: var(--color-sc-mint);
+  color: var(--color-sc-ink);
+  border-radius: 8px;
+  min-height: 44px;
+}
+.district-option.selected {
+  outline: 3px solid var(--color-sc-gold);
+  border-color: var(--color-sc-ink);
+}
+.district-preview {
+  display: block;
+  width: 100%;
+  height: 112px;
+  object-fit: contain;
+}
+.district-option-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 15px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+.district-option > span:last-child {
+  font-size: 10px;
+  font-weight: 700;
+  display: block;
+}
+.district-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid #679082;
+  margin-top: 13px;
+  padding-top: 11px;
+}
+.district-choice h3 {
+  font-size: 24px;
+  font-weight: 800;
+}
+.district-choice p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.district-choice p,
+.district-choice .district-save-note {
+  color: #153f41;
+}
+.district-choice .district-save-note {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--color-sc-leaf);
+}
+.district-choose {
+  min-height: 48px;
+  min-width: 125px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-weight: 800;
+}
+.district-return {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 12px 6px 1px;
+  min-height: 44px;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (min-width: 620px) {
+  .district-backdrop {
+    align-items: center;
+    padding: 18px;
+  }
+  .district-dialog {
+    border-radius: 18px;
+  }
+  .district-preview {
+    height: 130px;
+  }
+}
+
+.district-focus {
+  white-space: nowrap;
+  border-radius: 999px;
+  background: var(--color-sc-bar);
+  color: var(--color-sc-mint);
+  padding: 9px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 1px 5px #10282b66;
+}
+
+/* ------------------------------------------------------------ bottom bar & more sheet */
+
+.hud-actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 0.15rem;
+  white-space: nowrap;
+}
+
+/* Five buttons share a phone's width: a smaller label so none is cut off. */
+@media (max-width: 699px) {
+  .hud-actions {
+    gap: 0.25rem;
+  }
+
+  .hud-actions .sc-menu {
+    font-size: 11.5px;
+    letter-spacing: -0.01em;
+  }
+}
+
+.more-sheet {
+  margin: 0 0.5rem 0.25rem;
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+}
+
+.more-item {
+  display: flex;
+  min-height: 4.2rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  border: 2px solid var(--color-sc-ink);
+  border-radius: 0.6rem;
+  background: var(--color-sc-mint);
+  color: var(--color-sc-ink);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.more-item:active {
+  background: var(--color-sc-lime);
+}
+
+/* ------------------------------------------------------------ banners */
+
+.crisis-banner {
+  border-radius: 999px;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+}
+
+.crisis-banner.is-bad {
+  background: var(--color-coral);
+  color: var(--color-sc-mint);
+}
+
+.crisis-banner.is-good {
+  background: var(--color-sc-leaf);
+  color: var(--color-sc-mint);
+}
+
+/* ------------------------------------------------------------ weather overlays */
+
+.weather-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.weather-layer > div {
+  position: absolute;
+  inset: -20%;
+}
+
+.weather-dust {
+  background:
+    radial-gradient(ellipse at 30% 40%, rgb(214 168 96 / 0.45), transparent 60%),
+    radial-gradient(ellipse at 70% 60%, rgb(190 140 70 / 0.4), transparent 55%),
+    rgb(205 160 95 / 0.32);
+  animation: dust-drift 6s linear infinite;
+}
+
+.weather-rain {
+  background-image: repeating-linear-gradient(
+    105deg,
+    rgb(200 225 240 / 0) 0 14px,
+    rgb(200 225 240 / 0.35) 14px 15px,
+    rgb(200 225 240 / 0) 15px 30px
+  );
+  background-size: 120px 120px;
+  background-color: rgb(30 50 70 / 0.18);
+  animation: rain-fall 0.45s linear infinite;
+}
+
+.weather-dark {
+  background: rgb(5 10 20 / 0.28);
+}
+
+.weather-war {
+  background: radial-gradient(ellipse at 50% 0%, rgb(160 40 20 / 0.28), transparent 70%);
+  animation: war-pulse 3.2s ease-in-out infinite;
+}
+
+.weather-haze {
+  background: rgb(120 140 110 / 0.16);
+}
+
+@keyframes dust-drift {
+  from {
+    transform: translateX(-6%);
+  }
+  to {
+    transform: translateX(6%);
+  }
+}
+
+@keyframes rain-fall {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -30px 120px;
+  }
+}
+
+@keyframes war-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------ celebration & welcome */
+
+.celebrate {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(4 12 8 / 0.45);
+}
+
+.celebrate-card {
+  position: relative;
+  width: min(22rem, 100%);
+  border-radius: 1rem;
+  padding: 1.1rem;
+  text-align: center;
+  animation: pop-in 420ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti i {
+  position: absolute;
+  top: -5%;
+  left: calc(var(--i) * 3.6%);
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  background: hsl(calc(var(--i) * 47deg) 80% 55%);
+  animation: confetti-fall calc(2.2s + var(--i) * 0.05s) ease-in calc(var(--i) * -0.13s) infinite;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translateY(110vh) rotate(720deg);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------ tutorial */
+
+.tutorial-card {
+  position: absolute;
+  /* Leave the right-hand tool column and the rank badge visible. */
+  right: 4.2rem;
+  left: 0.6rem;
+  top: 4.6rem;
+  z-index: 30;
+  border-radius: 0.8rem;
+  padding: 0.6rem 0.8rem;
+  max-width: 26rem;
+  margin-inline: auto;
+}
+
+.tut-pulse {
+  position: relative;
+  z-index: 31;
+  animation: tut-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes tut-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(57 255 57 / 0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgb(57 255 57 / 0);
+  }
+}
+
+/* ------------------------------------------------------------ coins flying to the treasury */
+
+.coin-fly-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+}
+
+.coin-fly {
+  position: fixed;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff6b0, #d6a12a 60%, #8a5d10);
+  box-shadow: 0 0 6px rgb(255 210 80 / 0.8);
+  animation: coin-fly 0.95s cubic-bezier(0.5, -0.4, 0.7, 1) forwards;
+}
+
+@keyframes coin-fly {
+  to {
+    transform: translate(var(--dx), var(--dy)) scale(0.5);
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-dust,
+  .weather-rain,
+  .weather-war,
+  .confetti i,
+  .tut-pulse,
+  .coin-fly {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------ iPhone & iPad */
+
+/* No rubber-band scrolling, no double-tap zoom, no text inflation on iOS. */
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.game-shell,
+.game-shell button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS zooms into any text field under 16px; keep inputs at 16px on touch screens. */
+@media (pointer: coarse) {
+  .game-shell input,
+  .game-shell select,
+  .game-shell textarea {
+    font-size: 16px;
+  }
+}
+
+/* Notch, Dynamic Island and home indicator. */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+}
+
+.hud-badge {
+  top: env(safe-area-inset-top);
+  left: max(0.5rem, env(safe-area-inset-left));
+}
+
+.hud-tools {
+  right: max(0.25rem, env(safe-area-inset-right));
+}
+
+/* Map controls hug the outer edge, under the player card, clear of the bottom bar. */
+.hud-left {
+  left: max(0.5rem, env(safe-area-inset-left));
+  top: calc(max(0.5rem, env(safe-area-inset-top)) + 5rem);
+  align-items: flex-end;
+}
+
+:root[dir="rtl"] .hud-left {
+  align-items: flex-end;
+}
+
+/* Shorter phones: tighter column so every control stays above the bottom bar. */
+@media (max-height: 760px) {
+  .hud-left {
+    gap: 0.3rem;
+  }
+
+  .hud-left .sc-round {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+}
+
+.hud-panel {
+  top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* Phones up to Pro Max: speed buttons a little narrower so date, money and people all fit. */
+@media (max-width: 440px) {
+  .hud-status .sc-round {
+    width: 2.3rem;
+  }
+
+  .hud-status .sc-lcd {
+    padding-inline: 0.35rem;
+  }
+}
+
+/* iPhones up to 400px wide (SE, mini, 13–15): tighter status row so money and people fit. */
+@media (max-width: 400px) {
+  .hud-status .sc-lcd {
+    padding-inline: 0.3rem;
+    font-size: 0.75rem;
+  }
+
+  .hud-status .sc-round {
+    width: 2.2rem;
+    height: 2.4rem;
+  }
+
+  .hud-actions .sc-menu {
+    font-size: 0.75rem;
+  }
+}
+
+/* Wide screens (iPad Pro landscape, desktop): actions and status share one row. */
+@media (min-width: 1100px) {
+  .sc-status {
+    display: grid;
+    grid-template-columns: minmax(30rem, 1fr) minmax(0, auto);
+    align-items: center;
+  }
+
+  .sc-status > * {
+    grid-column: 1 / -1;
+  }
+
+  .sc-status > .hud-actions {
+    grid-column: 1;
+    max-width: 44rem;
+  }
+
+  .sc-status > .hud-status {
+    grid-column: 2;
+    padding-block: 0.5rem;
+  }
+}
+
+/* iPad and wide screens: panels become a side sheet. */
+@media (min-width: 700px) {
+  .hud-actions .sc-menu {
+    font-size: 0.95rem;
+  }
+
+  .hud-panel {
+    right: auto;
+    width: min(30rem, 48vw);
+  }
+
+  .more-sheet {
+    max-width: 34rem;
+    margin-inline: auto;
+  }
+
+  .tutorial-card {
+    right: auto;
+    left: 50%;
+    width: 26rem;
+    transform: translateX(-50%);
+  }
+}
+
+/* iPhone in landscape: very little height, so the bottom bar shrinks to one thin row. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .sc-status {
+    display: grid;
+    grid-template-columns: minmax(21rem, 1fr) minmax(0, auto);
+    align-items: center;
+  }
+
+  .sc-status > * {
+    grid-column: 1 / -1;
+  }
+
+  .sc-status > .hud-actions {
+    grid-column: 1;
+    padding-block: 0.25rem;
+  }
+
+  .sc-status > .hud-status {
+    grid-column: 2;
+    padding-block: 0.25rem;
+  }
+
+  .hud-ticker {
+    display: none;
+  }
+
+  .sc-status .sc-menu,
+  .sc-status .sc-round,
+  .sc-status .sc-lcd {
+    height: 2.2rem;
+    font-size: 0.75rem;
+  }
+
+  .sc-status .sc-round {
+    width: 2.2rem;
+  }
+
+  .hud-tools {
+    gap: 0.15rem;
+  }
+
+  .hud-tools .sc-round,
+  .hud-left .sc-round {
+    width: 2.3rem;
+    height: 2.3rem;
+  }
+
+  .hud-left {
+    top: 4.4rem;
+    gap: 0.3rem;
+    /* Too many buttons for one column this short: wrap into a second column inward. */
+    direction: ltr;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    max-height: calc(100dvh - 4.4rem - 4.5rem);
+  }
+
+  .hud-tools {
+    direction: rtl;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    max-height: calc(100dvh - 4.5rem);
+  }
+
+  .sc-status .sc-menu {
+    padding-inline: 0.1rem;
+    font-size: 0.7rem;
+  }
+
+  .hud-status .sc-round {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .hud-left .view-3d-badge {
+    display: none;
+  }
+
+  .hud-panel {
+    right: auto;
+    width: min(26rem, 55vw);
+    bottom: 0.25rem;
+  }
+
+  .more-sheet .grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .more-item {
+    min-height: 3.2rem;
+  }
+
+  .tutorial-card {
+    top: 0.5rem;
+    right: auto;
+    left: 50%;
+    width: min(24rem, 55vw);
+    transform: translateX(-50%);
+  }
+
+  .celebrate-card {
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+}
+
+/* iPhone landscape: the neighborhood picker shows all four choices in one row. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .district-backdrop {
+    align-items: center;
+    padding: 6px max(6px, env(safe-area-inset-right)) 6px max(6px, env(safe-area-inset-left));
+  }
+
+  .district-dialog {
+    width: min(100%, 760px);
+    max-height: 98dvh;
+    border-radius: 14px;
+    padding: 8px 14px;
+  }
+
+  .district-header h2 {
+    font-size: 18px;
+  }
+
+  .district-intro {
+    display: none;
+  }
+
+  .district-options {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .district-preview {
+    height: 64px;
+  }
+
+  .district-choice {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .district-choice h3 {
+    font-size: 18px;
+  }
+
+  .district-return {
+    padding-top: 4px;
+  }
+}
+
+/* Small iPhones: the date is the first thing to give up its room. */
+@media (max-width: 360px) {
+  .hud-status [data-hud="date"] {
+    display: none;
+  }
+}
+
+/* iPad: everything a little larger for fingers at arm's length. */
+@media (min-width: 768px) and (min-height: 600px) and (pointer: coarse) {
+  html {
+    font-size: 18px;
+  }
+}
+
+/* ------------------------------------------------------------ English (left-to-right) */
+
+/* The HUD mirrors: tools move to the left edge, the rank badge and zoom to the right. */
+:root[dir="ltr"] .hud-tools {
+  right: auto;
+  left: max(0.25rem, env(safe-area-inset-left));
+}
+
+:root[dir="ltr"] .hud-badge {
+  left: auto;
+  right: max(0.5rem, env(safe-area-inset-right));
+}
+
+:root[dir="ltr"] .hud-left {
+  left: auto;
+  right: max(0.5rem, env(safe-area-inset-right));
+  align-items: flex-end;
+}
+
+:root[dir="ltr"] .hud-panel {
+  left: 4rem;
+  right: 0.5rem;
+}
+
+:root[dir="ltr"] .tutorial-card {
+  left: 4.2rem;
+  right: 0.6rem;
+}
+
+@media (min-width: 700px) {
+  :root[dir="ltr"] .hud-panel {
+    left: auto;
+    right: 0.5rem;
+  }
+
+  :root[dir="ltr"] .tutorial-card {
+    right: auto;
+    left: 50%;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  :root[dir="ltr"] .hud-panel {
+    left: auto;
+    right: 0.5rem;
+  }
+
+  :root[dir="ltr"] .tutorial-card {
+    right: auto;
+    left: 50%;
+  }
+}
+
+/* Red news ticker: the text slides across its fixed-height strip and repeats. */
+.news-run {
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+.news-run-rtl {
+  animation-name: news-rtl;
+}
+
+.news-run-ltr {
+  animation-name: news-ltr;
+}
+
+@keyframes news-rtl {
+  from {
+    left: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    left: 100%;
+    transform: translateX(0);
+  }
+}
+
+@keyframes news-ltr {
+  from {
+    left: 100%;
+    transform: translateX(0);
+  }
+  to {
+    left: 0;
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .news-run {
+    animation: none;
+    position: static;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-inline: 0.75rem;
+  }
 }

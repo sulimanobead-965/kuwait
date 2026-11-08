@@ -1,0 +1,7 @@
+{
+  "name":"KuwaitCity.Editor",
+  "references":["KuwaitCity.Runtime","Unity.RenderPipelines.Universal.Runtime","Unity.RenderPipelines.Universal.Editor","Unity.Cinemachine","Unity.InputSystem","Unity.ugui"],
+  "includePlatforms":["Editor"],
+  "allowUnsafeCode":false,
+  "autoReferenced":true
+}
