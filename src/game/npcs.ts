@@ -7,7 +7,22 @@
 import type { Sim } from "./sim";
 import { msg, percentSign, t, type Params, bigNum } from "../i18n/index.ts";
 
-export type NpcId = "abufahad" | "umsalem" | "bukhalid" | "sara" | "meshal";
+export type NpcId =
+  | "abufahad"
+  | "umsalem"
+  | "bukhalid"
+  | "sara"
+  | "meshal"
+  | "bubader"
+  | "umfaisal"
+  | "nasser"
+  | "hamad"
+  | "abuyousef"
+  | "noura"
+  | "abuali"
+  | "umkhaled"
+  | "fahad"
+  | "bunasser";
 
 export type NpcDef = {
   id: NpcId;
@@ -121,6 +136,186 @@ export const NPCS: readonly NpcDef[] = [
     ],
     bankDebt: 900_000,
     integrity: 0.3,
+  },
+  {
+    id: "bubader",
+    name: "بو بدر",
+    role: "وكيل سيارات في الري",
+    avatar: "🧔🏻",
+    cash: 1_200_000,
+    growth: 0.025,
+    risk: 0.012,
+    lendRate: 0.15,
+    greet: ["هلا بو فلان، عندي موديلات جديدة", "يا مرحبا، المعرض زحمة اليوم", "أهلاً يا محافظ، تبي سيارة للبلدية؟"],
+    style: "merchant",
+    holdings: [
+      { name: "وكالة بو بدر للسيارات", pct: 75, value: 6_000_000 },
+      { name: "معارض الري", pct: 60, value: 2_500_000 },
+    ],
+    bankDebt: 2_500_000,
+    integrity: 0.15,
+  },
+  {
+    id: "umfaisal",
+    name: "أم فيصل",
+    role: "سيدة أعمال عقار في الجابرية",
+    avatar: "🧕🏻",
+    cash: 800_000,
+    growth: 0.022,
+    risk: 0.008,
+    lendRate: 0.09,
+    greet: ["حياك الله يا ولدي", "هلا والله، شلون الديرة معاك؟", "أهلين، عندي عمارات للإيجار"],
+    style: "warm",
+    holdings: [
+      { name: "عقارات أم فيصل", pct: 90, value: 4_000_000 },
+      { name: "حصة في مجمع الجابرية", pct: 30, value: 1_200_000 },
+    ],
+    bankDebt: 600_000,
+    integrity: 0.04,
+  },
+  {
+    id: "nasser",
+    name: "ناصر",
+    role: "مطوّر عقاري في صباح الأحمد",
+    avatar: "👨🏽‍💼",
+    cash: 700_000,
+    growth: 0.03,
+    risk: 0.02,
+    lendRate: 0.13,
+    greet: ["السلام عليكم، عندنا مخطط جديد", "هلا بالمحافظ، الأرض جاهزة؟", "يا هلا، نبني لك مدينة كاملة"],
+    style: "builder",
+    holdings: [
+      { name: "ناصر للتطوير العقاري", pct: 85, value: 5_500_000 },
+      { name: "مخططات صباح الأحمد", pct: 40, value: 2_000_000 },
+    ],
+    bankDebt: 3_000_000,
+    integrity: 0.2,
+  },
+  {
+    id: "hamad",
+    name: "حمد",
+    role: "مستثمر شاب في المرقاب",
+    avatar: "🧑🏽",
+    cash: 120_000,
+    growth: 0.06,
+    risk: 0.04,
+    lendRate: 0.16,
+    greet: ["هلا! شفت السوق اليوم؟", "مرحبا، عندي ستارت أب واعد", "هاي، خلنا نتكلم أرقام"],
+    style: "young",
+    holdings: [
+      { name: "منصة حمد للحجوزات", pct: 60, value: 700_000 },
+      { name: "مكاتب مشتركة في المرقاب", pct: 50, value: 400_000 },
+    ],
+    bankDebt: 250_000,
+    integrity: 0.12,
+  },
+  {
+    id: "abuyousef",
+    name: "أبو يوسف",
+    role: "تاجر ذهب في المباركية",
+    avatar: "👴🏽",
+    cash: 2_000_000,
+    growth: 0.018,
+    risk: 0.006,
+    lendRate: 0.11,
+    greet: ["حياك الله، الذهب اليوم غالي", "هلا يا محافظ، تفضل قهوة", "يا مرحبا بك في السوق"],
+    style: "merchant",
+    holdings: [
+      { name: "مجوهرات أبو يوسف", pct: 100, value: 3_500_000 },
+      { name: "محلات في المباركية", pct: 70, value: 2_800_000 },
+    ],
+    bankDebt: 300_000,
+    integrity: 0.08,
+  },
+  {
+    id: "noura",
+    name: "نورة",
+    role: "صاحبة مجمعات تجارية في السالمية",
+    avatar: "👩🏽‍💼",
+    cash: 500_000,
+    growth: 0.04,
+    risk: 0.018,
+    lendRate: 0.12,
+    greet: ["هلا! المجمع زحمة الويكند", "مرحبا يا محافظ، عندي توسعة", "أهلاً، الإيجارات طايرة"],
+    style: "young",
+    holdings: [
+      { name: "مجمعات نورة التجارية", pct: 70, value: 4_500_000 },
+      { name: "مطاعم الواجهة البحرية", pct: 45, value: 900_000 },
+    ],
+    bankDebt: 1_800_000,
+    integrity: 0.1,
+  },
+  {
+    id: "abuali",
+    name: "أبو علي",
+    role: "صاحب مصانع في الشعيبة",
+    avatar: "👨🏽‍🏭",
+    cash: 1_000_000,
+    growth: 0.02,
+    risk: 0.015,
+    lendRate: 0.12,
+    greet: ["السلام عليكم، المصنع شغال ٢٤ ساعة", "هلا بالمحافظ، نبي كهرباء أكثر", "يا هلا، الإنتاج زاد"],
+    style: "builder",
+    holdings: [
+      { name: "مصانع أبو علي للحديد", pct: 80, value: 5_000_000 },
+      { name: "مستودعات الشعيبة", pct: 55, value: 1_500_000 },
+    ],
+    bankDebt: 2_200_000,
+    integrity: 0.22,
+  },
+  {
+    id: "umkhaled",
+    name: "أم خالد",
+    role: "مستثمرة فنادق في الشويخ",
+    avatar: "👵🏽",
+    cash: 900_000,
+    growth: 0.02,
+    risk: 0.01,
+    lendRate: 0.1,
+    greet: ["هلا يا ولدي، الفندق مليان", "يا هلا، شخبار الأهل؟", "أهلين، عندي ضيوف من برّا"],
+    style: "warm",
+    holdings: [
+      { name: "فنادق أم خالد", pct: 65, value: 4_200_000 },
+      { name: "شقق فندقية في الشويخ", pct: 50, value: 1_300_000 },
+    ],
+    bankDebt: 1_000_000,
+    integrity: 0.05,
+  },
+  {
+    id: "fahad",
+    name: "فهد",
+    role: "صاحب شركة نقل في الصليبية",
+    avatar: "👨🏽‍✈️",
+    cash: 400_000,
+    growth: 0.025,
+    risk: 0.02,
+    lendRate: 0.14,
+    greet: ["السلام عليكم، الشاحنات على الطريق", "هلا يا محافظ، الطرق تبي توسعة", "مرحبا، عندنا عقود نقل جديدة"],
+    style: "formal",
+    holdings: [
+      { name: "فهد للنقل والخدمات اللوجستية", pct: 75, value: 2_400_000 },
+      { name: "ساحات الصليبية", pct: 60, value: 800_000 },
+    ],
+    bankDebt: 900_000,
+    integrity: 0.18,
+  },
+  {
+    id: "bunasser",
+    name: "بو ناصر",
+    role: "شيخ تجار جبلة",
+    avatar: "👳🏽‍♂️",
+    cash: 3_500_000,
+    growth: 0.015,
+    risk: 0.004,
+    lendRate: 0.08,
+    greet: ["حياك الله يا ابن الديرة", "هلا والله بالمحافظ، نورت المجلس", "السلام عليكم، الديرة بخير إن شاء الله"],
+    style: "formal",
+    holdings: [
+      { name: "مجموعة بو ناصر القابضة", pct: 60, value: 9_000_000 },
+      { name: "أملاك جبلة القديمة", pct: 80, value: 4_000_000 },
+    ],
+    bankDebt: 1_500_000,
+    integrity: 0.03,
   },
 ];
 

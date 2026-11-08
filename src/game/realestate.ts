@@ -596,6 +596,16 @@ export const MERCHANT_COLORS: Record<NpcId, string> = {
   bukhalid: "#a16207",
   sara: "#f472b6",
   meshal: "#1e3a8a",
+  bubader: "#0ea5e9",
+  umfaisal: "#d946ef",
+  nasser: "#16a34a",
+  hamad: "#eab308",
+  abuyousef: "#7f1d1d",
+  noura: "#a3e635",
+  abuali: "#475569",
+  umkhaled: "#fb7185",
+  fahad: "#9a3412",
+  bunasser: "#06b6d4",
 };
 const LISTED_COLOR = "#facc15";
 
