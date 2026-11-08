@@ -113,8 +113,15 @@
 }
 
 .sc-menu {
-  height: 2.75rem;
-  border-radius: 999px;
+  /* Text always stays inside: the button grows to fit two or three lines. */
+  height: auto;
+  min-height: 2.75rem;
+  padding-block: 0.25rem;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: center;
+  border-radius: 1.4rem;
   padding-inline: 0.75rem;
   color: var(--color-sc-mint);
   text-shadow: 0 1px 0 var(--color-sc-ink);
@@ -149,7 +156,13 @@
 
 .sc-lcd {
   display: flex;
-  height: 2.75rem;
+  /* Grows with its text: numbers never spill out of the box. */
+  height: auto;
+  min-height: 2.75rem;
+  overflow-wrap: break-word;
+  text-align: center;
+  line-height: 1.25;
+  padding-block: 0.25rem;
   align-items: center;
   gap: 0.25rem;
   border-radius: 0.5rem;
@@ -1090,4 +1103,10 @@ body {
     text-overflow: ellipsis;
     padding-inline: 0.75rem;
   }
+}
+
+/* The status bar stays one line (it scrolls sideways instead). */
+.hud-status .sc-lcd {
+  white-space: nowrap;
+  overflow-wrap: normal;
 }

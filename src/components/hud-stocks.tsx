@@ -1,6 +1,18 @@
 import { useState } from "react";
 import { TrendingDown, TrendingUp } from "lucide-react";
-import { portfolio, stakeValue, STOCK_IDS, STOCKS, stockDown, type StockId } from "@/game/stocks";
+import {
+  addCompany,
+  answerIpo,
+  delistCompany,
+  portfolio,
+  stakeValue,
+  STOCK_SECTORS,
+  stockDef,
+  stockDown,
+  stockIds,
+  type StockId,
+} from "@/game/stocks";
+import { ownerName } from "@/game/realestate";
 import type { Sim } from "@/game/sim";
 import { NumberField } from "@/components/hud-social";
 import { currency, dirOf, percentSign, t, bigNum, getLang } from "@/i18n";
@@ -32,10 +44,13 @@ export function StockMarket({
   snap,
   onBuy,
   onSell,
+  onAct,
 }: {
   snap: Sim;
   onBuy: (id: StockId, pct: number) => void;
   onSell: (id: StockId, pct: number) => void;
+  /** Listing requests, adding and delisting companies. */
+  onAct?: (deal: (s: Sim) => { ok: boolean; msg?: string }) => void;
 }) {
   const [stake, setStake] = useState<Record<string, number>>({});
   const book = portfolio(snap);
@@ -64,16 +79,18 @@ export function StockMarket({
           </div>
         </div>
       </div>
+      {onAct && <Listings snap={snap} onAct={onAct} />}
       <ul className="space-y-2">
-        {STOCK_IDS.map((id) => {
-          const def = STOCKS[id];
-          const hist = snap.stocks.history[id];
-          const price = snap.stocks.price[id];
+        {stockIds(snap).map((id) => {
+          const def = stockDef(snap, id);
+          const listed = snap.stocks.listed?.[id];
+          const hist = snap.stocks.history[id] ?? [1];
+          const price = snap.stocks.price[id] ?? 1;
           const prev = hist.length > 1 ? hist[hist.length - 2]! : price;
           const change = prev > 0 ? price / prev - 1 : 0;
-          const own = snap.stocks.own[id];
+          const own = snap.stocks.own[id] ?? 0;
           const value = stakeValue(snap, id, own);
-          const paid = snap.stocks.paid[id];
+          const paid = snap.stocks.paid[id] ?? 0;
           const down = stockDown(snap, id);
           const want = stake[id] ?? 5;
           const cost = stakeValue(snap, id, want / 100);
@@ -85,6 +102,14 @@ export function StockMarket({
                   <p className="text-xs opacity-80">
                     {t(def.sector)} · {t("أرباح سنوية {n}٪", { n: pct(def.yield) })}
                   </p>
+                  {listed && (
+                    <p className="text-[11px] opacity-80">
+                      {t("رأس المال {capital} · أُدرجت {by}", {
+                        capital: fmt(listed.capital),
+                        by: listed.founder === "manual" ? t("يدوياً") : t(ownerName(listed.founder)),
+                      })}
+                    </p>
+                  )}
                 </div>
                 <Spark values={hist} up={change >= 0} />
               </div>
@@ -145,10 +170,104 @@ export function StockMarket({
                   {t("بيع")}
                 </button>
               </div>
+              {listed && onAct && (
+                <button type="button" className="mt-1 text-[11px] underline" onClick={() => onAct((s) => delistCompany(s, id))}>
+                  {t("شطب الشركة من السوق")}
+                </button>
+              )}
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/** Merchants' requests to list a company, and adding one by hand. */
+function Listings({ snap, onAct }: { snap: Sim; onAct: (deal: (s: Sim) => { ok: boolean; msg?: string }) => void }) {
+  const ipos = (snap.stocks.ipos ?? []).filter((x) => x.until > snap.day);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [sector, setSector] = useState(STOCK_SECTORS[0]!);
+  const [capital, setCapital] = useState(1_000_000);
+  const [cap, setCap] = useState(2_000_000);
+  return (
+    <div className="space-y-2" data-testid="listings">
+      {ipos.length > 0 && (
+        <div className="rounded-md border-2 border-sc-gold bg-sc-mint p-2 text-xs text-sc-ink" data-testid="ipos">
+          <p className="text-sm font-extrabold">{t("طلبات إدراج شركات ({n})", { n: ipos.length })}</p>
+          {ipos.map((r) => (
+            <div key={r.id} className="mt-1 rounded bg-white/70 p-1.5" data-testid="ipo">
+              <p className="font-bold">{r.name}</p>
+              <p>
+                {t("{sector} · رأس المال {capital} · القيمة {cap} د.ك · من {owner}", {
+                  sector: t(r.sector),
+                  capital: fmt(r.capital),
+                  cap: fmt(r.cap),
+                  owner: t(ownerName(r.founder)),
+                })}
+              </p>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <button type="button" data-testid="ipo-yes" className="sc-menu sc-on text-[11px]" onClick={() => onAct((s) => answerIpo(s, r.id, true))}>
+                  {t("وافق على الإدراج")}
+                </button>
+                <button type="button" className="sc-menu text-[11px]" onClick={() => onAct((s) => answerIpo(s, r.id, false))}>
+                  {t("ارفض")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="rounded-md bg-sc-mint p-2 text-xs text-sc-ink">
+        <button type="button" data-testid="company-add-open" className="sc-menu w-full text-xs" onClick={() => setOpen(!open)}>
+          {open ? t("إخفاء") : t("أضف شركة جديدة للسوق")}
+        </button>
+        {open && (
+          <div className="mt-2 space-y-1">
+            <label className="block font-bold">
+              {t("اسم الشركة")}
+              <input
+                type="text"
+                value={name}
+                maxLength={40}
+                onChange={(e) => setName(e.target.value)}
+                data-testid="company-name"
+                className="mt-0.5 h-10 w-full rounded border-2 border-sc-ink/30 bg-white px-2 text-sm"
+              />
+            </label>
+            <label className="block font-bold">
+              {t("القطاع")}
+              <select
+                value={sector}
+                onChange={(e) => setSector(e.target.value)}
+                className="mt-0.5 h-10 w-full rounded border-2 border-sc-ink/30 bg-white px-1 text-sm"
+              >
+                {STOCK_SECTORS.map((x) => (
+                  <option key={x} value={x}>
+                    {t(x)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-1">
+              <NumberField label={t("رأس المال")} value={capital} onChange={setCapital} testid="company-capital" />
+              <NumberField label={t("القيمة السوقية")} value={cap} onChange={setCap} testid="company-cap" />
+            </div>
+            <button
+              type="button"
+              data-testid="company-add"
+              className="sc-menu sc-on w-full text-xs"
+              onClick={() => {
+                onAct((s) => addCompany(s, name, sector, capital, cap));
+                setName("");
+              }}
+            >
+              {t("أدرج الشركة")}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

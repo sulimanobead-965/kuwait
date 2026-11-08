@@ -415,9 +415,84 @@ export const EVENTS: Record<
   },
 };
 
+// ---------------------------------------------------------------- projects over time
+
+/**
+ * Projects grow with the times: from the old town to the far future each era has its
+ * own names, newer buildings and bigger prices (and bigger effects for events).
+ */
+export function projectTier(s: Sim) {
+  const y = 1961 + Math.floor(s.day / 365);
+  return y < 1990 ? 0 : y < 2030 ? 1 : y < 2100 ? 2 : y < 2300 ? 3 : 4;
+}
+
+/** A project's price today: it grows with the era and with the city. */
+export function projectCost(s: Sim, base: number) {
+  const size = Math.max(1, stats(s).residents / 60_000) ** 0.8;
+  return Math.round(base * size * (1 + projectTier(s) * 0.6));
+}
+
+const MODEL_TIERS: Record<ModelKind, { names: string[]; fillers: Kind[][] }> = {
+  homes: {
+    names: ["ضاحية سكنية نموذجية", "ضاحية سكنية حديثة", "حي سكني ذكي", "مدينة سكنية عمودية", "حي المستقبل المتكامل"],
+    fillers: [
+      ["villa", "villa", "modern", "villa", "apartments"],
+      ["modern", "villa", "modern", "apartments"],
+      ["modern", "apartments", "apartments", "modern"],
+      ["apartments", "apartments", "tower", "modern"],
+      ["apartments", "tower", "apartments", "tower"],
+    ],
+  },
+  market: {
+    names: ["مجمع تجاري نموذجي", "مركز أعمال حديث", "حي مالي ذكي", "مدينة أعمال عمودية", "مركز تجارة عالمي مستقبلي"],
+    fillers: [
+      ["shop", "shop", "shop", "tower"],
+      ["shop", "tower", "shop"],
+      ["tower", "shop", "tower"],
+      ["tower", "tower", "shop"],
+      ["tower"],
+    ],
+  },
+  services: {
+    names: ["مركز خدمات متكامل", "مجمع خدمات حديث", "مركز خدمات ذكي", "مدينة خدمات متكاملة", "مركز خدمات المستقبل"],
+    fillers: [["park"], ["park"], ["park", "school"], ["park", "clinic"], ["park", "school", "clinic"]],
+  },
+};
+
+/** A model area as offered in this era (name and buildings; price from projectCost). */
+export function modelDef(s: Sim, kind: ModelKind) {
+  const tier = projectTier(s);
+  const base = MODEL_AREAS[kind];
+  const tt = MODEL_TIERS[kind];
+  return { ...base, name: tt.names[tier] ?? base.name, filler: tt.fillers[tier] ?? base.filler, cost: projectCost(s, base.cost) };
+}
+
+const EVENT_TIERS: Record<EventKind, string[]> = {
+  football: ["بطولة كرة قدم", "كأس الخليج", "كأس آسيا", "كأس العالم", "بطولة العالم الكبرى"],
+  marathon: ["ماراثون الكورنيش", "ماراثون الكويت الدولي", "الألعاب الآسيوية", "دورة الألعاب الأولمبية", "أولمبياد المستقبل"],
+  festival: ["مهرجان هلا فبراير", "مهرجان التسوق الكبير", "معرض إكسبو", "معرض المدن العالمي", "إكسبو المستقبل"],
+  concert: ["حفلة وطنية", "حفلة نجوم الخليج", "مهرجان موسيقى عالمي", "حفلة عالمية بالهولوغرام", "عرض ضوئي بالدرونات"],
+};
+
+/** An event as held in this era: bigger name, bigger effect (no price: see eventCost). */
+export function eventDef(s: Sim, kind: EventKind) {
+  const tier = projectTier(s);
+  const base = EVENTS[kind];
+  return {
+    ...base,
+    name: EVENT_TIERS[kind][tier] ?? base.name,
+    income: base.income * (1 + tier * 0.15),
+    happy: base.happy + tier,
+    draw: base.draw * (1 + tier * 0.1),
+    fame: base.fame + Math.floor(tier / 2),
+  };
+}
+
+export const eventCost = (s: Sim, kind: EventKind) => projectCost(s, EVENTS[kind].cost);
+
 function activeEvent(s: Sim) {
   if (!s.event || s.day >= s.event.until) return null;
-  const def = EVENTS[s.event.kind];
+  const def = eventDef(s, s.event.kind);
   // A stadium doubles what a football tournament does for the city.
   if (s.event.kind === "football" && s.buildings.some((b) => b.kind === "stadium"))
     return { ...def, income: def.income * 2, happy: def.happy + 6, draw: def.draw * 2 };
@@ -427,11 +502,12 @@ function activeEvent(s: Sim) {
 export function startEvent(s: Sim, kind: EventKind): Act {
   if (activeEvent(s)) return { ok: false, msg: t("في فعالية شغّالة. استنى تخلص") };
   if (crisisOf(s) === "pandemic") return { ok: false, msg: t("الوباء يمنع التجمعات الآن") };
-  const def = EVENTS[kind];
-  if (s.coins < def.cost) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: def.cost }) };
+  const def = eventDef(s, kind);
+  const cost = eventCost(s, kind);
+  if (s.coins < cost) return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: cost }) };
   if (stats(s).residents < 600)
     return { ok: false, msg: t("تحتاج ٦٠٠ ساكن على الأقل لتنظيم فعالية") };
-  s.coins -= def.cost;
+  s.coins -= cost;
   s.event = { kind, until: s.day + def.days };
   s.flags.push(`event:${kind}`);
   pushLog(s, msg("انطلقت: {name}", { name: def.name }));
@@ -580,9 +656,22 @@ export function costIndex(s: Sim) {
   );
 }
 
+/**
+ * The rent market: rents follow property prices and how full the homes are, so the
+ * housing tariff moves by itself month to month (100 = normal).
+ */
+export function rentIndex(s: Sim) {
+  const market = s.estate?.index ?? 1;
+  const full = Math.max(0, Math.min(1, s.occupancy ?? 0.85));
+  return Math.round(Math.max(50, Math.min(300, 100 * (0.5 + 0.5 * market) * (1 + (full - 0.85) * 0.5))));
+}
+
+/** The rent residents are charged: your tariff on top of the rent market. */
+export const housingTariff = (s: Sim) => (s.costs.housing * rentIndex(s)) / 100;
+
 /** What families really feel for rent after the city's housing support (may go below 0). */
 export function effectiveHousing(s: Sim) {
-  return s.costs.housing * (1 - (s.housingAid ?? 0) / 100);
+  return housingTariff(s) * (1 - (s.housingAid ?? 0) / 100);
 }
 
 /**
@@ -590,7 +679,7 @@ export function effectiveHousing(s: Sim) {
  * bill for every resident (based on the rent residents would owe at today's price).
  */
 export function housingAidCost(s: Sim, st = stats(s)) {
-  const rent = st.residents * COST_ITEMS.housing.perResident * (s.costs.housing / 100);
+  const rent = st.residents * COST_ITEMS.housing.perResident * (housingTariff(s) / 100);
   return Math.round(rent * ((s.housingAid ?? 0) / 100));
 }
 
@@ -614,7 +703,7 @@ export function costRevenue(s: Sim, st = stats(s)) {
   const rows = {} as Record<CostKey, number>;
   let total = 0;
   for (const k of COST_KEYS) {
-    const v = Math.round(st.residents * COST_ITEMS[k].perResident * collectedShare(s.costs[k]));
+    const v = Math.round(st.residents * COST_ITEMS[k].perResident * collectedShare(k === "housing" ? housingTariff(s) : s.costs[k]));
     rows[k] = v;
     total += v;
   }
@@ -1077,6 +1166,8 @@ function cloneParts(s: Sim): Sim {
       paid: { ...s.stocks.paid },
       history: { ...s.stocks.history },
       wasDown: { ...s.stocks.wasDown },
+      listed: { ...(s.stocks.listed ?? {}) },
+      ipos: [...(s.stocks.ipos ?? [])],
     },
     board: {
       ...s.board,
@@ -2248,14 +2339,14 @@ export function buyModelArea(
   kind: ModelKind,
   now: number,
 ): { ok: true; c: number; r: number; built: number } | { ok: false; msg: string } {
-  const def = MODEL_AREAS[kind];
+  const def = modelDef(s, kind);
   if (s.coins < def.cost)
     return { ok: false, msg: t("تحتاج {amount} د.ك", { amount: def.cost }) };
   const site = findModelSite(s, def.w, def.h);
   if (!site) return { ok: false, msg: t("ما في أرض فاضية تكفي المشروع") };
   s.coins -= def.cost;
   s.ytd.spend += def.cost;
-  const built = placePackage(s, kind, now, site);
+  const built = placePackage(s, kind, now, site, undefined, def.filler);
   pushLog(s, msg("افتتاح {name}", { name: def.name }));
   return { ok: true, c: site.c + def.w / 2, r: site.r + def.h / 2, built };
 }
@@ -2268,6 +2359,8 @@ export function placePackage(
   at?: { c: number; r: number } | null,
   /** Buildings to put first instead of the package's usual list. */
   planOverride?: Kind[],
+  /** Buildings for the rest of the lots (this era's mix). */
+  fillerOverride?: Kind[],
 ) {
   const def = MODEL_AREAS[kind];
   const site = at ?? findModelSite(s, def.w, def.h);
@@ -2296,7 +2389,8 @@ export function placePackage(
     const plan = [...(planOverride ?? def.plan)];
     let i = 0;
     for (const lot of lots) {
-      const kind2 = plan.shift() ?? def.filler[i++ % def.filler.length]!;
+      const filler = fillerOverride ?? def.filler;
+      const kind2 = plan.shift() ?? filler[i++ % filler.length]!;
       if (placeBuilding(s, kind2, lot.c, lot.r, now).ok) built += 1;
     }
   } finally {
@@ -3126,7 +3220,7 @@ function closeYear(s: Sim) {
 
 function endEvent(s: Sim) {
   if (!s.event || s.day < s.event.until) return;
-  const def = EVENTS[s.event.kind];
+  const def = eventDef(s, s.event.kind);
   s.fame = Math.min(12, (s.fame ?? 0) + def.fame);
   pushLog(s, msg("انتهت {name}. سمعة المنطقة ارتفعت", { name: def.name }));
   s.event = null;

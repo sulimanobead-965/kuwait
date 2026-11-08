@@ -1,6 +1,6 @@
 import { EstatePanel, OwnershipLegend } from "@/components/hud-estate";
-import { expropriateRegions, regionAt, regionCost, regions, regionStats, valueBuyRegions } from "@/game/regions";
-import { buyListing, buyProperty, grantees, listingAt, ownerName, ownerOf, propertyValue, type EstateAct, type OwnershipMode } from "@/game/realestate";
+import { expropriateRegions, regionAt, regionCost, regionStats, valueBuyRegions } from "@/game/regions";
+import { buyListing, buyProperty, listingAt, ownerName, ownerOf, propertyValue, type EstateAct, type OwnershipMode } from "@/game/realestate";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
@@ -46,7 +46,7 @@ import { LAW_DEFS, LAW_KEYS } from "@/game/laws";
 import { murabahaInstallment, type BondOrder, type ProjectOrder } from "@/game/finance";
 import type { NpcId } from "@/game/npcs";
 import { DEVELOPERS, type DeveloperId, type DevelopmentKind } from "@/game/developments";
-import { NPCS, unreadCount } from "@/game/npcs";
+import { unreadCount } from "@/game/npcs";
 import { answerDilemma, dilemmaOf } from "@/game/civic";
 import {
   ApprovalWhy,
@@ -83,6 +83,9 @@ import {
   blockReason,
   disasterBill,
   EVENTS,
+  eventCost,
+  eventDef,
+  modelDef,
   feeRevenue,
   loanInstallment,
   MODEL_AREAS,
@@ -236,6 +239,21 @@ function Laws({
   onOrdinance: (key: keyof Ordinances, value: boolean) => void;
   onLawBudget: (key: keyof Ordinances, patch: Partial<LawBudget>) => void;
 }) {
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<Set<keyof Ordinances>>(new Set());
+  const setMany = (keys: (keyof Ordinances)[], value: boolean) => {
+    for (const k of keys) if (snap.ordinances[k] !== value) onOrdinance(k, value);
+    setPicked(new Set());
+    setPicking(false);
+  };
+  const pick = (k: keyof Ordinances) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const all = LAWS.map((l) => l.key);
   return (
     <div className="space-y-2" dir={dirOf()}>
       <p className="text-xs leading-relaxed">
@@ -250,9 +268,71 @@ function Laws({
           amount: fmt(LAWS.reduce((n, l) => n + lawMonthly(snap, l.key), 0)),
         })}
       </p>
+      <div className="grid grid-cols-3 gap-1" data-testid="laws-bulk">
+        <button type="button" data-testid="laws-all-on" className="sc-menu sc-on text-xs" onClick={() => setMany(all, true)}>
+          {t("فعّل الكل")}
+        </button>
+        <button type="button" data-testid="laws-all-off" className="sc-menu text-xs" onClick={() => setMany(all, false)}>
+          {t("أوقف الكل")}
+        </button>
+        <button
+          type="button"
+          data-testid="laws-pick"
+          aria-pressed={picking}
+          className={`sc-menu text-xs ${picking ? "sc-on" : ""}`}
+          onClick={() => {
+            setPicking(!picking);
+            setPicked(new Set());
+          }}
+        >
+          {picking ? t("إلغاء الاختيار") : t("اختر عدة قوانين")}
+        </button>
+      </div>
+      {picking && (
+        <div className="sticky top-0 z-10 grid grid-cols-3 gap-1 rounded-md bg-sc-mint p-1 shadow">
+          <button
+            type="button"
+            className="text-xs underline"
+            onClick={() => setPicked(picked.size === all.length ? new Set() : new Set(all))}
+          >
+            {picked.size === all.length ? t("إلغاء التحديد") : t("حدد الكل ({n})", { n: all.length })}
+          </button>
+          <button
+            type="button"
+            data-testid="laws-picked-on"
+            disabled={!picked.size}
+            className="sc-menu sc-on text-xs disabled:opacity-40"
+            onClick={() => setMany([...picked], true)}
+          >
+            {t("فعّل المحدد ({n})", { n: picked.size })}
+          </button>
+          <button
+            type="button"
+            disabled={!picked.size}
+            className="sc-menu text-xs disabled:opacity-40"
+            onClick={() => setMany([...picked], false)}
+          >
+            {t("أوقف المحدد ({n})", { n: picked.size })}
+          </button>
+        </div>
+      )}
       <ul className="space-y-2">
         {LAWS.map((law) => {
           const on = snap.ordinances[law.key];
+          if (picking)
+            return (
+              <li key={law.key} data-testid={`law-pick-${law.key}`}>
+                <label
+                  className={`flex w-full items-center gap-2 rounded-md border-2 p-2 text-sc-ink ${picked.has(law.key) ? "border-sc-ink bg-sc-gold/40" : "border-sc-ink/30 bg-sc-mint"}`}
+                >
+                  <input type="checkbox" checked={picked.has(law.key)} onChange={() => pick(law.key)} className="h-5 w-5" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold">{t(law.title)}</span>
+                    <span className="block text-xs opacity-80">{on ? t("مفعّل") : t("غير مفعّل")}</span>
+                  </span>
+                </label>
+              </li>
+            );
           if (!on)
             return (
               <li key={law.key} data-testid={`law-${law.key}`}>
@@ -385,7 +465,6 @@ export function CityHud({
   ownership,
   onOwnership,
   onEstate,
-  onFocusCell,
   onPay,
   onEvent,
   onModel,
@@ -462,8 +541,7 @@ export function CityHud({
   ownership: OwnershipMode | null;
   onOwnership: (mode: OwnershipMode | null) => void;
   onEstate: (deal: (s: Sim) => EstateAct) => void;
-  /** Move the camera to a cell (quick search). */
-  onFocusCell?: (c: number, r: number) => void;
+
   onConsult: () => void;
   onMudaraba: (amount: number, expected: number) => void;
   onMudarabaWithdraw: () => void;
@@ -584,7 +662,6 @@ export function CityHud({
             dir={dir}
           >
             <DilemmaCard snap={snap} onEstate={onEstate} />
-            {onFocusCell && <QuickSearch snap={snap} onFocusCell={onFocusCell} />}
           </div>
         )}
         {snap.started && ownership && (
@@ -872,7 +949,9 @@ export function CityHud({
                   <EstatePanel snap={snap} ownership={ownership} onOwnership={onOwnership} onEstate={onEstate} />
                 )}
                 {panel === "voices" && <Voices snap={snap} />}
-                {panel === "stocks" && <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} />}
+                {panel === "stocks" && (
+                  <StockMarket snap={snap} onBuy={onBuyStock} onSell={onSellStock} onAct={(deal) => onEstate(deal as (s: Sim) => EstateAct)} />
+                )}
                 {panel === "cloud" && <CloudPanel snap={snap} />}
                 {panel === "board" && (
                   <Board
@@ -1961,7 +2040,7 @@ function Projects({
       </p>
       <ul className="space-y-2">
         {(Object.keys(MODEL_AREAS) as ModelKind[]).map((kind) => {
-          const def = MODEL_AREAS[kind];
+          const def = modelDef(snap, kind);
           const poor = snap.coins < def.cost;
           return (
             <li key={kind}>
@@ -1992,14 +2071,14 @@ function Projects({
       {running && (
         <p className="sc-lcd text-sm">
           {t("{name} لين {date}", {
-            name: EVENTS[running.kind].name,
+            name: eventDef(snap, running.kind).name,
             date: formatCityDate(running.until),
           })}
         </p>
       )}
       <ul className="space-y-2">
         {(Object.keys(EVENTS) as EventKind[]).map((kind) => {
-          const def = EVENTS[kind];
+          const def = { ...eventDef(snap, kind), cost: eventCost(snap, kind) };
           const poor = snap.coins < def.cost;
           return (
             <li key={kind}>
@@ -2358,73 +2437,4 @@ function DilemmaCard({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) 
       )}
     </div>
   );
-}
-
-/** Find a region, a merchant or a grantee by name and fly there. */
-function QuickSearch({ snap, onFocusCell }: { snap: Sim; onFocusCell: (c: number, r: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const hits = open && q.trim().length >= 2 ? searchCity(snap, q.trim()) : [];
-  return (
-    <div className="rounded-md bg-sc-mint/95 p-1 text-xs text-sc-ink shadow" data-testid="quick-search">
-      {!open ? (
-        <button type="button" className="flex w-full items-center gap-1 px-1 font-bold" onClick={() => setOpen(true)} data-testid="search-open">
-          🔍 {t("بحث سريع")}
-        </button>
-      ) : (
-        <>
-          <div className="flex gap-1">
-            <input
-              autoFocus
-              type="search"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={t("منطقة أو تاجر أو صاحب منحة")}
-              data-testid="search-input"
-              className="h-9 min-w-0 flex-1 rounded border-2 border-sc-ink/30 bg-white px-2 text-sm"
-            />
-            <button type="button" className="px-2 font-bold" onClick={() => setOpen(false)} aria-label={t("إغلاق")}>
-              ✕
-            </button>
-          </div>
-          {hits.map((h) => (
-            <button
-              key={h.key}
-              type="button"
-              data-testid="search-hit"
-              className="mt-0.5 block w-full rounded bg-white/70 px-2 py-1 text-start"
-              onClick={() => {
-                onFocusCell(h.c, h.r);
-                setOpen(false);
-              }}
-            >
-              {h.label}
-            </button>
-          ))}
-          {q.trim().length >= 2 && !hits.length && <p className="px-1 py-1 opacity-75">{t("ما في نتايج")}</p>}
-        </>
-      )}
-    </div>
-  );
-}
-
-function searchCity(s: Sim, q: string) {
-  const out: { key: string; label: string; c: number; r: number }[] = [];
-  const low = q.toLowerCase();
-  const match = (name: string) => name.includes(q) || t(name).toLowerCase().includes(low);
-  for (const g of regions()) {
-    if (out.length >= 6) break;
-    const base = g.name.replace(/ \d+$/, "");
-    if (match(base) || String(g.id) === q)
-      out.push({ key: `g${g.id}`, label: `${t("منطقة")} ${g.id} · ${t(base)}`, c: (g.c0 + g.c1) / 2, r: (g.r0 + g.r1) / 2 });
-  }
-  const owners = new Map<string, string>();
-  for (const n of NPCS) if (match(n.name)) owners.set(n.id, t(n.name));
-  for (const g of grantees(s)) if (g.name.includes(q)) owners.set(g.id, g.name);
-  for (const [id, label] of owners) {
-    if (out.length >= 10) break;
-    const b = s.buildings.find((x) => ownerOf(s, x) === id);
-    if (b) out.push({ key: id, label: `${label} · ${t("أملاكه")}`, c: b.c, r: b.r });
-  }
-  return out;
 }

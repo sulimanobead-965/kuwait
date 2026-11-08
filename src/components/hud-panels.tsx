@@ -26,6 +26,8 @@ import {
   COST_KEYS,
   COST_MAX,
   costIndex,
+  housingTariff,
+  rentIndex,
   costRevenue,
   CRISES,
   crisisOf,
@@ -142,7 +144,7 @@ export type MoreAction =
   | "language";
 
 /** Shown in the More menu, to tell which published version is open. */
-export const GAME_VERSION = "71";
+export const GAME_VERSION = "72";
 
 export function MoreSheet({
   snap,
@@ -243,6 +245,34 @@ export function MoreSheet({
 
 // ------------------------------------------------------------------ cost of living
 
+/** The rent market: where rents are now and how they moved (they follow property prices). */
+function RentMarket({ snap }: { snap: Sim }) {
+  const now = rentIndex(snap);
+  const hist = (snap.estate?.history ?? []).slice(-24).map((h) => h.index);
+  const charged = Math.round(housingTariff(snap));
+  const lo = Math.min(...hist, 0.4),
+    hi = Math.max(...hist, 1.6);
+  const pts = hist.map((v, i) => `${(i / Math.max(1, hist.length - 1)) * 100},${28 - ((v - lo) / (hi - lo || 1)) * 26}`).join(" ");
+  return (
+    <div className="mt-1 rounded bg-sc-mint p-1.5 font-medium" data-testid="rent-market">
+      <p className="flex justify-between gap-2 font-extrabold">
+        <span>{t("مؤشر الإيجارات في السوق {n}", { n: now })}</span>
+        <span className={now > 120 ? "text-coral" : now < 90 ? "text-sc-leaf" : ""}>
+          {now > 110 ? t("يرتفع") : now < 90 ? t("ينزل") : t("مستقر")}
+        </span>
+      </p>
+      {hist.length > 1 && (
+        <svg viewBox="0 0 100 30" className="mt-1 h-8 w-full" aria-hidden="true" preserveAspectRatio="none">
+          <polyline points={pts} fill="none" stroke="#2f8f4e" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
+      <p className="text-[11px] opacity-80">
+        {t("الإيجار يتحرك كل شهر مع أسعار العقار وامتلاء البيوت. اللي يدفعه الناس فعلاً = نسبتك × مؤشر السوق = {n}٪", { n: charged })}
+      </p>
+    </div>
+  );
+}
+
 export function CostSliders({
   snap,
   onCost,
@@ -292,11 +322,23 @@ export function CostSliders({
         const v = snap.costs[key];
         const set = (n: number) => onCost(key, Math.max(0, Math.min(COST_MAX, Math.round(n))));
         return (
-          <div key={key} className="text-xs font-extrabold">
-            <span className="flex justify-between">
+          <div key={key} className="rounded-md bg-white/50 p-1.5 text-xs font-extrabold">
+            <span className="flex justify-between gap-2">
               <span>{t(COST_ITEMS[key].name)}</span>
-              <span dir="ltr">{t("+{n}/شهر لك", { n: fmt(rev.rows[key]) })}</span>
+              <span>{t("{n} لك بالشهر", { n: `+${fmt(rev.rows[key])}` })}</span>
             </span>
+            {key === "housing" && <RentMarket snap={snap} />}
+            <input
+              type="range"
+              min={0}
+              max={500}
+              step={5}
+              value={Math.min(500, v)}
+              data-testid={`cost-${key}-slider`}
+              aria-label={t(COST_ITEMS[key].name)}
+              onChange={(e) => set(Number(e.target.value))}
+              className="mt-1 h-8 w-full accent-sc-leaf"
+            />
             <span className="mt-0.5 flex items-center gap-1" dir="ltr">
               <button type="button" className="sc-menu px-2 text-xs" onClick={() => set(v / 2)}>
                 ÷2

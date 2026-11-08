@@ -1176,7 +1176,6 @@ export function CityGame() {
           worldRef.current?.setOwnership(mode ? mapColors(simRef.current, mode) : null);
           worldRef.current?.setRegionBorders(mode === "region" || mode === "services" || mode === "density" ? regions() : null);
         }}
-        onFocusCell={(c, r) => worldRef.current?.focus({ c, r }, 40)}
         onEstate={(deal) => {
           const act = deal(simRef.current);
           if (!act.ok) pushToast(act.msg);

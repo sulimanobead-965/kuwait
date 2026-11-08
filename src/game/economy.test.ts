@@ -853,3 +853,30 @@ test("regions take mukhtars and bans; merchants offer projects; decisions have c
   assert.equal(cv.approvalGroups(s).length, 3);
   assert.ok(cv.marketReport(s).deals >= 0);
 });
+
+test("projects change with the era; companies can be listed; rents follow the market", async () => {
+  const sim = await import("./sim.ts");
+  const st = await import("./stocks.ts");
+  const s = town(10);
+  const early = sim.modelDef(s, "homes");
+  s.day += 365 * 200;
+  const later = sim.modelDef(s, "homes");
+  assert.notEqual(early.name, later.name, "a later era offers a newer project");
+  assert.ok(later.cost > early.cost, "and it costs more");
+  assert.notEqual(sim.eventDef(s, "football").name, "بطولة كرة قدم");
+  // A merchant's listing request, approved, then a company added by hand.
+  s.stocks.ipos = [{ id: "ipo1", name: "شركة تجربة", sector: "تقنية", capital: 1000, cap: 5000, founder: "abufahad", until: s.day + 30 }];
+  assert.ok(st.answerIpo(s, "ipo1", true).ok);
+  assert.ok(st.addCompany(s, "شركة يدوية", "طاقة", 2000, 9000).ok);
+  const ids = st.stockIds(s);
+  assert.equal(ids.length, st.STOCK_IDS.length + 2);
+  const mine = ids[ids.length - 1]!;
+  assert.ok(st.buyStock(s, mine, 10).ok || s.coins < 900);
+  st.stockMonth(s, { economic: false, war: false, pandemic: false });
+  assert.ok(s.stocks.history[mine]!.length >= 2, "a new company's price moves too");
+  assert.ok(st.delistCompany(s, mine).ok);
+  // Rents rise with property prices.
+  const base = sim.rentIndex(s);
+  s.estate!.index = 2;
+  assert.ok(sim.rentIndex(s) > base);
+});
