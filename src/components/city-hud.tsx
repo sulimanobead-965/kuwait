@@ -1,6 +1,6 @@
 import { EstatePanel, OwnershipLegend } from "@/components/hud-estate";
-import { expropriateRegions, regionAt, regionCost, regionStats, valueBuyRegions } from "@/game/regions";
-import { buyListing, buyProperty, listingAt, ownerName, ownerOf, propertyValue, type EstateAct, type OwnershipMode } from "@/game/realestate";
+import { expropriateRegions, regionAt, regionCost, regions, regionStats, valueBuyRegions } from "@/game/regions";
+import { buyListing, buyProperty, grantees, listingAt, ownerName, ownerOf, propertyValue, type EstateAct, type OwnershipMode } from "@/game/realestate";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
@@ -46,7 +46,8 @@ import { LAW_DEFS, LAW_KEYS } from "@/game/laws";
 import { murabahaInstallment, type BondOrder, type ProjectOrder } from "@/game/finance";
 import type { NpcId } from "@/game/npcs";
 import { DEVELOPERS, type DeveloperId, type DevelopmentKind } from "@/game/developments";
-import { unreadCount } from "@/game/npcs";
+import { NPCS, unreadCount } from "@/game/npcs";
+import { answerDilemma, dilemmaOf } from "@/game/civic";
 import {
   ApprovalWhy,
   Achievements,
@@ -384,6 +385,7 @@ export function CityHud({
   ownership,
   onOwnership,
   onEstate,
+  onFocusCell,
   onPay,
   onEvent,
   onModel,
@@ -460,6 +462,8 @@ export function CityHud({
   ownership: OwnershipMode | null;
   onOwnership: (mode: OwnershipMode | null) => void;
   onEstate: (deal: (s: Sim) => EstateAct) => void;
+  /** Move the camera to a cell (quick search). */
+  onFocusCell?: (c: number, r: number) => void;
   onConsult: () => void;
   onMudaraba: (amount: number, expected: number) => void;
   onMudarabaWithdraw: () => void;
@@ -574,6 +578,15 @@ export function CityHud({
     <>
       <div className="pointer-events-none absolute inset-0 z-10">
         {snap.started && <WeatherOverlay snap={snap} />}
+        {snap.started && (
+          <div
+            className={`pointer-events-auto absolute left-14 z-10 flex w-[min(17rem,calc(100vw-8.5rem))] flex-col gap-1 ${ownership ? "top-44" : "top-[4.75rem]"}`}
+            dir={dir}
+          >
+            <DilemmaCard snap={snap} onEstate={onEstate} />
+            {onFocusCell && <QuickSearch snap={snap} onFocusCell={onFocusCell} />}
+          </div>
+        )}
         {snap.started && ownership && (
           <div
             className="pointer-events-auto absolute left-1/2 top-2 z-10 w-[min(22rem,70vw)] -translate-x-1/2 rounded-md bg-sc-mint/95 p-2 text-sc-ink shadow"
@@ -2310,4 +2323,108 @@ function RegionLine({ snap, b, onEstate }: { snap: Sim; b: Building; onEstate: (
       )}
     </p>
   );
+}
+
+/** A decision waiting for the governor: two choices, each with its consequences. */
+function DilemmaCard({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const d = dilemmaOf(snap);
+  const [open, setOpen] = useState(false);
+  if (!d) return null;
+  return (
+    <div className="rounded-md border-2 border-sc-gold bg-sc-mint/95 p-2 text-xs text-sc-ink shadow" data-testid="dilemma">
+      <button type="button" className="w-full text-start font-extrabold" onClick={() => setOpen(!open)} data-testid="dilemma-open">
+        ⚖️ {t("قرار مطلوب")}: {t(d.title)}
+      </button>
+      {open && (
+        <>
+          <p className="mt-1 leading-relaxed">{t(d.text)}</p>
+          <div className="mt-1 grid grid-cols-2 gap-1">
+            {d.choices.map((c, i) => (
+              <button
+                key={c.label}
+                type="button"
+                data-testid={`dilemma-${i}`}
+                className="sc-menu h-auto min-h-9 py-1 text-[11px] leading-tight"
+                onClick={() => {
+                  setOpen(false);
+                  onEstate((s) => answerDilemma(s, i as 0 | 1));
+                }}
+              >
+                {t(c.label)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Find a region, a merchant or a grantee by name and fly there. */
+function QuickSearch({ snap, onFocusCell }: { snap: Sim; onFocusCell: (c: number, r: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const hits = open && q.trim().length >= 2 ? searchCity(snap, q.trim()) : [];
+  return (
+    <div className="rounded-md bg-sc-mint/95 p-1 text-xs text-sc-ink shadow" data-testid="quick-search">
+      {!open ? (
+        <button type="button" className="flex w-full items-center gap-1 px-1 font-bold" onClick={() => setOpen(true)} data-testid="search-open">
+          🔍 {t("بحث سريع")}
+        </button>
+      ) : (
+        <>
+          <div className="flex gap-1">
+            <input
+              autoFocus
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={t("منطقة أو تاجر أو صاحب منحة")}
+              data-testid="search-input"
+              className="h-9 min-w-0 flex-1 rounded border-2 border-sc-ink/30 bg-white px-2 text-sm"
+            />
+            <button type="button" className="px-2 font-bold" onClick={() => setOpen(false)} aria-label={t("إغلاق")}>
+              ✕
+            </button>
+          </div>
+          {hits.map((h) => (
+            <button
+              key={h.key}
+              type="button"
+              data-testid="search-hit"
+              className="mt-0.5 block w-full rounded bg-white/70 px-2 py-1 text-start"
+              onClick={() => {
+                onFocusCell(h.c, h.r);
+                setOpen(false);
+              }}
+            >
+              {h.label}
+            </button>
+          ))}
+          {q.trim().length >= 2 && !hits.length && <p className="px-1 py-1 opacity-75">{t("ما في نتايج")}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function searchCity(s: Sim, q: string) {
+  const out: { key: string; label: string; c: number; r: number }[] = [];
+  const low = q.toLowerCase();
+  const match = (name: string) => name.includes(q) || t(name).toLowerCase().includes(low);
+  for (const g of regions()) {
+    if (out.length >= 6) break;
+    const base = g.name.replace(/ \d+$/, "");
+    if (match(base) || String(g.id) === q)
+      out.push({ key: `g${g.id}`, label: `${t("منطقة")} ${g.id} · ${t(base)}`, c: (g.c0 + g.c1) / 2, r: (g.r0 + g.r1) / 2 });
+  }
+  const owners = new Map<string, string>();
+  for (const n of NPCS) if (match(n.name)) owners.set(n.id, t(n.name));
+  for (const g of grantees(s)) if (g.name.includes(q)) owners.set(g.id, g.name);
+  for (const [id, label] of owners) {
+    if (out.length >= 10) break;
+    const b = s.buildings.find((x) => ownerOf(s, x) === id);
+    if (b) out.push({ key: id, label: `${label} · ${t("أملاكه")}`, c: b.c, r: b.r });
+  }
+  return out;
 }

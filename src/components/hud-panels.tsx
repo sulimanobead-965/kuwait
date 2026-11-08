@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { approvalGroups } from "@/game/civic";
 import {
   Award,
   Building2,
@@ -1368,6 +1369,17 @@ export function ApprovalWhy({ snap }: { snap: Sim }) {
           {t("الرضا الحقيقي {n}٪، والمؤشر ما ينزل تحت ٦٪: عالج الأسباب الحمراء أولاً عشان يبين أثر أي تحسين.", { n: raw })}
         </p>
       )}
+      <div className="mt-1 grid grid-cols-3 gap-1 text-center text-xs" data-testid="approval-groups">
+        {approvalGroups(snap).map((g) => (
+          <div key={g.id} className="rounded bg-white/70 p-1">
+            <p className="font-bold">{t(g.name)}</p>
+            <p dir="ltr" className={`text-sm font-extrabold ${g.value < 40 ? "text-coral" : "text-sc-leaf"}`}>
+              {g.value}%
+            </p>
+            {g.note && <p className="text-[10px] leading-tight opacity-80">{t(g.note)}</p>}
+          </div>
+        ))}
+      </div>
       <p className="mt-1 text-xs opacity-80">{t("يبدأ من ٥٢ وتضيف عليه أو تنقص منه هذه الأسباب:")}</p>
       <ul className="mt-1 space-y-0.5 text-xs">
         {list.map(([label, n]) => (

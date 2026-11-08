@@ -797,3 +797,59 @@ test("land grants have no limit and can go to a named person or a merchant", asy
     else globalThis.localStorage = original;
   }
 });
+
+test("empty land grants are held, built on or returned, and can be revoked", async () => {
+  const re = await import("./realestate.ts");
+  const cv = await import("./civic.ts");
+  const { cellTaken } = await import("./sim.ts");
+  const s = town(10);
+  const who = re.personId("مريم");
+  const r = re.grantPlots(s, 20, who, "homes", { empty: true, months: 2 });
+  assert.ok(r.ok);
+  const keys = Object.keys(s.estate!.plots);
+  assert.equal(keys.length, 20, "each empty plot is on file");
+  const [c, rr] = keys[0]!.split(",").map(Number) as [number, number];
+  assert.ok(cellTaken(s, c, rr), "an empty plot is held: nobody else builds there");
+  // Some get built on; past the deadline the rest go back.
+  cv.civicMonth(s, () => 0.01);
+  const built = s.buildings.filter((b) => re.ownerOf(s, b) === who).length;
+  assert.ok(built > 0, "the grantee builds on the land");
+  re.grantPlots(s, 5, who, "homes", { empty: true, months: 1 });
+  s.day += 40;
+  cv.civicMonth(s, () => 0.99);
+  assert.equal(cv.plotsOf(s, who), 0, "unbuilt land past its deadline returns to the state");
+  assert.ok(cv.granteeRecord(s, who).lots > 0);
+  assert.ok(cv.revokeGrants(s, who).ok);
+  assert.equal(s.buildings.filter((b) => re.ownerOf(s, b) === who).length, 0);
+});
+
+test("regions take mukhtars and bans; merchants offer projects; decisions have choices", async () => {
+  const re = await import("./realestate.ts");
+  const cv = await import("./civic.ts");
+  const { placeBuilding } = await import("./sim.ts");
+  const { regionAt } = await import("./region-map.ts");
+  const s = town(10);
+  assert.ok(cv.appointMukhtar(s, 5, "بو صالح").ok);
+  assert.ok(cv.civicMood(s).some(([l]) => l === "المخاتير"));
+  // A ban stops that kind of building in the region.
+  const lot = re.grantPlots(s, 1, "people", "homes", { empty: true }).ok ? Object.keys(s.estate!.plots)[0]! : "";
+  const [c, r] = lot.split(",").map(Number) as [number, number];
+  delete s.estate!.plots[lot];
+  const region = regionAt(c, r);
+  cv.toggleBan(s, region, "tower");
+  s.coins += 1e9;
+  assert.equal(placeBuilding(s, "tower", c, r, 0).ok, false, "banned here");
+  cv.toggleBan(s, region, "tower");
+  // A merchant's offer: accepted, money in, land out.
+  s.estate!.proposals.push({ id: 999, merchant: "abufahad", project: "shop", plots: 3, pay: 5000, until: s.day + 30 });
+  const before = s.coins;
+  assert.ok(cv.answerProposal(s, 999, true).ok);
+  assert.ok(s.coins >= before + 5000 - 1);
+  // A decision.
+  s.estate!.dilemma = { id: "rent", until: s.day + 30 };
+  assert.ok(cv.dilemmaOf(s));
+  assert.ok(cv.answerDilemma(s, 1).ok);
+  assert.equal(cv.dilemmaOf(s), null);
+  assert.equal(cv.approvalGroups(s).length, 3);
+  assert.ok(cv.marketReport(s).deals >= 0);
+});

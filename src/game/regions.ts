@@ -14,8 +14,6 @@
  * leaving roads and public services).
  */
 import { CATALOG } from "./catalog";
-import { COLS, ROWS } from "./land";
-import { lonLatToCell, PLACES } from "./places";
 import { msg, t } from "@/i18n";
 import {
   estateOf,
@@ -31,105 +29,11 @@ import {
   type EstateAct,
   type OwnerId,
 } from "./realestate";
-import { homesPerLevel, isLand, pushLog, RESIDENTS_PER_UNIT, stats, type Building, type Sim } from "./sim";
+import { homesPerLevel, pushLog, RESIDENTS_PER_UNIT, stats, type Building, type Sim } from "./sim";
 
-export type Region = { id: number; name: string; c0: number; c1: number; r0: number; r1: number; land: number };
-
-let built: { regions: Region[]; colStrip: Int16Array; stripRows: Int32Array[] } | null = null;
-
-/** The 100 regions (worked out once from the land map). */
-export function regions(): Region[] {
-  return layout().regions;
-}
-
-function layout() {
-  if (built) return built;
-  // Land per column, then ten strips of equal land.
-  const perCol = new Int32Array(COLS);
-  let total = 0;
-  for (let c = 0; c < COLS; c += 1)
-    for (let r = 0; r < ROWS; r += 1)
-      if (isLand(c, r)) {
-        perCol[c] += 1;
-        total += 1;
-      }
-  const strips: [number, number][] = [];
-  let start = 0;
-  let acc = 0;
-  for (let c = 0; c < COLS; c += 1) {
-    acc += perCol[c]!;
-    const want = (total * (strips.length + 1)) / 10;
-    if ((acc >= want && strips.length < 9) || c === COLS - 1) {
-      strips.push([start, c]);
-      start = c + 1;
-    }
-  }
-  const colStrip = new Int16Array(COLS);
-  const stripRows: Int32Array[] = [];
-  const out: Region[] = [];
-  strips.forEach(([c0, c1], si) => {
-    for (let c = c0; c <= c1; c += 1) colStrip[c] = si;
-    // Land per row inside the strip, then ten pieces of equal land.
-    const perRow = new Int32Array(ROWS);
-    let land = 0;
-    for (let r = 0; r < ROWS; r += 1)
-      for (let c = c0; c <= c1; c += 1)
-        if (isLand(c, r)) {
-          perRow[r] += 1;
-          land += 1;
-        }
-    const cuts = new Int32Array(10);
-    let from = 0;
-    let sum = 0;
-    let pieces = 0;
-    for (let r = 0; r < ROWS; r += 1) {
-      sum += perRow[r]!;
-      const want = (land * (pieces + 1)) / 10;
-      if ((sum >= want && pieces < 9) || r === ROWS - 1) {
-        let here = 0;
-        for (let y = from; y <= r; y += 1) here += perRow[y]!;
-        out.push({ id: out.length + 1, name: "", c0, c1, r0: from, r1: r, land: here });
-        cuts[pieces] = r;
-        pieces += 1;
-        from = r + 1;
-      }
-    }
-    stripRows.push(cuts);
-  });
-  // Names: the nearest real place, "٢" etc. when a name is used twice.
-  const anchors = PLACES.filter((p) => !p.major || p.name === "مدينة الكويت" || p.name === "جزيرة بوبيان").map((p) => ({ name: p.name, ...lonLatToCell(p.lon, p.lat) }));
-  const used = new Map<string, number>();
-  for (const g of out) {
-    const mc = (g.c0 + g.c1) / 2;
-    const mr = (g.r0 + g.r1) / 2;
-    let best = anchors[0]!;
-    let bd = Infinity;
-    for (const a of anchors) {
-      const inside = a.c >= g.c0 && a.c <= g.c1 && a.r >= g.r0 && a.r <= g.r1;
-      const d = Math.hypot(a.c - mc, a.r - mr) - (inside ? 1e6 : 0);
-      if (d < bd) {
-        bd = d;
-        best = a;
-      }
-    }
-    const n = (used.get(best.name) ?? 0) + 1;
-    used.set(best.name, n);
-    g.name = n === 1 ? best.name : `${best.name} ${n}`;
-  }
-  built = { regions: out, colStrip, stripRows };
-  return built;
-}
-
-/** The region (1–100) a cell belongs to. */
-export function regionAt(c: number, r: number) {
-  const L = layout();
-  const cc = Math.max(0, Math.min(COLS - 1, Math.floor(c)));
-  const si = L.colStrip[cc]!;
-  const cuts = L.stripRows[si]!;
-  let p = 0;
-  while (p < 9 && r > cuts[p]!) p += 1;
-  return si * 10 + p + 1;
-}
+export { regionAt, regions, type Region } from "./region-map";
+import { regionServices } from "./civic";
+import { regionAt, regions } from "./region-map";
 
 export type RegionStats = {
   id: number;
@@ -344,3 +248,23 @@ export function regionLeaders(s: Sim) {
   return [...count].sort((a, b) => b[1] - a[1]).map(([owner, n]) => ({ owner, n, name: ownerName(owner) }));
 }
 
+
+/** Green (good) → red (bad), for 0–1. */
+function scale(v: number) {
+  const x = Math.max(0, Math.min(1, v));
+  const r = Math.round(x < 0.5 ? 250 : 250 - (x - 0.5) * 2 * 190);
+  const g = Math.round(x < 0.5 ? 30 + x * 2 * 170 : 200);
+  return `rgb(${r},${g},60)`;
+}
+
+/** Every building coloured by its region's service coverage or crowding. */
+export function regionHeatColors(s: Sim, which: "services" | "density") {
+  const rows = regionServices(s);
+  const maxD = Math.max(1e-9, ...rows.map((r) => r.density));
+  const out = new Map<string, string>();
+  for (const b of s.buildings) {
+    const row = rows[regionAt(b.c, b.r) - 1]!;
+    out.set(b.id, scale(which === "services" ? row.services : 1 - row.density / maxD));
+  }
+  return out;
+}

@@ -7,6 +7,8 @@ import {
   loadFinance,
   type FinanceState,
 } from "./finance";
+import { regionAt } from "./region-map";
+import { civicMonth, civicMood } from "./civic";
 import { cloneEstate, emptyEstate, estateMonth, estateMood, forgetLots, loadEstate, type Estate } from "./realestate";
 import { builderMonth, emptyBuilder, freeLot, loadBuilder, type BuilderState } from "./builder";
 import { LAW_DEFS, LAW_KEYS, type LawEffects, type LawKey } from "./laws";
@@ -1401,6 +1403,7 @@ function computeStats(s: Sim): CityStats {
   add("الشهرة", Math.min(12, s.fame ?? 0));
   add("التبرعات", charityMood(s));
   for (const [label, n] of estateMood(s)) add(label, n);
+  for (const [label, n] of civicMood(s)) add(label, n);
   const rawHappy = Math.round(happy);
   happy = clamp(rawHappy, 6, 100);
   const utilP = powerUse === 0 || grace ? 1 : Math.min(1, powerGive / powerUse);
@@ -1488,7 +1491,8 @@ export function cellTaken(s: Sim, c: number, r: number) {
   const ix = cityIndex(s);
   const k = cellKey(c, r);
   // The island is off-limits until a bridge links it to the mainland.
-  return ix.roads.has(k) || ix.lots.has(k) || !islandOpen(s, c, r);
+  // Granted empty plots are held for their owners.
+  return ix.roads.has(k) || ix.lots.has(k) || !!s.estate?.plots?.[k] || !islandOpen(s, c, r);
 }
 
 /** A road cell laid over the sea: a bridge. */
@@ -1820,6 +1824,9 @@ export function placeBuilding(s: Sim, kind: Kind, c: number, r: number, now: num
   if (cellTaken(s, c, r)) {
     return { ok: false, msg: t("الأرض مشغولة") };
   }
+  const bans = s.estate?.bans;
+  if (bans && bans[regionAt(c, r)]?.includes(kind))
+    return { ok: false, msg: t("{name} ممنوع في هذه المنطقة", { name: t(CATALOG[kind].name) }) };
   if (CATALOG[kind].needsCoast && !coastal(c, r))
     return {
       ok: false,
@@ -2967,8 +2974,16 @@ export function pushLog(s: Sim, text: string) {
 export function advanceDays(s: Sim, days: number) {
   if (days <= 0) return;
   const before = Math.floor(s.day / 30);
+  const midBefore = Math.floor((s.day + 15) / 30);
   s.day += days;
   const after = Math.floor(s.day / 30);
+  // The property market and the merchants work mid-month, so the month's end is not
+  // one long pause in a big city (at top speed a day passes every frame).
+  for (let m = midBefore + 1; m <= Math.floor((s.day + 15) / 30); m += 1) {
+    estateMonth(s);
+    civicMonth(s);
+    for (const line of npcMonth(s)) pushLog(s, line);
+  }
   if (s.disaster && s.day >= s.disaster.until) {
     pushLog(s, msg("انتهت الكارثة. المدينة تلمّ جراحها"));
     s.disaster = null;
@@ -3018,13 +3033,11 @@ export function advanceDays(s: Sim, days: number) {
     });
     stockMonth(s, { economic: crisis === "economic", war: crisis === "war", pandemic: crisis === "pandemic" });
     developmentMonth(s);
-    estateMonth(s);
     // News only when the construction advisor actually built something (not the
     // monthly "the budget did not cover any work" note).
     const worksBefore = s.builder.works;
     const works = builderMonth(s, 3 * (monthlyUpkeep(s) + projectMoney(s).upkeep));
     if (works && s.builder.works > worksBefore) pushLog(s, msg("مستشار البناء: {works}", { works }));
-    for (const line of npcMonth(s)) pushLog(s, line);
     boardMonth(s);
     residentsSpeak(s);
     // A deficit is covered from the bank deposit first (enough for three more months

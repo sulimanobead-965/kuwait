@@ -1085,9 +1085,20 @@ export class CityWorld {
     const col = new THREE.Color();
     let i = 0;
     for (const [id, hex] of colors) {
-      const rec = this.records.get(id);
-      if (!rec) continue;
-      m.makeTranslation(rec.x, LAND_HEIGHT + 0.05, rec.z);
+      let x: number, z: number;
+      if (id.startsWith("@")) {
+        // An empty lot ("@c,r"): granted land not built yet.
+        const comma = id.indexOf(",");
+        const at = cellWorld(Number(id.slice(1, comma)), Number(id.slice(comma + 1)));
+        x = at.x;
+        z = at.z;
+      } else {
+        const rec = this.records.get(id);
+        if (!rec) continue;
+        x = rec.x;
+        z = rec.z;
+      }
+      m.makeTranslation(x, LAND_HEIGHT + 0.05, z);
       mesh.setMatrixAt(i, m);
       mesh.setColorAt(i, col.set(hex));
       i += 1;

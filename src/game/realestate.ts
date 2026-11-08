@@ -123,7 +123,21 @@ export type Estate = {
   /** Anger at under-compensated expropriations: approval points, until a game day. */
   grievance: { mood: number; until: number };
   requests: OfferRequest[];
+  /** Empty land granted and not built yet: lot → grantee, use and build-by day (0 = no limit). */
+  plots: Record<string, { owner: OwnerId; kind: Kind; until: number; since: number }>;
+  /** Families waiting for a housing plot. */
+  waitlist: number;
+  /** A mukhtar appointed for an administrative region: region id → name. */
+  mukhtars: Record<string, string>;
+  /** Building kinds banned in a region: region id → kinds. */
+  bans: Record<string, Kind[]>;
+  /** Merchants' offers: a project for state land. */
+  proposals: Proposal[];
+  /** A decision the governor has to take, until a game day. */
+  dilemma: { id: string; until: number } | null;
 };
+
+export type Proposal = { id: number; merchant: NpcId; project: Kind; plots: number; pay: number; until: number };
 
 export const emptyEstate = (): Estate => ({
   owners: {},
@@ -147,6 +161,12 @@ export const emptyEstate = (): Estate => ({
   landTaxTotal: 0,
   grievance: { mood: 0, until: 0 },
   requests: [],
+  plots: {},
+  waitlist: 0,
+  mukhtars: {},
+  bans: {},
+  proposals: [],
+  dilemma: null,
 });
 
 /** Kinds that are always public land: services, utilities, state landmarks, transport. */
@@ -265,12 +285,19 @@ export function propertyValue(s: Sim, b: Building) {
 /** Monthly rent a property earns: 0.6% of its value. */
 export const rentOf = (s: Sim, b: Building) => Math.round(propertyValue(s, b) * 0.006);
 
-function record(s: Sim, tr: Omit<Trade, "day">) {
+export function record(s: Sim, tr: Omit<Trade, "day">) {
   const e = estateOf(s);
   e.trades = [...e.trades, { day: s.day, ...tr }].slice(-80);
 }
 
-function npcState(s: Sim, id: OwnerId) {
+/** Merchants angry with you ask more when they sell to anyone. */
+export function angerMarkup(s: Sim, id: OwnerId) {
+  const n = npcState(s, id);
+  if (!n) return 1;
+  return n.trust < 20 ? 1.3 : n.trust < 40 ? 1.15 : 1;
+}
+
+export function npcState(s: Sim, id: OwnerId) {
   return id === "state" || id === "people" ? null : s.npcs.find((n) => n.id === id) ?? null;
 }
 
@@ -291,7 +318,7 @@ function pay(s: Sim, from: OwnerId, to: OwnerId, amount: number) {
   }
 }
 
-function setOwner(s: Sim, b: Building, to: OwnerId) {
+export function setOwner(s: Sim, b: Building, to: OwnerId) {
   const e = estateOf(s);
   const k = lotKey(b);
   // In place: copying the whole record for each of thousands of bulk deals was slow.
@@ -395,8 +422,18 @@ export const GRANT_USES: { id: GrantUse; name: string; kind: Kind }[] = [
 ];
 export type GrantUse = "homes" | "investment" | "commercial" | "industrial";
 
-export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: GrantUse = "homes"): EstateAct {
+export function grantPlots(
+  s: Sim,
+  count: number,
+  to: OwnerId = "people",
+  use: GrantUse = "homes",
+  opts: { empty?: boolean; months?: number } = {},
+): EstateAct {
   count = Math.max(1, Math.round(count));
+  const e = estateOf(s);
+  const empty = !!opts.empty;
+  const until = empty && (opts.months ?? 0) > 0 ? s.day + Math.round(opts.months!) * 30 : 0;
+  let lastKey = "";
   const kind = (GRANT_USES.find((u) => u.id === use) ?? GRANT_USES[0]!).kind;
   const useName = (GRANT_USES.find((u) => u.id === use) ?? GRANT_USES[0]!).name;
   if (to === "state") return { ok: false, msg: t("اختر من تمنحه") };
@@ -405,6 +442,14 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: G
   const price = priceOf(CATALOG[kind].cost, s);
   // The grantee builds on the land: the state gives the land only.
   const put = (c: number, r: number) => {
+    if (empty) {
+      // Empty land: held for the grantee, who builds on it later (or loses it).
+      const k = `${c},${r}`;
+      e.plots[k] = { owner: to, kind, until, since: s.day };
+      lastKey = k;
+      done += 1;
+      return true;
+    }
     s.coins += price;
     const before = s.buildings.length;
     if (!placeBuilding(s, kind, c, r, 0).ok) {
@@ -430,6 +475,7 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: G
     const sites = findBlockSites(s, def.w, def.h, Math.min(need, 400));
     if (!sites.length) break;
     const start = done;
+    const cleared = new Set<Building>();
     for (const site of sites) {
       if (done >= count) break;
       const before = s.buildings.length;
@@ -437,22 +483,41 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: G
       const added = s.buildings.slice(before);
       // Keep only as many buildings as plots granted; the rest stays empty land.
       const keep = added.filter((b) => b.kind === kind).slice(0, count - done);
-      if (keep.length < added.length) {
-        const drop = new Set(added.filter((b) => !keep.includes(b)));
-        s.buildings = s.buildings.filter((b) => !drop.has(b));
+      if (empty) {
+        // The block's streets stay; its plots are handed over as empty land.
+        for (const b of added) cleared.add(b);
+        for (const b of keep) {
+          lastKey = `${b.c},${b.r}`;
+          e.plots[lastKey] = { owner: to, kind, until, since: s.day };
+        }
+      } else {
+        if (keep.length < added.length) {
+          const drop = new Set(added.filter((b) => !keep.includes(b)));
+          s.buildings = s.buildings.filter((b) => !drop.has(b));
+        }
+        for (const b of keep) setOwner(s, b, to);
       }
-      for (const b of keep) setOwner(s, b, to);
       done += keep.length;
     }
+    if (cleared.size) s.buildings = s.buildings.filter((b) => !cleared.has(b));
     if (done === start) break;
   }
   if (!done) return { ok: false, msg: t("ما في أرض فاضية بجانب الطرق") };
-  const last = s.buildings[s.buildings.length - 1]!;
-  record(s, { id: lotKey(last), kind: last.kind, from: "state", to, price: 0, type: "grant" });
-  // Grants to citizens please people; to a merchant they do not.
+  const last = s.buildings[s.buildings.length - 1];
+  record(s, { id: empty || !last ? lastKey : lotKey(last), kind, from: "state", to, price: 0, type: "grant" });
+  // Grants to citizens please people and shorten the housing queue; a merchant is
+  // pleased with you instead.
   if (!isMerchant(to)) s.fame = Math.min(12, (s.fame ?? 0) + Math.min(2, done * 0.05));
-  const entry =
-    to === "people"
+  else {
+    const n = npcState(s, to);
+    if (n) n.trust = Math.min(100, n.trust + Math.min(10, 2 + done / 20));
+  }
+  if (use === "homes" && !isMerchant(to)) e.waitlist = Math.max(0, (e.waitlist ?? 0) - done);
+  const entry = empty
+    ? to === "people"
+      ? msg("منح {n} أرض فضاء {use} للمواطنين من أراضي الدولة", { n: done, use: useName })
+      : msg("منح {n} أرض فضاء {use} لـ {owner} من أراضي الدولة", { n: done, use: useName, owner: ownerName(to) })
+    : to === "people"
       ? msg("منح {n} قسيمة {use} للمواطنين من أراضي الدولة", { n: done, use: useName })
       : msg("منح {n} قسيمة {use} لـ {owner} من أراضي الدولة", { n: done, use: useName, owner: ownerName(to) });
   pushLog(s, entry);
@@ -463,7 +528,7 @@ export function grantPlots(s: Sim, count: number, to: OwnerId = "people", use: G
 const granteeMemo = new WeakMap<Estate, { sig: string; list: { id: OwnerId; name: string; lots: number }[] }>();
 export function grantees(s: Sim) {
   const e = estateOf(s);
-  const sig = `${e.trades.length}:${e.trades[0]?.day}:${e.trades.at(-1)?.day}:${e.trades.at(-1)?.id}:${e.count}:${Math.floor(s.day / 30)}`;
+  const sig = `${Object.keys(e.plots ?? {}).length}:${e.trades.length}:${e.trades[0]?.day}:${e.trades.at(-1)?.day}:${e.trades.at(-1)?.id}:${e.count}:${Math.floor(s.day / 30)}`;
   const hit = granteeMemo.get(e);
   if (hit && hit.sig === sig) return hit.list;
   const list = granteesOf(e);
@@ -474,6 +539,7 @@ export function grantees(s: Sim) {
 function granteesOf(e: Estate) {
   const count = new Map<string, number>();
   for (const o of Object.values(e.owners)) if (isPerson(o)) count.set(o, (count.get(o) ?? 0) + 1);
+  for (const p of Object.values(e.plots ?? {})) if (isPerson(p.owner)) count.set(p.owner, (count.get(p.owner) ?? 0) + 1);
   for (const tr of e.trades) if (isPerson(tr.to) && !count.has(tr.to)) count.set(tr.to, 0);
   return [...count].map(([id, n]) => ({ id: id as OwnerId, name: id.slice(2), lots: n })).sort((a, b) => b.lots - a.lots);
 }
@@ -667,7 +733,7 @@ export function landSplit(s: Sim) {
 }
 
 /** The ownership map: one colour per building lot (allocation plots stand out). */
-export type OwnershipMode = "owner" | "merchant" | "price" | "region";
+export type OwnershipMode = "owner" | "merchant" | "price" | "region" | "services" | "density";
 
 /** Each merchant's own colour on the map (by-merchant mode). */
 export const MERCHANT_COLORS: Record<NpcId, string> = {
@@ -723,6 +789,10 @@ export function ownershipColors(s: Sim, mode: OwnershipMode = "owner"): Map<stri
     else c = mode === "merchant" ? MERCHANT_COLORS[o] : OWNER_COLORS.merchant!;
     out.set(b.id, c);
   }
+  // Granted empty land, held for its owner (drawn on its lot: "@c,r").
+  if (mode !== "price")
+    for (const [k, p] of Object.entries(e.plots ?? {}))
+      out.set(`@${k}`, p.owner === "people" || isPerson(p.owner) ? OWNER_COLORS.people! : mode === "merchant" && isMerchant(p.owner) ? MERCHANT_COLORS[p.owner] : OWNER_COLORS.merchant!);
   return out;
 }
 
@@ -793,6 +863,24 @@ export function loadEstate(raw: unknown): Estate {
     e.requests = p.requests
       .filter((x) => x && (x.kind === "any" || x.kind in CATALOG))
       .map((x) => ({ id: num(x.id), kind: x.kind, count: Math.max(1, num(x.count, 1)), maxPct: num(x.maxPct, 100), until: num(x.until), got: num(x.got) }));
+  if (p.plots && typeof p.plots === "object")
+    for (const [k, v] of Object.entries(p.plots))
+      if (v && valid(v.owner) && v.kind in CATALOG)
+        e.plots[k] = { owner: v.owner, kind: v.kind, until: num(v.until), since: num(v.since) };
+  e.waitlist = Math.max(0, Math.round(num(p.waitlist)));
+  if (p.mukhtars && typeof p.mukhtars === "object")
+    for (const [k, v] of Object.entries(p.mukhtars)) if (typeof v === "string" && v.trim()) e.mukhtars[k] = v.slice(0, 40);
+  if (p.bans && typeof p.bans === "object")
+    for (const [k, v] of Object.entries(p.bans))
+      if (Array.isArray(v)) {
+        const kinds = v.filter((x) => typeof x === "string" && x in CATALOG) as Kind[];
+        if (kinds.length) e.bans[k] = kinds;
+      }
+  if (Array.isArray(p.proposals))
+    e.proposals = p.proposals
+      .filter((x) => x && NPCS.some((n) => n.id === x.merchant) && x.project in CATALOG)
+      .map((x) => ({ id: num(x.id), merchant: x.merchant, project: x.project, plots: Math.max(1, num(x.plots, 1)), pay: Math.max(0, num(x.pay)), until: num(x.until) }));
+  e.dilemma = p.dilemma && typeof p.dilemma === "object" && typeof p.dilemma.id === "string" ? { id: p.dilemma.id, until: num(p.dilemma.until) } : null;
   e.volume = Math.max(0, num(p.volume));
   e.count = Math.max(0, num(p.count));
   e.nextId = Math.max(
@@ -819,6 +907,10 @@ export const cloneEstate = (e: Estate | undefined): Estate | undefined =>
         requests: requestsOf(e).map((r) => ({ ...r })),
         mortgage: { ...mortgageOf(e) },
         grievance: { ...(e.grievance ?? { mood: 0, until: 0 }) },
+        plots: { ...(e.plots ?? {}) },
+        mukhtars: { ...(e.mukhtars ?? {}) },
+        bans: { ...(e.bans ?? {}) },
+        proposals: (e.proposals ?? []).map((x) => ({ ...x })),
       }
     : undefined;
 
@@ -891,7 +983,7 @@ function marketMonth(s: Sim, random: () => number) {
       lot: k,
       kind: b.kind,
       seller,
-      ask: Math.round(propertyValue(s, b) * (0.95 + random() * 0.3)),
+      ask: Math.round(propertyValue(s, b) * (0.95 + random() * 0.3) * angerMarkup(s, seller)),
       until: s.day + 90,
     });
   }
@@ -1333,7 +1425,7 @@ function quoteRequest(s: Sim, r: OfferRequest, random: () => number) {
     if (!owner || owner === "state" || listed.has(k) || allotted.has(k)) continue;
     const value = propertyValue(s, b);
     // Individuals ask a little less than merchants; nobody quotes over the cap.
-    const ask = Math.round(value * (owner === "people" ? 0.92 + random() * 0.2 : 1 + random() * 0.22));
+    const ask = Math.round(value * (owner === "people" ? 0.92 + random() * 0.2 : 1 + random() * 0.22) * angerMarkup(s, owner));
     if (ask > (value * r.maxPct) / 100) continue;
     listed.add(k);
     e.listings.push({ id: e.nextId++, lot: k, kind: b.kind, seller: owner, ask, until: r.until + 30, req: r.id });

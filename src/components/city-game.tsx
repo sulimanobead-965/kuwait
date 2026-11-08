@@ -1,8 +1,9 @@
 import { ownershipColors, type OwnershipMode } from "@/game/realestate";
-import { regionColors, regions } from "@/game/regions";
+import { regionColors, regionHeatColors, regions } from "@/game/regions";
 
 /** The map's colours for a mode: by owner, merchant, price, or region. */
-const mapColors = (s: Sim, mode: OwnershipMode) => (mode === "region" ? regionColors(s) : ownershipColors(s, mode));
+const mapColors = (s: Sim, mode: OwnershipMode) =>
+  mode === "region" ? regionColors(s) : mode === "services" || mode === "density" ? regionHeatColors(s, mode) : ownershipColors(s, mode);
 import { useEffect, useRef, useState } from "react";
 import { CityHud, type HudTool, type PayTarget } from "@/components/city-hud";
 import { payObligations } from "@/game/obligations";
@@ -1173,8 +1174,9 @@ export function CityGame() {
         onOwnership={(mode) => {
           setOwnership(mode);
           worldRef.current?.setOwnership(mode ? mapColors(simRef.current, mode) : null);
-          worldRef.current?.setRegionBorders(mode === "region" ? regions() : null);
+          worldRef.current?.setRegionBorders(mode === "region" || mode === "services" || mode === "density" ? regions() : null);
         }}
+        onFocusCell={(c, r) => worldRef.current?.focus({ c, r }, 40)}
         onEstate={(deal) => {
           const act = deal(simRef.current);
           if (!act.ok) pushToast(act.msg);

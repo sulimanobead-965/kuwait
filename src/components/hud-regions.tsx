@@ -12,6 +12,8 @@ import {
 } from "@/game/regions";
 import type { Sim } from "@/game/sim";
 import { NumberField } from "@/components/hud-social";
+import { appointMukhtar, BANNABLE, dismissMukhtar, mukhtarNote, mukhtarPay, regionServices, toggleBan } from "@/game/civic";
+import { CATALOG } from "@/game/catalog";
 import { bigNum, getLang, t } from "@/i18n";
 
 const fmt = (n: number) => (Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.round(n).toLocaleString("en-US"));
@@ -31,6 +33,8 @@ export function RegionsPanel({
   onShowMap: () => void;
 }) {
   const rows = regionStats(snap);
+  const svc = regionServices(snap);
+  const mukhtars = snap.estate?.mukhtars ?? {};
   const [sort, setSort] = useState<"residents" | "id" | "value">("residents");
   const [onlyLived, setOnlyLived] = useState(true);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -147,6 +151,7 @@ export function RegionsPanel({
           {t("التثمين: الدولة تشتري كل العقار الخاص بسعر أعلى من السوق ويرضى الناس. نزع الملكية: بالتعويض اللي تحدده، وأقل من ١٠٠٪ يزعّل الناس. الإخلاء: يثمّن الباقي ويزيل المباني الخاصة وتبقى الطرق والخدمات.")}
         </p>
       </div>
+      {ids.length === 1 && <RegionCard snap={snap} id={ids[0]!} onEstate={onEstate} />}
       {list.map((r) => (
         <label
           key={r.id}
@@ -175,9 +180,74 @@ export function RegionsPanel({
                   })
                 : t("أرض فاضية")}
             </span>
+            {r.buildings > 0 && (
+              <span className="block opacity-80">
+                {t("الخدمات {n}٪", { n: Math.round((svc[r.id - 1]?.services ?? 0) * 100) })}
+                {mukhtars[String(r.id)] ? ` · ${t("المختار {name}", { name: mukhtars[String(r.id)]! })}` : ""}
+              </span>
+            )}
           </span>
         </label>
       ))}
+    </div>
+  );
+}
+
+/** One region picked: its mukhtar, their note, and what may not be built there. */
+function RegionCard({ snap, id, onEstate }: { snap: Sim; id: number; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const current = snap.estate?.mukhtars?.[String(id)] ?? "";
+  const bans = snap.estate?.bans?.[String(id)] ?? [];
+  const [name, setName] = useState("");
+  return (
+    <div className="space-y-1 rounded border-2 border-sc-ink/20 bg-white/80 p-1.5" data-testid="region-card">
+      <p className="font-extrabold">{t("المنطقة {n}", { n: id })}</p>
+      {current ? (
+        <>
+          <p>
+            {t("المختار {name}", { name: current })}: «{mukhtarNote(snap, id)}»
+          </p>
+          <button type="button" className="underline" onClick={() => onEstate((s) => dismissMukhtar(s, id))}>
+            {t("إعفاء المختار")}
+          </button>
+        </>
+      ) : (
+        <div className="flex gap-1">
+          <input
+            type="text"
+            value={name}
+            maxLength={40}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t("اسم المختار")}
+            data-testid="mukhtar-name"
+            className="h-9 min-w-0 flex-1 rounded border-2 border-sc-ink/30 bg-white px-2 text-sm"
+          />
+          <button
+            type="button"
+            data-testid="mukhtar-appoint"
+            disabled={name.trim().length < 2}
+            className="sc-menu sc-on h-9 px-2 text-[11px] disabled:opacity-40"
+            onClick={() => onEstate((s) => appointMukhtar(s, id, name))}
+          >
+            {t("عيّن ({amount} د.ك شهرياً)", { amount: fmt(mukhtarPay(snap)) })}
+          </button>
+        </div>
+      )}
+      <p className="font-bold">{t("ممنوع البناء هنا")}</p>
+      <div className="grid grid-cols-4 gap-1">
+        {BANNABLE.map((k) => (
+          <button
+            key={k}
+            type="button"
+            data-testid={`ban-${k}`}
+            aria-pressed={bans.includes(k)}
+            onClick={() => onEstate((s) => toggleBan(s, id, k))}
+            className={`sc-menu h-auto min-h-9 py-1 text-[11px] leading-tight ${bans.includes(k) ? "bg-coral" : ""}`}
+          >
+            {bans.includes(k) ? "⛔ " : ""}
+            {t(CATALOG[k].name)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -53,6 +53,15 @@ import {
   type Trade,
 } from "@/game/realestate";
 import { formatCityDate, type Sim } from "@/game/sim";
+import {
+  answerProposal,
+  granteeRecord,
+  marketReport,
+  merchantStanding,
+  revokeGrants,
+  standingName,
+  waitlistPressure,
+} from "@/game/civic";
 import { NumberField } from "@/components/hud-social";
 import { RegionsPanel } from "@/components/hud-regions";
 import { bigNum, dirOf, getLang, t } from "@/i18n";
@@ -72,7 +81,14 @@ const TYPE_NAMES: Record<Trade["type"], string> = {
 /** The colours of the ownership map, as a legend for the chosen mode. */
 export function OwnershipLegend({ mode = "owner" }: { mode?: OwnershipMode | null }) {
   const rows: [string, string][] =
-    mode === "region"
+    mode === "services" || mode === "density"
+      ? [
+          ["rgb(60,200,60)", mode === "services" ? "خدمات كافية" : "مزدحمة قليل"],
+          ["rgb(250,200,60)", "متوسط"],
+          ["rgb(250,30,60)", mode === "services" ? "خدمات ناقصة" : "مزدحمة واجد"],
+          ["#ffffff", "حدود المناطق"],
+        ]
+      : mode === "region"
       ? [
           ...NPCS.map((n) => [MERCHANT_COLORS[n.id], n.name] as [string, string]),
           [OWNER_COLORS.people!, "الأفراد"],
@@ -101,7 +117,7 @@ export function OwnershipLegend({ mode = "owner" }: { mode?: OwnershipMode | nul
             [OWNER_COLORS.merchant!, "ملك التجار"],
             [OWNER_COLORS.allocation!, "تخصيص مؤقت"],
           ];
-  if (mode !== "region") rows.push(["#facc15", "معروض للبيع أو في مزاد"]);
+  if (mode !== "region" && mode !== "services" && mode !== "density") rows.push(["#facc15", "معروض للبيع أو في مزاد"]);
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]" data-testid="ownership-legend">
       {rows.map(([c, label]) => (
@@ -156,7 +172,7 @@ export function EstatePanel({
           })}
         </p>
         <p className="mt-2 text-[11px] font-bold">{t("الملكية على الخريطة")}</p>
-        <div className="mt-1 grid grid-cols-5 gap-1">
+        <div className="mt-1 grid grid-cols-4 gap-1">
           {(
             [
               [null, "إخفاء"],
@@ -164,6 +180,8 @@ export function EstatePanel({
               ["merchant", "حسب التاجر"],
               ["price", "حسب السعر"],
               ["region", "حسب المنطقة"],
+              ["services", "الخدمات بالمنطقة"],
+              ["density", "الازدحام بالمنطقة"],
             ] as const
           ).map(([m, label]) => (
             <button
@@ -275,6 +293,7 @@ function Trades({ snap }: { snap: Sim }) {
   list = list.slice(0, 40);
   return (
     <div className="space-y-2">
+      <MarketReport snap={snap} />
       <div className="rounded-md bg-sc-mint p-2 text-xs">
         <p className="mb-1 text-sm font-extrabold">{t("حركة السوق")}</p>
         <PriceChart snap={snap} />
@@ -363,6 +382,7 @@ function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
   const requests = e.requests ?? [];
   return (
     <div className="space-y-2" data-testid="estate-market">
+      <Proposals snap={snap} onEstate={onEstate} />
       <div className="rounded-md bg-sc-mint p-2 text-xs">
         <p className="text-sm font-extrabold">{t("رسوم تسجيل الصفقات {n}٪", { n: e.fee })}</p>
         <p className="mt-0.5 leading-relaxed">
@@ -840,7 +860,11 @@ function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
   const [n, setN] = useState(5);
   const [mode, setMode] = useState<"people" | "person" | "past" | "merchant">("people");
   const [use, setUse] = useState<GrantUse>("homes");
+  const [empty, setEmpty] = useState(false);
+  const [months, setMonths] = useState(24);
+  const [open, setOpen] = useState<OwnerId | null>(null);
   const [name, setName] = useState("");
+  const queue = waitlistPressure(snap);
   const past = grantees(snap);
   const [pastId, setPastId] = useState<string>("");
   const [merchant, setMerchant] = useState<NpcId>(NPCS[0]!.id);
@@ -877,6 +901,38 @@ function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
             </button>
           ))}
         </div>
+        <p className="mt-2 font-bold">{t("شكل المنحة")}</p>
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          {(
+            [
+              [false, "قسيمة مبنية"],
+              [true, "أرض فضاء"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={label}
+              type="button"
+              data-testid={v ? "grant-empty" : "grant-built"}
+              aria-pressed={empty === v}
+              onClick={() => setEmpty(v)}
+              className={`sc-menu h-auto min-h-9 py-1 text-[11px] leading-tight ${empty === v ? "sc-on" : ""}`}
+            >
+              {t(label)}
+            </button>
+          ))}
+        </div>
+        {empty && (
+          <div className="mt-1">
+            <NumberField label={t("مهلة البناء بالأشهر (٠ = بلا مهلة)")} value={months} onChange={setMonths} testid="grant-months" />
+            <p className="mt-0.5 opacity-75">
+              {t("الأرض الفضاء تبقى محجوزة لصاحبها، وإذا ما بنى عليها في المهلة ترجع للدولة.")}
+            </p>
+          </div>
+        )}
+        <p className="mt-2 rounded bg-white/60 p-1" data-testid="waitlist">
+          {t("طابور الإسكان: {n} أسرة تنتظر", { n: fmt(queue.waiting) })}
+          {queue.mood < 0 ? ` · ${t("يقلل الرضا {n}", { n: queue.mood })}` : ""}
+        </p>
         <p className="mt-2 font-bold">{t("لمن المنحة؟")}</p>
         <div className="mt-1 grid grid-cols-2 gap-1">
           {(
@@ -951,7 +1007,7 @@ function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
           type="button"
           data-testid="estate-grant-go"
           disabled={!to}
-          onClick={() => to && onEstate((s) => grantPlots(s, count, to, use))}
+          onClick={() => to && onEstate((s) => grantPlots(s, count, to, use, { empty, months }))}
           className="sc-menu sc-on mt-2 h-auto min-h-10 w-full py-1 text-sm disabled:opacity-40"
         >
           {to
@@ -966,14 +1022,102 @@ function Grants({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
       {past.length > 0 && (
         <div className="rounded-md bg-sc-mint p-2" data-testid="grantees">
           <p className="font-extrabold">{t("أصحاب المنح ({n})", { n: past.length })}</p>
+          <p className="opacity-75">{t("اضغط على الاسم لسجله")}</p>
           {past.slice(0, 30).map((g) => (
-            <div key={g.id} className="flex justify-between border-t border-sc-ink/10 py-0.5">
-              <span>{g.name}</span>
-              <span>{t("{n} قسيمة", { n: g.lots })}</span>
+            <div key={g.id} className="border-t border-sc-ink/10 py-0.5">
+              <button
+                type="button"
+                className="flex w-full justify-between text-start"
+                data-testid="grantee-row"
+                onClick={() => setOpen(open === g.id ? null : g.id)}
+              >
+                <span className="font-bold">{g.name}</span>
+                <span>{t("{n} قسيمة", { n: fmt(g.lots) })}</span>
+              </button>
+              {open === g.id && <GranteeCard snap={snap} id={g.id} onEstate={onEstate} />}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Last month's property market in a few lines. */
+function MarketReport({ snap }: { snap: Sim }) {
+  const r = marketReport(snap);
+  return (
+    <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="market-report">
+      <p className="text-sm font-extrabold">{t("تقرير السوق (آخر ٣٠ يوم)")}</p>
+      <p className="mt-0.5">
+        {t("{n} صفقة بقيمة {v} د.ك · مؤشر الأسعار {i}", { n: r.deals, v: fmt(r.volume), i: Math.round(r.index * 100) })}
+      </p>
+      {r.biggest && (
+        <p>
+          {t("أكبر صفقة: {kind} من {from} إلى {to} بـ {v} د.ك", {
+            kind: t(CATALOG[r.biggest.kind].name),
+            from: t(ownerName(r.biggest.from)),
+            to: t(ownerName(r.biggest.to)),
+            v: fmt(r.biggest.price),
+          })}
+        </p>
+      )}
+      {r.buyer && <p>{t("أكبر مشترٍ: {name} · أكبر بائع: {s}", { name: t(ownerName(r.buyer)), s: r.seller ? t(ownerName(r.seller)) : "—" })}</p>}
+    </div>
+  );
+}
+
+/** Merchants' offers: money for state land, for a project of theirs. */
+function Proposals({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const list = (snap.estate?.proposals ?? []).filter((p) => p.until > snap.day);
+  if (!list.length) return null;
+  return (
+    <div className="rounded-md border-2 border-sc-gold bg-sc-mint p-2 text-xs" data-testid="proposals">
+      <p className="text-sm font-extrabold">{t("عروض التجار ({n})", { n: list.length })}</p>
+      {list.map((p) => (
+        <div key={p.id} className="mt-1 rounded bg-white/70 p-1.5" data-testid="proposal">
+          <p>
+            {t("{owner} يعرض {amount} د.ك مقابل {n} قسيمة لمشروع {kind}", {
+              owner: t(ownerName(p.merchant)),
+              amount: fmt(p.pay),
+              n: p.plots,
+              kind: t(CATALOG[p.project].name),
+            })}
+          </p>
+          <div className="mt-1 grid grid-cols-2 gap-1">
+            <button type="button" data-testid="proposal-yes" className="sc-menu sc-on h-9 text-[11px]" onClick={() => onEstate((s) => answerProposal(s, p.id, true))}>
+              {t("أقبل")}
+            </button>
+            <button type="button" className="sc-menu h-9 text-[11px]" onClick={() => onEstate((s) => answerProposal(s, p.id, false))}>
+              {t("أرفض")}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One grantee's file: holdings, empty land, grants, and taking them back. */
+function GranteeCard({ snap, id, onEstate }: { snap: Sim; id: OwnerId; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const r = granteeRecord(snap, id);
+  const [sure, setSure] = useState(false);
+  return (
+    <div className="mt-1 space-y-0.5 rounded bg-white/70 p-1.5" data-testid="grantee-card">
+      <p>{t("مبانٍ يملكها: {n} · قيمتها {v} د.ك", { n: fmt(r.lots), v: fmt(r.value) })}</p>
+      <p>{t("أراضٍ فضاء لم يبنِ عليها: {n}", { n: fmt(r.plots) })}</p>
+      <p>
+        {t("منح مسجلة: {n}", { n: r.grants })}
+        {r.first !== null ? ` · ${t("أول منحة {date}", { date: formatCityDate(r.first) })}` : ""}
+      </p>
+      <button
+        type="button"
+        data-testid="grantee-revoke"
+        className={`sc-menu mt-1 h-9 w-full text-[11px] ${sure ? "bg-coral" : ""}`}
+        onClick={() => (sure ? onEstate((s) => revokeGrants(s, id)) : setSure(true))}
+      >
+        {sure ? t("تأكيد سحب المنحة؟ (يزعّل الناس)") : t("سحب المنحة")}
+      </button>
     </div>
   );
 }
@@ -990,6 +1134,7 @@ function Profile({ snap, id }: { snap: Sim; id: NpcId }) {
     ["باع", `${p.sold} · ${fmt(p.earned)}`],
     ["معروض له الآن", String(p.listed)],
     ["عقود تخصيص", String(p.allocations)],
+    ["علاقته معك", `${t(standingName(merchantStanding(snap, id)))} (${Math.round(merchantStanding(snap, id))})`],
   ];
   return (
     <div className="rounded bg-white/70 p-1.5" data-testid="merchant-profile">
