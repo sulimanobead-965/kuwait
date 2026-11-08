@@ -1758,7 +1758,7 @@ export const EN: Record<string, string> = {
   "رصيد التمويل {book} · مسترد {paid} · متعثر {lost} د.ك": "Outstanding {book} · repaid {paid} · defaulted {lost} KD",
   "رسوم العقار غير المطوّر {n}٪ سنوياً": "Undeveloped property fee {n}% a year",
   "رسوم العقار غير المطوّر: متوقفة": "Undeveloped property fee: off",
-  "رسوم سنوية على عقارات التجار اللي تاركينها على أول مستوى بدون تطوير. كل ما ارتفعت طوّر التجار أكثر منها كل شهر.": "A yearly fee on merchants' properties left at the first level, undeveloped. The higher it is, the more of them merchants develop each month.",
   "رسوم العقار غير المطوّر": "Undeveloped property fee",
   "جُمع منها {amount} د.ك": "Collected: {amount} KD",
+  "رسوم سنوية على عقارات التجار اللي ما طوّروها لأعلى مستوى. كل ما ارتفعت الرسوم طوّر التجار عقارات أكثر كل شهر.": "A yearly fee on merchants' properties not yet developed to their top level. The higher the fee, the more of them merchants develop each month.",
 };

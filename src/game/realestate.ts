@@ -13,7 +13,7 @@
  * out from its id, and only changes of hands are kept (`owners`), so a city of 100k
  * buildings costs nothing extra to save.
  */
-import { CATALOG, type Kind } from "./catalog";
+import { CATALOG, maxLevelOf, type Kind } from "./catalog";
 import { NPCS, type NpcId } from "./npcs";
 import { msg, t } from "@/i18n";
 import {
@@ -94,7 +94,7 @@ export type Estate = {
   capTotal: number;
   /** Home financing for citizens: on, its yearly return %, money lent and lost. */
   mortgage: { on: boolean; rate: number; book: number; lost: number; paid: number };
-  /** Yearly fee on merchants' undeveloped (level-1) property, % of value (0 = off). */
+  /** Yearly fee on merchants' undeveloped property (below its top level), % of value (0 = off). */
   landTax: number;
   landTaxTotal: number;
   /** Anger at under-compensated expropriations: approval points, until a game day. */
@@ -177,7 +177,16 @@ export function estateOf(s: Sim): Estate {
 }
 
 /** Ownership belongs to the land: a lot is known by its cell, which survives reloads. */
-export const lotKey = (b: Building) => `${b.c},${b.r}`;
+const keyCache = new WeakMap<Building, string>();
+export const lotKey = (b: Building) => {
+  let k = keyCache.get(b);
+  // Buildings never move, so a building's lot is worked out once.
+  if (k === undefined) {
+    k = `${b.c},${b.r}`;
+    keyCache.set(b, k);
+  }
+  return k;
+};
 
 function hash(id: string) {
   let h = 2166136261;
@@ -189,8 +198,18 @@ function hash(id: string) {
 const MERCHANTS = NPCS.map((n) => ({ id: n.id, weight: n.holdings.reduce((a, h) => a + h.value, 0) + n.cash }));
 const MERCHANT_TOTAL = MERCHANTS.reduce((a, m) => a + m.weight, 0);
 
+const ownerCache = new WeakMap<Building, { k: string; o: OwnerId }>();
 function defaultOwner(b: Building): OwnerId {
-  const h = hash(lotKey(b));
+  const k = lotKey(b);
+  const hit = ownerCache.get(b);
+  if (hit && hit.k === k) return hit.o;
+  const o = computeDefaultOwner(b, k);
+  ownerCache.set(b, { k, o });
+  return o;
+}
+
+function computeDefaultOwner(b: Building, k: string): OwnerId {
+  const h = hash(k);
   const cat = CATALOG[b.kind].cat;
   // Merchants own most commerce and industry, some apartment blocks, few villas.
   const merchantShare = cat === "commerce" || cat === "industry" || cat === "landmarks" ? 0.7 : b.kind === "apartments" ? 0.35 : 0.08;
@@ -1000,12 +1019,13 @@ function lawsMonth(s: Sim, random: () => number) {
       m.lost += lost;
     }
   }
-  // Undeveloped-property fee: merchants pay it on level-1 holdings, and some build.
+  // Undeveloped-property fee: merchants pay it on holdings below their top level, and some build.
   if (e.landTax > 0) {
     let fee = 0;
     const idle: Building[] = [];
     for (const b of s.buildings) {
-      if (b.level !== 1 || isPublic(b.kind)) continue;
+      // Undeveloped: still below the highest level its kind can reach.
+      if (isPublic(b.kind) || b.level >= maxLevelOf(b.kind)) continue;
       const o = ownerOf(s, b);
       if (!o || o === "state" || o === "people") continue;
       const f = (propertyValue(s, b) * e.landTax) / 1200;
@@ -1024,7 +1044,7 @@ function lawsMonth(s: Sim, random: () => number) {
     const builds = Math.min(idle.length, Math.round(e.landTax / 2));
     for (let i = 0; i < builds; i += 1) {
       const b = idle[Math.floor(random() * idle.length)]!;
-      if (b.level === 1) b.level = 2;
+      if (b.level < maxLevelOf(b.kind)) b.level += 1;
     }
   }
   // Anti-monopoly: merchants above the cap pay a fee on the excess and must sell.

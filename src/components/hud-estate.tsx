@@ -145,7 +145,7 @@ export function EstatePanel({
               data-testid={m ? `ownership-${m}` : "ownership-off"}
               aria-pressed={ownership === m}
               onClick={() => onOwnership(m)}
-              className={`sc-menu h-9 text-[11px] ${ownership === m ? "sc-on" : ""}`}
+              className={`sc-menu h-auto min-h-9 px-0.5 py-1 text-[11px] leading-tight ${ownership === m ? "sc-on" : ""}`}
             >
               {t(label)}
             </button>
@@ -765,7 +765,7 @@ function Laws({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Esta
           {e.landTax > 0 ? t("رسوم العقار غير المطوّر {n}٪ سنوياً", { n: e.landTax }) : t("رسوم العقار غير المطوّر: متوقفة")}
         </p>
         <p className="mt-0.5 leading-relaxed">
-          {t("رسوم سنوية على عقارات التجار اللي تاركينها على أول مستوى بدون تطوير. كل ما ارتفعت طوّر التجار أكثر منها كل شهر.")}
+          {t("رسوم سنوية على عقارات التجار اللي ما طوّروها لأعلى مستوى. كل ما ارتفعت الرسوم طوّر التجار عقارات أكثر كل شهر.")}
         </p>
         <input
           type="range"
