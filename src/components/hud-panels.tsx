@@ -141,6 +141,9 @@ export type MoreAction =
   | "cloud"
   | "language";
 
+/** Shown in the More menu, to tell which published version is open. */
+export const GAME_VERSION = "71";
+
 export function MoreSheet({
   snap,
   music,
@@ -197,6 +200,9 @@ export function MoreSheet({
       role="dialog"
       aria-label={t("المزيد")}
     >
+      <p className="px-1 text-[10px] opacity-60" data-testid="build-version">
+        {t("نسخة اللعبة {v}", { v: GAME_VERSION })}
+      </p>
       <div className="flex items-center justify-between px-1 pb-2">
         <p className="flex items-center gap-2 text-sm font-extrabold">
           {mine && (

@@ -2043,4 +2043,5 @@ export const EN: Record<string, string> = {
   "عيّن ({amount} د.ك شهرياً)": "Appoint ({amount} KD a month)",
   "ممنوع البناء هنا": "Not allowed here",
   "قرار معلّق": "A decision left waiting",
+  "نسخة اللعبة {v}": "Game version {v}",
 };
