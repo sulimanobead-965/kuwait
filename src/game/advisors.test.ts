@@ -286,6 +286,9 @@ test("housing support: the city pays part of the rent, people are happier and st
   a.costs.housing = 200;
   b.costs.housing = 200;
   b.housingAid = 100; // rent-free
+  // No registration fee: the property market's random deals would blur the budgets.
+  a.estate!.fee = 0;
+  b.estate!.fee = 0;
   assert.ok(housingAidCost(b) > 0);
   assert.equal(housingAidCost(a), 0);
   assert.ok(stats(b).happy > stats(a).happy, "support lifts approval");

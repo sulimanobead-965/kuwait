@@ -1173,7 +1173,8 @@ export function CityGame() {
         onEstate={(deal) => {
           const act = deal(simRef.current);
           if (!act.ok) pushToast(act.msg);
-          else {
+          // A setting (the fee slider) answers with an empty message: no redraw, no toast.
+          else if (act.msg !== "") {
             worldRef.current?.sync(simRef.current, timeRef.current, true);
             if (ownership) worldRef.current?.setOwnership(ownershipColors(simRef.current));
             pushToast(act.msg ?? simRef.current.log[0] ?? "");

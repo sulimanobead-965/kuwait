@@ -60,6 +60,15 @@ export type Allocation = {
 
 export type AllocationUse = "commercial" | "residential" | "services";
 
+/** A property offered for sale: by its owner, or by the state. */
+export type Listing = { id: number; lot: string; kind: Kind; seller: OwnerId; ask: number; until: number; countered?: boolean };
+
+/** A state property in auction: merchants and individuals bid at the month's end. */
+export type Auction = { id: number; lot: string; kind: Kind; min: number; until: number };
+
+/** One month of the market, for the price chart. */
+export type MarketMonth = { day: number; index: number; volume: number; count: number };
+
 export type Estate = {
   /** Owner of each building that changed hands (default owner otherwise). */
   owners: Record<string, OwnerId>;
@@ -69,9 +78,32 @@ export type Estate = {
   leases: Lease[];
   allocations: Allocation[];
   nextId: number;
+  listings: Listing[];
+  auctions: Auction[];
+  /** Registration fee on every sale, % of the price, paid to the state. */
+  fee: number;
+  feeTotal: number;
+  history: MarketMonth[];
+  /** This month so far (moved into history at the month's end). */
+  volume: number;
+  count: number;
 };
 
-export const emptyEstate = (): Estate => ({ owners: {}, index: 1, trades: [], leases: [], allocations: [], nextId: 1 });
+export const emptyEstate = (): Estate => ({
+  owners: {},
+  index: 1,
+  trades: [],
+  leases: [],
+  allocations: [],
+  nextId: 1,
+  listings: [],
+  auctions: [],
+  fee: 2,
+  feeTotal: 0,
+  history: [],
+  volume: 0,
+  count: 0,
+});
 
 /** Kinds that are always public land: services, utilities, state landmarks, transport. */
 const PUBLIC_KINDS = new Set<Kind>([
@@ -391,10 +423,15 @@ export function estateMonth(s: Sim, random = Math.random) {
   const e = estateOf(s);
   const st = stats(s);
   const crisis = s.crisis && s.day < s.crisis.until ? s.crisis.kind : null;
-  const drift = (random() - 0.5) * 0.04 + (st.happy - 50) / 5000 + (crisis === "economic" ? -0.03 : 0);
+  // Mood and crises push prices; over time they drift back toward normal.
+  const drift =
+    (random() - 0.5) * 0.04 + (st.happy - 50) / 5000 + (crisis === "economic" ? -0.03 : 0) + (1 - e.index) * 0.02;
   e.index = Math.min(4, Math.max(0.4, e.index * (1 + drift)));
   // Rent from the state's tenants.
-  const live = new Map(s.buildings.map((b) => [lotKey(b), b]));
+  // Lots that still have a building: made only when a month needs them (a big
+  // city has tens of thousands, and most months have no leases to check).
+  let liveSet: Set<string> | null = null;
+  const live = { has: (k: string) => (liveSet ??= new Set(s.buildings.map(lotKey))).has(k) };
   let rent = 0;
   const leases: Lease[] = [];
   for (const l of e.leases) {
@@ -421,27 +458,9 @@ export function estateMonth(s: Sim, random = Math.random) {
     s.coins += due;
     s.ytd.income += due;
   }
-  // The market: a few private properties change hands between owners every month.
-  const pool = s.buildings;
-  if (pool.length > 0) {
-    const deals = 1 + Math.floor(random() * 3);
-    for (let i = 0; i < deals; i += 1) {
-      const b = pool[Math.floor(random() * pool.length)]!;
-      const from = ownerOf(s, b);
-      if (!from || from === "state") continue;
-      if (e.allocations.some((a) => a.buildings.includes(lotKey(b)))) continue;
-      const buyers: OwnerId[] = ["people", ...NPCS.map((n) => n.id)].filter((x) => x !== from) as OwnerId[];
-      const to = buyers[Math.floor(random() * buyers.length)]!;
-      const price = Math.round(propertyValue(s, b) * (0.9 + random() * 0.25));
-      const buyer = npcState(s, to);
-      if (buyer && buyer.cash < price) continue;
-      pay(s, to, from, price);
-      setOwner(s, b, to);
-      record(s, { id: lotKey(b), kind: b.kind, from, to, price, type: "sale" });
-    }
-  }
+  marketMonth(s, random);
   // Forget owners of demolished buildings now and then.
-  if (random() < 0.1) {
+  if (random() < 0.03 && Object.keys(e.owners).length > 0) {
     const owners: Record<string, OwnerId> = {};
     for (const [id, o] of Object.entries(e.owners)) if (live.has(id)) owners[id] = o;
     e.owners = owners;
@@ -546,9 +565,272 @@ export function loadEstate(raw: unknown): Estate {
     e.allocations = p.allocations
       .filter((x) => x && NPCS.some((n) => n.id === x.holder) && Array.isArray(x.buildings))
       .map((x) => ({ ...x, buildings: x.buildings.map(String) }));
-  e.nextId = Math.max(1, Number(p.nextId) || 1, ...e.allocations.map((a) => a.id + 1));
+  const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  if (Array.isArray(p.listings))
+    e.listings = p.listings
+      .filter((x) => x && valid(x.seller) && x.kind in CATALOG)
+      .map((x) => ({ id: num(x.id), lot: String(x.lot), kind: x.kind, seller: x.seller, ask: Math.max(1, num(x.ask)), until: num(x.until), countered: !!x.countered }));
+  if (Array.isArray(p.auctions))
+    e.auctions = p.auctions
+      .filter((x) => x && x.kind in CATALOG)
+      .map((x) => ({ id: num(x.id), lot: String(x.lot), kind: x.kind, min: Math.max(0, num(x.min)), until: num(x.until) }));
+  e.fee = Math.min(20, Math.max(0, num(p.fee, 2)));
+  e.feeTotal = Math.max(0, num(p.feeTotal));
+  if (Array.isArray(p.history))
+    e.history = p.history
+      .filter((x) => x && Number.isFinite(Number(x.day)))
+      .map((x) => ({ day: num(x.day), index: num(x.index, 1), volume: Math.max(0, num(x.volume)), count: Math.max(0, num(x.count)) }))
+      .slice(-120);
+  e.volume = Math.max(0, num(p.volume));
+  e.count = Math.max(0, num(p.count));
+  e.nextId = Math.max(
+    1,
+    Number(p.nextId) || 1,
+    ...e.allocations.map((a) => a.id + 1),
+    ...e.listings.map((l) => l.id + 1),
+    ...e.auctions.map((l) => l.id + 1),
+  );
   return e;
 }
 
 export const cloneEstate = (e: Estate | undefined): Estate | undefined =>
-  e ? { ...e, trades: [...e.trades], leases: [...e.leases], allocations: e.allocations.map((a) => ({ ...a })) } : undefined;
+  e
+    ? {
+        ...e,
+        trades: [...e.trades],
+        leases: [...e.leases],
+        allocations: e.allocations.map((a) => ({ ...a })),
+        listings: (e.listings ?? []).map((l) => ({ ...l })),
+        auctions: (e.auctions ?? []).map((l) => ({ ...l })),
+        history: [...(e.history ?? [])],
+      }
+    : undefined;
+
+// ---------------------------------------------------------------- the market
+
+/** Building on a lot; the index is rebuilt only when the city has changed. */
+const lotIndex = new WeakMap<Sim, { n: number; first: Building | undefined; map: Map<string, Building> }>();
+function lotOf(s: Sim, lot: string) {
+  let ix = lotIndex.get(s);
+  if (!ix || ix.n !== s.buildings.length || ix.first !== s.buildings[0]) {
+    ix = { n: s.buildings.length, first: s.buildings[0], map: new Map(s.buildings.map((b) => [lotKey(b), b])) };
+    lotIndex.set(s, ix);
+  }
+  return ix.map.get(lot) ?? null;
+}
+
+/** Fewer deals the higher the registration fee: none lost at 0%, a third at 5%, most at 15%. */
+const activity = (e: Estate) => Math.max(0.15, 1 - e.fee / 15);
+
+/**
+ * A sale on the market: the buyer pays the seller, and the registration fee on top
+ * to the state (the state itself pays no fee to itself).
+ */
+function executeSale(s: Sim, b: Building, from: OwnerId, to: OwnerId, price: number, type: Trade["type"] = "sale") {
+  const e = estateOf(s);
+  pay(s, to, from, price);
+  if (from !== "state" && to !== "state" && e.fee > 0) {
+    const fee = Math.round((price * e.fee) / 100);
+    pay(s, to, "state", fee);
+    e.feeTotal += fee;
+  }
+  setOwner(s, b, to);
+  record(s, { id: lotKey(b), kind: b.kind, from, to, price, type });
+  e.volume += price;
+  e.count += 1;
+  e.listings = e.listings.filter((l) => l.lot !== lotKey(b));
+}
+
+const BIDDERS = (): OwnerId[] => ["people", ...NPCS.map((n) => n.id)];
+
+function canPay(s: Sim, who: OwnerId, amount: number) {
+  const n = npcState(s, who);
+  return !n || n.cash >= amount;
+}
+
+function marketMonth(s: Sim, random: () => number) {
+  const e = estateOf(s);
+  const act = activity(e);
+  const listed = new Set(e.listings.map((l) => l.lot));
+  const allotted = new Set(e.allocations.flatMap((a) => a.buildings));
+  // Owners put properties up for sale.
+  const pool = s.buildings;
+  const fresh = pool.length ? Math.round((2 + random() * 4) * act) : 0;
+  for (let i = 0; i < fresh; i += 1) {
+    const b = pool[Math.floor(random() * pool.length)]!;
+    const seller = ownerOf(s, b);
+    const k = lotKey(b);
+    if (!seller || seller === "state" || listed.has(k) || allotted.has(k)) continue;
+    listed.add(k);
+    e.listings.push({
+      id: e.nextId++,
+      lot: k,
+      kind: b.kind,
+      seller,
+      ask: Math.round(propertyValue(s, b) * (0.95 + random() * 0.3)),
+      until: s.day + 90,
+    });
+  }
+  // Buyers take the fairly priced ones.
+  for (const l of [...e.listings]) {
+    const b = lotOf(s, l.lot);
+    if (!b || ownerOf(s, b) !== l.seller) {
+      e.listings = e.listings.filter((x) => x.id !== l.id);
+      continue;
+    }
+    const value = propertyValue(s, b);
+    const odds = 0.35 * act * Math.min(2, (value / l.ask) ** 3);
+    if (random() < odds) {
+      const buyers = BIDDERS().filter((x) => x !== l.seller && canPay(s, x, l.ask * (1 + e.fee / 100)));
+      if (buyers.length) {
+        const to = buyers[Math.floor(random() * buyers.length)]!;
+        executeSale(s, b, l.seller, to, l.ask);
+        if (l.seller === "state")
+          pushLog(s, msg("بيع عقار الدولة المعروض ({kind}) إلى {owner} بـ {amount} د.ك", { kind: CATALOG[b.kind].name, owner: ownerName(to), amount: l.ask }));
+        continue;
+      }
+    }
+    if (l.until <= s.day) e.listings = e.listings.filter((x) => x.id !== l.id);
+  }
+  // Auctions that have run their month.
+  for (const a of [...e.auctions]) if (a.until <= s.day) resolveAuction(s, a, random);
+  // The month joins the price history.
+  e.history = [...e.history, { day: s.day, index: e.index, volume: e.volume, count: e.count }].slice(-120);
+  e.volume = 0;
+  e.count = 0;
+}
+
+/** The state buys a listed property at the asking price. */
+export function buyListing(s: Sim, id: number): EstateAct {
+  const e = estateOf(s);
+  const l = e.listings.find((x) => x.id === id);
+  if (!l) return { ok: false, msg: t("العرض انتهى") };
+  if (l.seller === "state") return { ok: false, msg: t("هذا عرض من أملاك الدولة") };
+  const b = lotOf(s, l.lot);
+  if (!b) return { ok: false, msg: t("العقار غير موجود") };
+  if (s.coins < l.ask) return { ok: false, msg: t("الرصيد ما يكفي") };
+  executeSale(s, b, l.seller, "state", l.ask);
+  const entry = msg("الدولة اشترت {kind} من {owner} بـ {amount} د.ك", { kind: CATALOG[b.kind].name, owner: ownerName(l.seller), amount: l.ask });
+  pushLog(s, entry);
+  return { ok: true, msg: entry };
+}
+
+/**
+ * The state offers a price for a listed property. Individuals take 90% of their
+ * asking price and merchants 95%; a lower but serious offer (80% of the value or
+ * more) gets a counter-offer halfway; anything less is turned down.
+ */
+export function makeOffer(s: Sim, id: number, price: number): EstateAct {
+  const e = estateOf(s);
+  const l = e.listings.find((x) => x.id === id);
+  if (!l) return { ok: false, msg: t("العرض انتهى") };
+  if (l.seller === "state") return { ok: false, msg: t("هذا عرض من أملاك الدولة") };
+  const b = lotOf(s, l.lot);
+  if (!b) return { ok: false, msg: t("العقار غير موجود") };
+  price = Math.round(price);
+  if (!(price > 0)) return { ok: false, msg: t("اكتب السعر") };
+  if (s.coins < price) return { ok: false, msg: t("الرصيد ما يكفي") };
+  const accept = l.seller === "people" ? 0.9 : 0.95;
+  if (price >= l.ask * accept) {
+    executeSale(s, b, l.seller, "state", price);
+    const entry = msg("قبل {owner} عرضك: الدولة اشترت {kind} بـ {amount} د.ك", { owner: ownerName(l.seller), kind: CATALOG[b.kind].name, amount: price });
+    pushLog(s, entry);
+    return { ok: true, msg: entry };
+  }
+  if (price >= propertyValue(s, b) * 0.8 && !l.countered) {
+    const counter = Math.round((l.ask + price) / 2);
+    e.listings = e.listings.map((x) => (x.id === id ? { ...x, ask: counter, countered: true } : x));
+    return { ok: true, msg: msg("{owner} رد بعرض مقابل: {amount} د.ك", { owner: ownerName(l.seller), amount: counter }) };
+  }
+  return { ok: false, msg: t("{name} رفض عرضك", { name: ownerName(l.seller) }) };
+}
+
+/** The state puts one of its properties on the market at its own price. */
+export function listForSale(s: Sim, buildingId: string, ask: number): EstateAct {
+  const b = findBuilding(s, buildingId);
+  if (!b) return { ok: false, msg: t("العقار غير موجود") };
+  if (ownerOf(s, b) !== "state") return { ok: false, msg: t("تقدر تبيع أملاك الدولة فقط") };
+  const e = estateOf(s);
+  const k = lotKey(b);
+  if (e.listings.some((l) => l.lot === k) || e.auctions.some((a) => a.lot === k)) return { ok: false, msg: t("العقار معروض أصلاً") };
+  ask = Math.round(ask);
+  if (!(ask > 0)) return { ok: false, msg: t("اكتب السعر") };
+  e.listings = [...e.listings, { id: e.nextId++, lot: k, kind: b.kind, seller: "state", ask, until: s.day + 180 }];
+  return { ok: true, msg: msg("عرضت {kind} للبيع بـ {amount} د.ك", { kind: CATALOG[b.kind].name, amount: ask }) };
+}
+
+export function cancelListing(s: Sim, id: number): EstateAct {
+  const e = estateOf(s);
+  const l = e.listings.find((x) => x.id === id);
+  if (!l || l.seller !== "state") return { ok: false, msg: t("تقدر تسحب عروض الدولة فقط") };
+  e.listings = e.listings.filter((x) => x.id !== id);
+  return { ok: true, msg: t("سحبت العرض من السوق") };
+}
+
+/** A state property goes to auction for a month, with a minimum price. */
+export function startAuction(s: Sim, buildingId: string, min: number): EstateAct {
+  const b = findBuilding(s, buildingId);
+  if (!b) return { ok: false, msg: t("العقار غير موجود") };
+  if (ownerOf(s, b) !== "state") return { ok: false, msg: t("المزاد لأملاك الدولة فقط") };
+  const e = estateOf(s);
+  const k = lotKey(b);
+  if (e.auctions.some((a) => a.lot === k) || e.listings.some((l) => l.lot === k)) return { ok: false, msg: t("العقار معروض أصلاً") };
+  e.auctions = [...e.auctions, { id: e.nextId++, lot: k, kind: b.kind, min: Math.max(0, Math.round(min)), until: s.day + 30 }];
+  const entry = msg("طرح {kind} في مزاد علني بحد أدنى {amount} د.ك", { kind: CATALOG[b.kind].name, amount: Math.round(min) });
+  pushLog(s, entry);
+  return { ok: true, msg: entry };
+}
+
+function resolveAuction(s: Sim, a: Auction, random: () => number) {
+  const e = estateOf(s);
+  e.auctions = e.auctions.filter((x) => x.id !== a.id);
+  const b = lotOf(s, a.lot);
+  if (!b || ownerOf(s, b) !== "state") return;
+  const value = propertyValue(s, b);
+  let best: { who: OwnerId; bid: number } | null = null;
+  let bidders = 0;
+  for (const who of BIDDERS()) {
+    if (random() > 0.75) continue;
+    let bid = Math.round(value * (0.85 + random() * 0.45));
+    const n = npcState(s, who);
+    if (n) bid = Math.min(bid, Math.floor(n.cash));
+    if (bid < a.min) continue;
+    bidders += 1;
+    if (!best || bid > best.bid) best = { who, bid };
+  }
+  if (!best) {
+    pushLog(s, msg("المزاد على {kind} انتهى بدون بيع: ما وصل أحد للحد الأدنى", { kind: CATALOG[b.kind].name }));
+    return;
+  }
+  executeSale(s, b, "state", best.who, best.bid);
+  pushLog(
+    s,
+    msg("رسى المزاد على {owner}: {kind} بـ {amount} د.ك ({n} مزايدين)", { owner: ownerName(best.who), kind: CATALOG[b.kind].name, amount: best.bid, n: bidders }),
+  );
+}
+
+export function setRegistrationFee(s: Sim, pct: number) {
+  estateOf(s).fee = Math.min(20, Math.max(0, Math.round(pct * 10) / 10));
+}
+
+/** Renew an allocation contract: more years, at today's fair fee if that is higher. */
+export function renewAllocation(s: Sim, id: number, years: number): EstateAct {
+  const e = estateOf(s);
+  const a = e.allocations.find((x) => x.id === id);
+  if (!a) return { ok: false, msg: t("العقد غير موجود") };
+  const n = npcState(s, a.holder);
+  const fee = Math.max(a.fee, allocationFee(s, a.use));
+  if (n && n.cash < fee) return { ok: false, msg: t("{name} ما عنده سيولة تكفي", { name: ownerName(a.holder) }) };
+  years = Math.max(1, Math.min(50, Math.round(years)));
+  e.allocations = e.allocations.map((x) => (x.id === id ? { ...x, fee, until: x.until + years * 360 } : x));
+  const entry = msg("تجديد عقد التخصيص مع {name} {years} سنة برسوم {amount} د.ك سنوياً", { name: ownerName(a.holder), years, amount: fee });
+  pushLog(s, entry);
+  return { ok: true, msg: entry };
+}
+
+/** Typical prices now, for the market screen. */
+export function typicalPrices(s: Sim) {
+  const e = estateOf(s);
+  const mood = 0.8 + stats(s).happy / 250;
+  return (["villa", "apartments", "shop", "tower"] as Kind[]).map((k) => ({ kind: k, price: Math.round(CATALOG[k].cost * 40 * mood * e.index) }));
+}

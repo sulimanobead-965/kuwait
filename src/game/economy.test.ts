@@ -526,3 +526,46 @@ test("real estate: public land stays public, private property trades for real", 
     else globalThis.localStorage = original;
   }
 });
+
+test("property market: listings, offers and counter-offers, the registration fee, auctions", async () => {
+  const re = await import("./realestate.ts");
+  const s = town(30);
+  s.coins = 1e9;
+  for (const n of s.npcs) n.cash = 1e9;
+  const e = re.estateOf(s);
+  // A few months of market: listings appear, some sell, the fee comes in, history grows.
+  let r = 0;
+  const seq = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  const coins = s.coins;
+  for (let m = 0; m < 6; m += 1) {
+    s.day += 30;
+    re.estateMonth(s, seq);
+  }
+  assert.equal(e.history.length, 6);
+  assert.ok(e.listings.length > 0, "owners list properties");
+  const sales = e.trades.filter((x) => x.type === "sale").length;
+  assert.ok(sales > 0, "some listings sell");
+  assert.ok(e.feeTotal > 0 && s.coins > coins - 1, "the registration fee goes to the state");
+  // Offers: too low is refused, a fair one gets a counter, the counter is accepted.
+  const l = e.listings.find((x) => x.seller !== "state")!;
+  const b = s.buildings.find((x) => re.lotKey(x) === l.lot)!;
+  const value = re.propertyValue(s, b);
+  assert.equal(re.makeOffer(s, l.id, value * 0.3).ok, false);
+  const counter = re.makeOffer(s, l.id, Math.max(value * 0.8, l.ask * 0.85));
+  assert.ok(counter.ok);
+  const now = re.estateOf(s).listings.find((x) => x.id === l.id)!;
+  assert.ok(now.countered && now.ask < l.ask);
+  assert.ok(re.buyListing(s, l.id).ok);
+  assert.equal(re.ownerOf(s, b), "state");
+  // The state lists it again and also auctions another of its properties.
+  assert.ok(re.listForSale(s, b.id, value).ok);
+  assert.equal(re.listForSale(s, b.id, value).ok, false, "already on the market");
+  assert.ok(re.cancelListing(s, re.estateOf(s).listings.find((x) => x.seller === "state")!.id).ok);
+  assert.ok(re.startAuction(s, b.id, value * 0.5).ok);
+  s.day += 31;
+  re.estateMonth(s, seq);
+  assert.notEqual(re.ownerOf(s, b), "state", "the auction sold it");
+  // A higher fee means fewer deals.
+  re.setRegistrationFee(s, 50);
+  assert.equal(re.estateOf(s).fee, 20);
+});

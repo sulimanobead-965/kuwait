@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Building2, FileSignature, Gift, Landmark, MapPinned, Repeat } from "lucide-react";
+import { Building2, FileSignature, Gavel, Gift, Landmark, MapPinned, Repeat, Store } from "lucide-react";
 import { CATALOG } from "@/game/catalog";
 import { NPCS, type NpcId } from "@/game/npcs";
 import {
@@ -7,7 +7,16 @@ import {
   OWNER_COLORS,
   allocate,
   allocationFee,
+  buyListing,
   buyProperty,
+  cancelListing,
+  listForSale,
+  makeOffer,
+  propertyValue,
+  renewAllocation,
+  setRegistrationFee,
+  startAuction,
+  typicalPrices,
   endAllocation,
   estateOf,
   grantPlots,
@@ -29,7 +38,7 @@ import { bigNum, dirOf, getLang, t } from "@/i18n";
 
 const fmt = (n: number) => (Math.abs(n) >= 1e9 ? bigNum(n, getLang()) : Math.round(n).toLocaleString("en-US"));
 
-type View = "trades" | "platform" | "allocate" | "grants";
+type View = "trades" | "platform" | "market" | "allocate" | "grants";
 
 const TYPE_NAMES: Record<Trade["type"], string> = {
   sale: "بيع",
@@ -109,10 +118,11 @@ export function EstatePanel({
           <OwnershipLegend />
         </div>
       </div>
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-3 gap-1">
         {(
           [
             ["platform", "المنصة", <Building2 key="p" size={14} />],
+            ["market", "السوق", <Store key="m" size={14} />],
             ["trades", "التداولات", <Repeat key="t" size={14} />],
             ["allocate", "التخصيص", <FileSignature key="a" size={14} />],
             ["grants", "المنح", <Gift key="g" size={14} />],
@@ -132,6 +142,7 @@ export function EstatePanel({
         ))}
       </div>
       {view === "platform" && <Platform snap={snap} onEstate={onEstate} />}
+      {view === "market" && <Market snap={snap} onEstate={onEstate} />}
       {view === "trades" && <Trades snap={snap} />}
       {view === "allocate" && <Allocations snap={snap} onEstate={onEstate} />}
       {view === "grants" && <Grants onEstate={onEstate} />}
@@ -139,30 +150,236 @@ export function EstatePanel({
   );
 }
 
-function Trades({ snap }: { snap: Sim }) {
-  const list = [...estateOf(snap).trades].reverse().slice(0, 40);
+const TYPES: Trade["type"][] = ["sale", "grant", "lease", "allocation", "return"];
+
+/** Price index (line) and monthly volume (bars) over the kept months. */
+function PriceChart({ snap }: { snap: Sim }) {
+  const h = estateOf(snap).history;
+  if (h.length < 2) return <p className="opacity-70">{t("الرسم يظهر بعد شهرين من التداول.")}</p>;
+  const W = 300;
+  const H = 90;
+  const maxV = Math.max(1, ...h.map((x) => x.volume));
+  const minI = Math.min(...h.map((x) => x.index));
+  const maxI = Math.max(...h.map((x) => x.index));
+  const span = Math.max(0.01, maxI - minI);
+  const step = W / h.length;
+  const line = h
+    .map((x, i) => `${(i + 0.5) * step},${(H - 6 - ((x.index - minI) / span) * (H - 16)).toFixed(1)}`)
+    .join(" ");
+  const first = h[0]!;
+  const last = h[h.length - 1]!;
   return (
-    <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-trades">
-      <p className="mb-1 text-sm font-extrabold">{t("التداولات العقارية")}</p>
-      {list.length === 0 ? (
-        <p className="opacity-70">{t("ما في تداولات بعد. السوق يتحرك كل شهر.")}</p>
-      ) : (
-        list.map((x, i) => (
-          <div key={i} className="border-t border-sc-ink/10 py-1">
-            <div className="flex justify-between gap-2">
-              <span className="font-bold">
-                {t(TYPE_NAMES[x.type])} · {t(CATALOG[x.kind].name)}
-              </span>
-              <span dir="ltr" className="font-extrabold">
-                {x.price > 0 ? fmt(x.price) : "—"}
+    <div data-testid="price-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-24 w-full" role="img" aria-label={t("مؤشر الأسعار وحجم التداول")}>
+        {h.map((x, i) => (
+          <rect
+            key={i}
+            x={i * step + step * 0.15}
+            width={step * 0.7}
+            y={H - (x.volume / maxV) * (H - 10)}
+            height={(x.volume / maxV) * (H - 10)}
+            fill="#a855f7"
+            opacity={0.35}
+          />
+        ))}
+        <polyline points={line} fill="none" stroke="#0f766e" strokeWidth={2} />
+      </svg>
+      <div className="flex justify-between text-[11px]" dir="ltr">
+        <span>{formatCityDate(first.day)}</span>
+        <span>
+          {t("المؤشر {from} ← {to}", { from: Math.round(first.index * 100), to: Math.round(last.index * 100) })}
+        </span>
+        <span>{formatCityDate(last.day)}</span>
+      </div>
+      <p className="text-[11px] opacity-75">{t("الخط: مؤشر الأسعار · الأعمدة: قيمة التداول كل شهر")}</p>
+    </div>
+  );
+}
+
+function Trades({ snap }: { snap: Sim }) {
+  const [type, setType] = useState<Trade["type"] | "all">("all");
+  const [who, setWho] = useState<OwnerId | "all">("all");
+  const [big, setBig] = useState(false);
+  let list = [...estateOf(snap).trades].reverse();
+  if (type !== "all") list = list.filter((x) => x.type === type);
+  if (who !== "all") list = list.filter((x) => x.from === who || x.to === who);
+  if (big) list = [...list].sort((a, b) => b.price - a.price);
+  list = list.slice(0, 40);
+  return (
+    <div className="space-y-2">
+      <div className="rounded-md bg-sc-mint p-2 text-xs">
+        <p className="mb-1 text-sm font-extrabold">{t("حركة السوق")}</p>
+        <PriceChart snap={snap} />
+      </div>
+      <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-trades">
+        <p className="mb-1 text-sm font-extrabold">{t("التداولات العقارية")}</p>
+        <div className="mb-2 flex flex-wrap gap-1">
+          {(["all", ...TYPES] as const).map((x) => (
+            <button
+              key={x}
+              type="button"
+              aria-pressed={type === x}
+              onClick={() => setType(x)}
+              className={`rounded-full border px-2 py-0.5 text-[11px] ${type === x ? "border-sc-ink bg-sc-gold/60 font-bold" : "border-sc-ink/30"}`}
+            >
+              {x === "all" ? t("الكل") : t(TYPE_NAMES[x])}
+            </button>
+          ))}
+          <button
+            type="button"
+            aria-pressed={big}
+            onClick={() => setBig(!big)}
+            className={`rounded-full border px-2 py-0.5 text-[11px] ${big ? "border-sc-ink bg-sc-gold/60 font-bold" : "border-sc-ink/30"}`}
+          >
+            {t("الأكبر أولاً")}
+          </button>
+        </div>
+        <select
+          value={who}
+          onChange={(ev) => setWho(ev.target.value as OwnerId | "all")}
+          className="mb-2 h-8 w-full rounded border-2 border-sc-ink/30 bg-white px-1 text-xs"
+          aria-label={t("المالك")}
+        >
+          <option value="all">{t("كل الملاك")}</option>
+          {(["state", ...BUYERS] as OwnerId[]).map((o) => (
+            <option key={o} value={o}>
+              {t(ownerName(o))}
+            </option>
+          ))}
+        </select>
+        {list.length === 0 ? (
+          <p className="opacity-70">{t("ما في تداولات بعد. السوق يتحرك كل شهر.")}</p>
+        ) : (
+          list.map((x, i) => (
+            <div key={i} className="border-t border-sc-ink/10 py-1">
+              <div className="flex justify-between gap-2">
+                <span className="font-bold">
+                  {t(TYPE_NAMES[x.type])} · {t(CATALOG[x.kind].name)}
+                </span>
+                <span dir="ltr" className="font-extrabold">
+                  {x.price > 0 ? fmt(x.price) : "—"}
+                </span>
+              </div>
+              <div className="opacity-80">
+                {formatCityDate(x.day)} · {t(ownerName(x.from))} ← {t(ownerName(x.to))}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The market: what owners have up for sale, offers and counter-offers, auctions, the fee. */
+function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
+  const e = estateOf(snap);
+  const [pct, setPct] = useState(90);
+  const listings = [...e.listings].reverse().slice(0, 30);
+  return (
+    <div className="space-y-2" data-testid="estate-market">
+      <div className="rounded-md bg-sc-mint p-2 text-xs">
+        <p className="text-sm font-extrabold">{t("رسوم تسجيل الصفقات {n}٪", { n: e.fee })}</p>
+        <p className="mt-0.5 leading-relaxed">
+          {t("نسبة من كل صفقة بيع تدخل خزينة الدولة. كل ما ارتفعت قلّ التداول. جُمع منها {amount} د.ك.", { amount: fmt(e.feeTotal) })}
+        </p>
+        <input
+          type="range"
+          min={0}
+          max={20}
+          step={0.5}
+          value={e.fee}
+          aria-label={t("رسوم التسجيل")}
+          data-testid="estate-fee"
+          onChange={(ev) => {
+            const v = Number(ev.target.value);
+            onEstate((s) => {
+              setRegistrationFee(s, v);
+              return { ok: true, msg: "" };
+            });
+          }}
+          className="mt-1 h-9 w-full accent-sc-leaf"
+        />
+        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+          {typicalPrices(snap).map((p) => (
+            <div key={p.kind} className="flex justify-between">
+              <span>{t(CATALOG[p.kind].name)}</span>
+              <span dir="ltr" className="font-bold">
+                {fmt(p.price)}
               </span>
             </div>
-            <div className="opacity-80">
-              {formatCityDate(x.day)} · {t(ownerName(x.from))} ← {t(ownerName(x.to))}
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
+      </div>
+      {e.auctions.length > 0 && (
+        <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-auctions">
+          <p className="flex items-center gap-1 text-sm font-extrabold">
+            <Gavel size={14} /> {t("المزادات الجارية ({n})", { n: e.auctions.length })}
+          </p>
+          {e.auctions.map((a) => (
+            <p key={a.id} className="border-t border-sc-ink/10 py-1">
+              {t(CATALOG[a.kind].name)} · {t("حد أدنى {amount}", { amount: fmt(a.min) })} · {t("ينتهي {date}", { date: formatCityDate(a.until) })}
+            </p>
+          ))}
+        </div>
       )}
+      <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-listings">
+        <p className="text-sm font-extrabold">{t("معروض للبيع ({n})", { n: e.listings.length })}</p>
+        <p className="mt-0.5 leading-relaxed opacity-80">
+          {t("اشترِ بالسعر المطلوب، أو قدّم عرضاً أقل: الأفراد يقبلون ٩٠٪ من السعر والتجار ٩٥٪، والعرض المعقول يجيك عليه رد بسعر وسط.")}
+        </p>
+        <div className="mt-1 w-40">
+          <NumberField label={t("عرضك (٪ من السعر)")} value={pct} onChange={setPct} testid="offer-pct" />
+        </div>
+        {listings.length === 0 ? (
+          <p className="mt-1 opacity-70">{t("ما في عروض الحين. الملاك يعرضون كل شهر.")}</p>
+        ) : (
+          listings.map((l) => {
+            const b = snap.buildings.find((x) => `${x.c},${x.r}` === l.lot);
+            const value = b ? propertyValue(snap, b) : 0;
+            return (
+              <div key={l.id} className="mt-1 rounded bg-white/60 p-1.5" data-testid="listing">
+                <div className="flex justify-between gap-2">
+                  <span className="font-bold">
+                    {t(CATALOG[l.kind].name)} · {t(ownerName(l.seller))}
+                    {l.countered ? ` · ${t("عرض مقابل")}` : ""}
+                  </span>
+                  <span dir="ltr" className="font-extrabold">
+                    {fmt(l.ask)}
+                  </span>
+                </div>
+                <div className="opacity-75">
+                  {t("قيمة السوق {value} · حتى {date}", { value: fmt(value), date: formatCityDate(l.until) })}
+                </div>
+                {l.seller === "state" ? (
+                  <button type="button" className="sc-menu mt-1 h-8 w-full text-[11px]" onClick={() => onEstate((s) => cancelListing(s, l.id))}>
+                    {t("اسحب العرض")}
+                  </button>
+                ) : (
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      data-testid="listing-buy"
+                      className="sc-menu sc-on h-8 text-[11px]"
+                      onClick={() => onEstate((s) => buyListing(s, l.id))}
+                    >
+                      {t("اشترِ بـ {amount}", { amount: fmt(l.ask) })}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="listing-offer"
+                      className="sc-menu h-8 text-[11px]"
+                      onClick={() => onEstate((s) => makeOffer(s, l.id, (l.ask * pct) / 100))}
+                    >
+                      {t("اعرض {amount}", { amount: fmt((l.ask * pct) / 100) })}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -234,6 +451,12 @@ function Platform({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => 
                   </div>
                   {r.owner === "state" ? (
                     <div className="mt-1 grid grid-cols-3 gap-1">
+                      <button type="button" className="sc-menu h-8 text-[11px]" onClick={() => onEstate((s) => listForSale(s, b.id, value))}>
+                        {t("اعرض للبيع")}
+                      </button>
+                      <button type="button" className="sc-menu h-8 text-[11px]" onClick={() => onEstate((s) => startAuction(s, b.id, value * 0.8))}>
+                        {t("مزاد")}
+                      </button>
                       <button type="button" className="sc-menu h-8 text-[11px]" onClick={() => onEstate((s) => sellProperty(s, b.id, to))}>
                         {t("بيع")}
                       </button>
@@ -340,9 +563,14 @@ function Allocations({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) 
                 {t(ownerName(a.holder))} · {t(ALLOCATION_USES.find((u) => u.id === a.use)!.name)} · {fmt(a.fee)}/{t("سنة")} ·{" "}
                 {t("حتى {date}", { date: formatCityDate(a.until) })}
               </span>
-              <button type="button" className="sc-menu h-8 shrink-0 px-2 text-[11px]" onClick={() => onEstate((s) => endAllocation(s, a.id))}>
-                {t("أنهِ العقد")}
-              </button>
+              <div className="flex shrink-0 flex-col gap-1">
+                <button type="button" className="sc-menu h-8 px-2 text-[11px]" onClick={() => onEstate((s) => renewAllocation(s, a.id, 10))}>
+                  {t("جدّد ١٠ سنوات")}
+                </button>
+                <button type="button" className="sc-menu h-8 px-2 text-[11px]" onClick={() => onEstate((s) => endAllocation(s, a.id))}>
+                  {t("أنهِ العقد")}
+                </button>
+              </div>
             </div>
           ))
         )}
