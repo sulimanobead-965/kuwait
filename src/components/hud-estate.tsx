@@ -14,8 +14,13 @@ import {
   type OwnershipMode,
   allocate,
   allocationFee,
+  REQUEST_KINDS,
   buyListing,
+  buyMany,
   buyProperty,
+  cancelRequest,
+  offerMany,
+  requestOffers,
   cancelListing,
   listForSale,
   makeOffer,
@@ -314,7 +319,24 @@ function Trades({ snap }: { snap: Sim }) {
 function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => EstateAct) => void }) {
   const e = estateOf(snap);
   const [pct, setPct] = useState(90);
-  const listings = [...e.listings].reverse().slice(0, 30);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [reqKind, setReqKind] = useState<string>("any");
+  const [reqCount, setReqCount] = useState(5);
+  const [reqPct, setReqPct] = useState(105);
+  const all = [...e.listings].reverse().filter((l) => (onlyMine ? l.req : true));
+  const listings = all.slice(0, 40);
+  const buyable = all.filter((l) => l.seller !== "state");
+  const chosen = buyable.filter((l) => picked.has(l.id));
+  const sum = (xs: typeof buyable) => xs.reduce((a, l) => a + l.ask, 0);
+  const toggle = (id: number) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const requests = e.requests ?? [];
   return (
     <div className="space-y-2" data-testid="estate-market">
       <div className="rounded-md bg-sc-mint p-2 text-xs">
@@ -362,14 +384,125 @@ function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
           ))}
         </div>
       )}
+      <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-request">
+        <p className="text-sm font-extrabold">{t("طلب عروض من الملاك")}</p>
+        <p className="mt-0.5 leading-relaxed opacity-80">
+          {t("حدد نوع العقار والعدد وأعلى سعر تقبله (٪ من قيمة السوق). الملاك يردون بعروضهم الحين وخلال شهرين، وتشتري اللي يعجبك أو كلها مرة وحدة.")}
+        </p>
+        <select
+          value={reqKind}
+          onChange={(ev) => setReqKind(ev.target.value)}
+          className="mt-1 h-9 w-full rounded border-2 border-sc-ink/30 bg-white px-1 text-sm"
+          data-testid="request-kind"
+          aria-label={t("نوع العقار")}
+        >
+          <option value="any">{t("أي عقار")}</option>
+          {REQUEST_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {t(CATALOG[k].name)}
+            </option>
+          ))}
+        </select>
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          <NumberField label={t("العدد (حتى ٥٠)")} value={reqCount} onChange={setReqCount} />
+          <NumberField label={t("أعلى سعر (٪ من القيمة)")} value={reqPct} onChange={setReqPct} />
+        </div>
+        <button
+          type="button"
+          data-testid="request-go"
+          className="sc-menu sc-on mt-1 h-9 w-full text-xs"
+          onClick={() => {
+            onEstate((s) => requestOffers(s, reqKind as Parameters<typeof requestOffers>[1], reqCount, reqPct));
+            setOnlyMine(true);
+          }}
+        >
+          {t("أرسل طلب العروض")}
+        </button>
+        {requests.length > 0 &&
+          requests.map((r) => (
+            <div key={r.id} className="mt-1 flex items-center justify-between gap-2 border-t border-sc-ink/10 pt-1">
+              <span>
+                {t("{kind} · {got}/{n} رد · حد {pct}٪ · حتى {date}", {
+                  kind: r.kind === "any" ? "أي عقار" : CATALOG[r.kind].name,
+                  got: r.got,
+                  n: r.count,
+                  pct: r.maxPct,
+                  date: formatCityDate(r.until),
+                })}
+              </span>
+              <button type="button" className="underline" onClick={() => onEstate((s) => cancelRequest(s, r.id))}>
+                {t("إلغاء")}
+              </button>
+            </div>
+          ))}
+      </div>
       <div className="rounded-md bg-sc-mint p-2 text-xs" data-testid="estate-listings">
-        <p className="text-sm font-extrabold">{t("معروض للبيع ({n})", { n: e.listings.length })}</p>
+        <p className="text-sm font-extrabold">{t("معروض للبيع ({n})", { n: all.length })}</p>
         <p className="mt-0.5 leading-relaxed opacity-80">
           {t("اشترِ بالسعر المطلوب، أو قدّم عرضاً أقل: الأفراد يقبلون ٩٠٪ من السعر والتجار ٩٥٪، والعرض المعقول يجيك عليه رد بسعر وسط.")}
         </p>
         <div className="mt-1 w-40">
           <NumberField label={t("عرضك (٪ من السعر)")} value={pct} onChange={setPct} testid="offer-pct" />
         </div>
+        <label className="mt-1 flex items-center gap-1">
+          <input type="checkbox" checked={onlyMine} onChange={(ev) => setOnlyMine(ev.target.checked)} />
+          {t("ردود طلباتي فقط")}
+        </label>
+        {buyable.length > 0 && (
+          <div className="mt-2 space-y-1 rounded border-2 border-sc-ink/20 p-1.5" data-testid="bulk-bar">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold">{t("محدد {n} من {all}", { n: chosen.length, all: buyable.length })}</span>
+              <button
+                type="button"
+                className="underline"
+                data-testid="pick-all"
+                onClick={() => setPicked(chosen.length === buyable.length ? new Set() : new Set(buyable.map((l) => l.id)))}
+              >
+                {chosen.length === buyable.length ? t("إلغاء التحديد") : t("حدد الكل")}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                data-testid="buy-picked"
+                disabled={!chosen.length}
+                className="sc-menu sc-on h-9 text-[11px] disabled:opacity-40"
+                onClick={() => {
+                  const ids = chosen.map((l) => l.id);
+                  onEstate((s) => buyMany(s, ids));
+                  setPicked(new Set());
+                }}
+              >
+                {t("اشترِ المحدد بـ {amount}", { amount: fmt(sum(chosen)) })}
+              </button>
+              <button
+                type="button"
+                data-testid="offer-picked"
+                disabled={!chosen.length}
+                className="sc-menu h-9 text-[11px] disabled:opacity-40"
+                onClick={() => {
+                  const ids = chosen.map((l) => l.id);
+                  onEstate((s) => offerMany(s, ids, pct));
+                  setPicked(new Set());
+                }}
+              >
+                {t("اعرض {pct}٪ على المحدد", { pct })}
+              </button>
+            </div>
+            <button
+              type="button"
+              data-testid="buy-all"
+              className="sc-menu h-9 w-full text-[11px]"
+              onClick={() => {
+                const ids = buyable.map((l) => l.id);
+                onEstate((s) => buyMany(s, ids));
+                setPicked(new Set());
+              }}
+            >
+              {t("اشترِ كل المعروض ({n}) بـ {amount}", { n: buyable.length, amount: fmt(sum(buyable)) })}
+            </button>
+          </div>
+        )}
         {listings.length === 0 ? (
           <p className="mt-1 opacity-70">{t("ما في عروض الحين. الملاك يعرضون كل شهر.")}</p>
         ) : (
@@ -377,12 +510,20 @@ function Market({ snap, onEstate }: { snap: Sim; onEstate: (deal: (s: Sim) => Es
             const b = snap.buildings.find((x) => `${x.c},${x.r}` === l.lot);
             const value = b ? propertyValue(snap, b) : 0;
             return (
-              <div key={l.id} className="mt-1 rounded bg-white/60 p-1.5" data-testid="listing">
+              <div
+                key={l.id}
+                className={`mt-1 rounded p-1.5 ${picked.has(l.id) ? "bg-sc-gold/40" : "bg-white/60"}`}
+                data-testid="listing"
+              >
                 <div className="flex justify-between gap-2">
-                  <span className="font-bold">
+                  <label className="flex items-center gap-1 font-bold">
+                    {l.seller !== "state" && (
+                      <input type="checkbox" checked={picked.has(l.id)} onChange={() => toggle(l.id)} data-testid="listing-pick" />
+                    )}
                     {t(CATALOG[l.kind].name)} · {t(ownerName(l.seller))}
                     {l.countered ? ` · ${t("عرض مقابل")}` : ""}
-                  </span>
+                    {l.req ? ` · ${t("رد على طلبك")}` : ""}
+                  </label>
                   <span dir="ltr" className="font-extrabold">
                     {fmt(l.ask)}
                   </span>

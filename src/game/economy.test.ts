@@ -624,3 +624,44 @@ test("real estate laws: monopoly cap, home financing, expropriation, undeveloped
   assert.ok(re.ownershipColors(s, "price").size === s.buildings.length);
   assert.ok([...re.ownershipColors(s, "merchant").values()].includes("#facc15"));
 });
+
+test("bulk buying, one offer to many listings, and requests for offers", async () => {
+  const re = await import("./realestate.ts");
+  const s = town(30);
+  s.coins = 1e9;
+  for (const n of s.npcs) n.cash = 1e9;
+  let r = 3;
+  const seq = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  // A request: owners reply now, only the state can take the replies.
+  const kind = s.buildings.find((b) => !re.isPublic(b.kind))!.kind;
+  const asked = re.requestOffers(s, kind, 5, 140, seq);
+  assert.ok(asked.ok);
+  const replies = re.estateOf(s).listings.filter((l) => l.req);
+  assert.ok(replies.length > 0, "owners reply to the request");
+  for (const l of replies) {
+    const b = s.buildings.find((x) => re.lotKey(x) === l.lot)!;
+    assert.ok(l.ask <= re.propertyValue(s, b) * 1.4 + 1, "no reply above the cap");
+  }
+  s.day += 30;
+  re.estateMonth(s, seq);
+  assert.ok(re.estateOf(s).listings.filter((l) => l.req).every((l) => l.seller !== "state"));
+  // Buy all replies at once.
+  const ids = re.estateOf(s).listings.filter((l) => l.req).map((l) => l.id);
+  const coins = s.coins;
+  const bought = re.buyMany(s, ids);
+  assert.ok(bought.ok);
+  assert.ok(s.coins < coins);
+  assert.equal(re.estateOf(s).listings.filter((l) => ids.includes(l.id)).length, 0);
+  // Bulk offers: a list of public listings answered one way or another.
+  for (let m = 0; m < 4; m += 1) {
+    s.day += 30;
+    re.estateMonth(s, seq);
+  }
+  const open = re.estateOf(s).listings.filter((l) => l.seller !== "state").map((l) => l.id);
+  if (open.length) assert.ok(re.offerMany(s, open, 92).ok);
+  // Not enough money: buys what it can and says so.
+  s.coins = 0;
+  const left = re.estateOf(s).listings.filter((l) => l.seller !== "state").map((l) => l.id);
+  if (left.length) assert.equal(re.buyMany(s, left).ok, false);
+  assert.ok(re.cancelRequest(s, 1).ok);
+});

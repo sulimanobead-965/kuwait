@@ -61,7 +61,20 @@ export type Allocation = {
 export type AllocationUse = "commercial" | "residential" | "services";
 
 /** A property offered for sale: by its owner, or by the state. */
-export type Listing = { id: number; lot: string; kind: Kind; seller: OwnerId; ask: number; until: number; countered?: boolean };
+export type Listing = {
+  id: number;
+  lot: string;
+  kind: Kind;
+  seller: OwnerId;
+  ask: number;
+  until: number;
+  countered?: boolean;
+  /** A reply to the state's request for offers (only the state can take it). */
+  req?: number;
+};
+
+/** The state asks owners for offers: what kind, how many, and the most it will pay. */
+export type OfferRequest = { id: number; kind: Kind | "any"; count: number; maxPct: number; until: number; got: number };
 
 /** A state property in auction: merchants and individuals bid at the month's end. */
 export type Auction = { id: number; lot: string; kind: Kind; min: number; until: number };
@@ -99,6 +112,7 @@ export type Estate = {
   landTaxTotal: number;
   /** Anger at under-compensated expropriations: approval points, until a game day. */
   grievance: { mood: number; until: number };
+  requests: OfferRequest[];
 };
 
 export const emptyEstate = (): Estate => ({
@@ -122,6 +136,7 @@ export const emptyEstate = (): Estate => ({
   landTax: 0,
   landTaxTotal: 0,
   grievance: { mood: 0, until: 0 },
+  requests: [],
 });
 
 /** Kinds that are always public land: services, utilities, state landmarks, transport. */
@@ -635,7 +650,16 @@ export function loadEstate(raw: unknown): Estate {
   if (Array.isArray(p.listings))
     e.listings = p.listings
       .filter((x) => x && valid(x.seller) && x.kind in CATALOG)
-      .map((x) => ({ id: num(x.id), lot: String(x.lot), kind: x.kind, seller: x.seller, ask: Math.max(1, num(x.ask)), until: num(x.until), countered: !!x.countered }));
+      .map((x) => ({
+        id: num(x.id),
+        lot: String(x.lot),
+        kind: x.kind,
+        seller: x.seller,
+        ask: Math.max(1, num(x.ask)),
+        until: num(x.until),
+        countered: !!x.countered,
+        ...(x.req ? { req: num(x.req) } : {}),
+      }));
   if (Array.isArray(p.auctions))
     e.auctions = p.auctions
       .filter((x) => x && x.kind in CATALOG)
@@ -662,6 +686,10 @@ export function loadEstate(raw: unknown): Estate {
   e.landTaxTotal = Math.max(0, num(p.landTaxTotal));
   const gv = (p.grievance ?? {}) as Partial<Estate["grievance"]>;
   e.grievance = { mood: Math.min(20, Math.max(0, num(gv.mood))), until: num(gv.until) };
+  if (Array.isArray(p.requests))
+    e.requests = p.requests
+      .filter((x) => x && (x.kind === "any" || x.kind in CATALOG))
+      .map((x) => ({ id: num(x.id), kind: x.kind, count: Math.max(1, num(x.count, 1)), maxPct: num(x.maxPct, 100), until: num(x.until), got: num(x.got) }));
   e.volume = Math.max(0, num(p.volume));
   e.count = Math.max(0, num(p.count));
   e.nextId = Math.max(
@@ -685,6 +713,7 @@ export const cloneEstate = (e: Estate | undefined): Estate | undefined =>
         auctions: (e.auctions ?? []).map((l) => ({ ...l })),
         history: [...(e.history ?? [])],
         overCap: [...(e.overCap ?? [])],
+        requests: requestsOf(e).map((r) => ({ ...r })),
         mortgage: { ...mortgageOf(e) },
         grievance: { ...(e.grievance ?? { mood: 0, until: 0 }) },
       }
@@ -772,7 +801,8 @@ function marketMonth(s: Sim, random: () => number) {
     }
     const value = propertyValue(s, b);
     const odds = 0.35 * act * Math.min(2, (value / l.ask) ** 3);
-    if (random() < odds) {
+    // Replies to the state's requests wait for the state only.
+    if (!l.req && random() < odds) {
       const buyers = BIDDERS().filter((x) => x !== l.seller && canPay(s, x, l.ask * (1 + e.fee / 100)));
       // With home financing, families can afford more: they turn up more often.
       if (mortgageOf(e).on && l.seller !== "people") buyers.push("people", "people");
@@ -788,6 +818,14 @@ function marketMonth(s: Sim, random: () => number) {
   }
   // Auctions that have run their month.
   for (const a of [...e.auctions]) if (a.until <= s.day) resolveAuction(s, a, random);
+  // Requests for offers: more owners reply while the request is open.
+  for (const r of [...requestsOf(e)]) {
+    if (r.until <= s.day || r.got >= r.count) {
+      e.requests = requestsOf(e).filter((x) => x.id !== r.id);
+      continue;
+    }
+    quoteRequest(s, r, random);
+  }
   // The month joins the price history.
   e.history = [...e.history, { day: s.day, index: e.index, volume: e.volume, count: e.count }].slice(-120);
   e.volume = 0;
@@ -1123,3 +1161,114 @@ export function listingAt(s: Sim, b: Building) {
   const k = lotKey(b);
   return estateOf(s).listings.find((l) => l.lot === k) ?? null;
 }
+
+// ---------------------------------------------------------------- buying in bulk
+
+function requestsOf(e: Estate) {
+  if (!e.requests) e.requests = [];
+  return e.requests;
+}
+
+/**
+ * Buy several listed properties at their asking prices, in order, until the money
+ * runs out. Returns how many were bought and what they cost.
+ */
+export function buyMany(s: Sim, ids: number[]): EstateAct {
+  let n = 0;
+  let total = 0;
+  let short = false;
+  for (const id of ids) {
+    const l = estateOf(s).listings.find((x) => x.id === id);
+    if (!l || l.seller === "state") continue;
+    if (s.coins < l.ask) {
+      short = true;
+      continue;
+    }
+    const b = lotOf(s, l.lot);
+    if (!b || ownerOf(s, b) !== l.seller) continue;
+    executeSale(s, b, l.seller, "state", l.ask);
+    n += 1;
+    total += l.ask;
+  }
+  if (!n) return { ok: false, msg: short ? t("الرصيد ما يكفي") : t("ما في عروض للشراء") };
+  const entry = msg("الدولة اشترت {n} عقار دفعة وحدة بمجموع {amount} د.ك", { n, amount: Math.round(total) });
+  pushLog(s, entry);
+  return { ok: true, msg: short ? msg("{text} · الرصيد ما كفّى الباقي", { text: entry }) : entry };
+}
+
+/** One offer (% of each asking price) sent to several listings at once. */
+export function offerMany(s: Sim, ids: number[], pct: number): EstateAct {
+  let yes = 0;
+  let counter = 0;
+  let no = 0;
+  for (const id of ids) {
+    const l = estateOf(s).listings.find((x) => x.id === id);
+    if (!l || l.seller === "state") continue;
+    const before = estateOf(s).listings.find((x) => x.id === id)?.ask;
+    const r = makeOffer(s, id, (l.ask * pct) / 100);
+    if (!r.ok) no += 1;
+    else if (estateOf(s).listings.some((x) => x.id === id && x.ask !== before)) counter += 1;
+    else yes += 1;
+  }
+  if (!yes && !counter && !no) return { ok: false, msg: t("اختر عروضاً أولاً") };
+  return { ok: true, msg: msg("نتيجة عروضك: قبول {yes} · عرض مقابل {counter} · رفض {no}", { yes, counter, no }) };
+}
+
+/** Owners who own that kind reply with offers at or under the price cap. */
+function quoteRequest(s: Sim, r: OfferRequest, random: () => number) {
+  const e = estateOf(s);
+  const listed = new Set(e.listings.map((l) => l.lot));
+  const allotted = new Set(e.allocations.flatMap((a) => a.buildings));
+  const pool = s.buildings;
+  let tries = 0;
+  while (r.got < r.count && tries < 400 && pool.length) {
+    tries += 1;
+    const b = pool[Math.floor(random() * pool.length)]!;
+    if (r.kind !== "any" && b.kind !== r.kind) continue;
+    const owner = ownerOf(s, b);
+    const k = lotKey(b);
+    if (!owner || owner === "state" || listed.has(k) || allotted.has(k)) continue;
+    const value = propertyValue(s, b);
+    // Individuals ask a little less than merchants; nobody quotes over the cap.
+    const ask = Math.round(value * (owner === "people" ? 0.92 + random() * 0.2 : 1 + random() * 0.22));
+    if (ask > (value * r.maxPct) / 100) continue;
+    listed.add(k);
+    e.listings.push({ id: e.nextId++, lot: k, kind: b.kind, seller: owner, ask, until: r.until + 30, req: r.id });
+    r.got += 1;
+  }
+}
+
+/**
+ * A request for offers: the state says what it wants (a kind or any property), how
+ * many, and the most it will pay as % of market value. Owners reply right away and
+ * through the next two months; the replies wait in the market for the state alone.
+ */
+export function requestOffers(s: Sim, kind: Kind | "any", count: number, maxPct: number, random = Math.random): EstateAct {
+  if (kind !== "any" && (!(kind in CATALOG) || isPublic(kind))) return { ok: false, msg: t("اختر نوع عقار خاص") };
+  const e = estateOf(s);
+  const r: OfferRequest = {
+    id: e.nextId++,
+    kind,
+    count: Math.max(1, Math.min(50, Math.round(count))),
+    maxPct: Math.max(50, Math.min(200, Math.round(maxPct))),
+    until: s.day + 60,
+    got: 0,
+  };
+  e.requests = [...requestsOf(e), r];
+  quoteRequest(s, r, random);
+  const name = kind === "any" ? "أي عقار" : CATALOG[kind].name;
+  return {
+    ok: true,
+    msg: msg("طلب عروض على {n} {kind} بحد {pct}٪ من القيمة: وصلك {got} عرض الحين", { n: r.count, kind: name, pct: r.maxPct, got: r.got }),
+  };
+}
+
+export function cancelRequest(s: Sim, id: number): EstateAct {
+  const e = estateOf(s);
+  e.requests = requestsOf(e).filter((r) => r.id !== id);
+  e.listings = e.listings.filter((l) => l.req !== id);
+  return { ok: true, msg: t("ألغيت الطلب وردوده") };
+}
+
+/** Private kinds a request can ask for. */
+export const REQUEST_KINDS: Kind[] = (Object.keys(CATALOG) as Kind[]).filter((k) => !isPublic(k) && CATALOG[k].cost > 0);
