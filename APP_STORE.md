@@ -57,7 +57,7 @@ npm run app:open    # يفتح المشروع في Xcode (على الماك فق
 5. شغّل workflow **Al-Muhafiz iOS (App Store)**: يبني التطبيق ويوقّعه ويرفعه إلى TestFlight تلقائياً.
 
 ## الخطوة ٣: صفحة التطبيق في الآب ستور
-- **سياسة الخصوصية:** غيّر `CONTACT_EMAIL` في `public/privacy.html` إلى بريدك، ثم انشر الموقع؛ الرابط يكون `https://<موقعك>/privacy.html`.
+- **سياسة الخصوصية:** الرابط `https://muhafiz.com/privacy.html`. غيّر `CONTACT_EMAIL` في `public/privacy.html` إلى بريدك قبل الإرسال.
 - **خصوصية التطبيق (App Privacy):** اختر *Data Not Collected* — اللعبة لا تجمع أي بيانات.
 - **التصنيف العمري:** أجب «لا» على كل الأسئلة ← غالباً **4+**. (الأزمات والكوارث في اللعبة رسوم بسيطة بلا عنف.)
 - **الفئة:** Games → Simulation، والثانوية Strategy.

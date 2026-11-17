@@ -4,6 +4,7 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "المحافظ";
+const SITE = "https://muhafiz.com/";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -12,8 +13,10 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: APP_NAME },
       { name: "theme-color", content: "#0e6e78" },
+      { property: "og:url", content: SITE },
     ],
     links: [
+      { rel: "canonical", href: SITE },
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
       {
